@@ -119,6 +119,7 @@ a { color: inherit; text-decoration: none; }
 
 .flag {
   display: block;
+  flex: 0 0 24px;
   width: 24px;
   height: 16px;
   overflow: hidden;
