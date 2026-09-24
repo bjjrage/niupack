@@ -4,13 +4,52 @@ window.setupProductShowroom = function (carousel) {
   const cards = [...carousel.querySelectorAll('.product-card')];
   if (!cards.length) return;
   const isEnglish = document.documentElement.lang === 'en';
+  const isPortuguese = document.documentElement.lang === 'pt-BR';
+  const copy = isPortuguese
+    ? {
+        exploreLines: 'EXPLORE NOSSAS LINHAS',
+        stageLabel: 'Produtos em perspectiva',
+        previous: 'Produto anterior',
+        next: 'Próximo produto',
+        drag: 'ARRASTE PARA EXPLORAR',
+        productLines: 'Linhas de produtos',
+        explore: 'Explorar',
+        madeForBrand: 'FEITO PARA SUA MARCA',
+        inquire: 'Consultar este produto ↗',
+        inquireIntro: (name) => `Olá, gostaria de consultar sobre ${name}.`,
+      }
+    : isEnglish
+      ? {
+          exploreLines: 'EXPLORE OUR LINES',
+          stageLabel: 'Products in perspective',
+          previous: 'Previous product',
+          next: 'Next product',
+          drag: 'DRAG TO EXPLORE',
+          productLines: 'Product lines',
+          explore: 'Explore',
+          madeForBrand: 'MADE FOR YOUR BRAND',
+          inquire: 'Inquire about this product ↗',
+          inquireIntro: (name) => `Hello, I would like to inquire about ${name}.`,
+        }
+      : {
+          exploreLines: 'EXPLORÁ NUESTRAS LÍNEAS',
+          stageLabel: 'Productos en perspectiva',
+          previous: 'Producto anterior',
+          next: 'Producto siguiente',
+          drag: 'ARRASTRÁ PARA EXPLORAR',
+          productLines: 'Líneas de producto',
+          explore: 'Explorar',
+          madeForBrand: 'HECHO PARA TU MARCA',
+          inquire: 'Consultar este producto ↗',
+          inquireIntro: (name) => `Hola, quiero consultar por ${name}.`,
+        };
   const names = cards.map(card => card.querySelector('h3').textContent);
   carousel.className = 'showroom';
-  carousel.innerHTML = `<div class="showroom-top"><span>${isEnglish ? 'EXPLORE OUR LINES' : 'EXPLORÁ NUESTRAS LÍNEAS'}</span><span class="showroom-counter" aria-live="polite"></span></div>
-    <div class="showroom-layout"><div class="showroom-stage" aria-label="${isEnglish ? 'Products in perspective' : 'Productos en perspectiva'}">
+  carousel.innerHTML = `<div class="showroom-top"><span>${copy.exploreLines}</span><span class="showroom-counter" aria-live="polite"></span></div>
+    <div class="showroom-layout"><div class="showroom-stage" aria-label="${copy.stageLabel}">
       <div class="showroom-art"></div>
-      <div class="showroom-stage-controls"><button type="button" data-step="-1" aria-label="${isEnglish ? 'Previous product' : 'Producto anterior'}">←</button><span>${isEnglish ? 'DRAG TO EXPLORE' : 'ARRASTRÁ PARA EXPLORAR'}</span><button type="button" data-step="1" aria-label="${isEnglish ? 'Next product' : 'Producto siguiente'}">→</button></div>
-    </div><div class="showroom-details"></div></div><div class="showroom-tabs" role="tablist" aria-label="${isEnglish ? 'Product lines' : 'Líneas de producto'}"></div>`;
+      <div class="showroom-stage-controls"><button type="button" data-step="-1" aria-label="${copy.previous}">←</button><span>${copy.drag}</span><button type="button" data-step="1" aria-label="${copy.next}">→</button></div>
+    </div><div class="showroom-details"></div></div><div class="showroom-tabs" role="tablist" aria-label="${copy.productLines}"></div>`;
   const stage = carousel.querySelector('.showroom-stage');
   const art = carousel.querySelector('.showroom-art');
   const details = carousel.querySelector('.showroom-details');
@@ -22,7 +61,7 @@ window.setupProductShowroom = function (carousel) {
     const figure = document.createElement('button');
     figure.type = 'button';
     figure.className = 'showroom-product';
-    figure.setAttribute('aria-label', `${isEnglish ? 'Explore' : 'Explorar'} ${names[index]}`);
+    figure.setAttribute('aria-label', `${copy.explore} ${names[index]}`);
     image.draggable = false;
     figure.append(image);
     figure.addEventListener('click', () => show(index));
@@ -33,11 +72,11 @@ window.setupProductShowroom = function (carousel) {
     panel.id = `showroom-panel-${index}`;
     panel.setAttribute('role', 'tabpanel');
     panel.setAttribute('aria-labelledby', `showroom-tab-${index}`);
-    panel.innerHTML = `<p class="showroom-kicker">${isEnglish ? 'MADE FOR YOUR BRAND' : 'HECHO PARA TU MARCA'}</p>`;
+    panel.innerHTML = `<p class="showroom-kicker">${copy.madeForBrand}</p>`;
     panel.append(card.querySelector('h3'), card.querySelector('p'), card.querySelector('.product-fields'));
     const link = document.createElement('a');
     link.className = 'button showroom-consult';
-    link.textContent = isEnglish ? 'Inquire about this product ↗' : 'Consultar este producto ↗';
+    link.textContent = copy.inquire;
     link.target = '_blank';
     link.rel = 'noopener';
     function updateLink() {
@@ -46,9 +85,7 @@ window.setupProductShowroom = function (carousel) {
         const value = label.querySelector('.custom-select-trigger, .product-static-select')?.textContent.trim();
         return `${title}: ${value || '-'}`;
       });
-      const intro = isEnglish
-        ? `Hello, I would like to inquire about ${names[index]}.`
-        : `Hola, quiero consultar por ${names[index]}.`;
+      const intro = copy.inquireIntro(names[index]);
       link.href = `https://wa.me/595971350619?text=${encodeURIComponent([intro, ...selection].join('\n'))}`;
     }
     panel.addEventListener('custom-select-change', updateLink);

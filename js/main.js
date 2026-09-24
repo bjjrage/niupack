@@ -269,6 +269,7 @@ if (whatsappForm) {
     event.preventDefault();
     const data = new FormData(whatsappForm);
     const isEnglish = document.documentElement.lang === 'en';
+    const isPortuguese = document.documentElement.lang === 'pt-BR';
     const lines = isEnglish
       ? [
           'Hello, I would like to request a quote for NIU PACK products.',
@@ -278,6 +279,15 @@ if (whatsappForm) {
           `Product: ${data.get('producto') || '-'}`,
           `Message: ${data.get('mensaje') || '-'}`,
         ]
+      : isPortuguese
+        ? [
+            'Olá, gostaria de solicitar um orçamento dos produtos NIU PACK.',
+            `Nome: ${data.get('nombre') || '-'}`,
+            `Empresa: ${data.get('empresa') || '-'}`,
+            `Telefone: ${data.get('telefono') || '-'}`,
+            `Produto: ${data.get('producto') || '-'}`,
+            `Mensagem: ${data.get('mensaje') || '-'}`,
+          ]
       : [
           'Hola, quiero solicitar una cotización de productos NIU PACK.',
           `Nombre: ${data.get('nombre') || '-'}`,
