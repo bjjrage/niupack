@@ -1,9 +1,9 @@
 // Genera las fotos de la landing a partir de tools/prompts.json y las guarda en efp/img/.
 //
 // Uso:
-//   GEMINI_API_KEY=... node efp/tools/generate-images.mjs              (Google Imagen, por defecto)
-//   OPENAI_API_KEY=... node efp/tools/generate-images.mjs --openai     (gpt-image-1)
-//   XAI_API_KEY=...    node efp/tools/generate-images.mjs --xai        (Grok)
+//   1. Copiar tools/.env.example como tools/.env y pegar una clave (xAI, Google u OpenAI).
+//   2. node efp/tools/generate-images.mjs          (usa el proveedor cuya clave esté cargada)
+//      Forzar uno: --xai  --google  --openai
 // Se puede limitar a algunos archivos:  node efp/tools/generate-images.mjs hero.jpg vasos.jpg
 // El modelo se cambia con IMAGE_MODEL=...
 import { readFile, writeFile } from "node:fs/promises";
@@ -12,8 +12,20 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, "..", "img");
+
+// Carga tools/.env si existe (formato CLAVE=valor).
+try {
+  for (const line of (await readFile(join(here, ".env"), "utf8")).split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/);
+    if (m && m[2] && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+  }
+} catch {}
+
+// Proveedor: --google / --openai / --xai, o el primero que tenga clave cargada.
 const args = process.argv.slice(2);
-const provider = args.includes("--openai") ? "openai" : args.includes("--xai") ? "xai" : "google";
+const provider =
+  ["google", "openai", "xai"].find((p) => args.includes(`--${p}`)) ||
+  (process.env.XAI_API_KEY ? "xai" : process.env.GEMINI_API_KEY ? "google" : "openai");
 const only = args.filter((a) => !a.startsWith("--"));
 
 const need = (name) => {
@@ -56,12 +68,22 @@ const PROVIDERS = {
     );
     return data.data[0].b64_json;
   },
-  xai: async (prompt) => {
-    const data = await postJson(
-      "https://api.x.ai/v1/images/generations",
-      { Authorization: `Bearer ${need("XAI_API_KEY")}` },
-      { model: process.env.IMAGE_MODEL || "grok-2-image", prompt, response_format: "b64_json" },
-    );
+  xai: async (prompt, ratio) => {
+    const url = "https://api.x.ai/v1/images/generations";
+    const headers = { Authorization: `Bearer ${need("XAI_API_KEY")}` };
+    let data;
+    try {
+      data = await postJson(url, headers, {
+        model: process.env.IMAGE_MODEL || "grok-imagine-image-pro",
+        prompt,
+        aspect_ratio: ratio,
+        response_format: "b64_json",
+      });
+    } catch (err) {
+      // Si el modelo nuevo no está disponible en la cuenta, se usa el clásico.
+      console.log(`(reintento con grok-2-image: ${err.message.slice(0, 80)})`);
+      data = await postJson(url, headers, { model: "grok-2-image", prompt, response_format: "b64_json" });
+    }
     return data.data[0].b64_json;
   },
 };
