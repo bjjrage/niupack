@@ -1,0 +1,40 @@
+{
+  "_style": "Commercial product photography, premium corporate catalog, soft diffused studio lighting, subtle realistic shadows, shot on medium format camera, 85mm lens, sharp focus, photorealistic, no text, no logos, no watermark",
+  "images": [
+    {
+      "file": "hero.jpg",
+      "aspect_ratio": "1:1",
+      "prompt": "Elegant still life of food packaging: a white paper coffee cup with black lid, a kraft paper delivery bag with twisted handle, a kraft cardboard food tray with french fries, and a white paper ice cream tub, arranged on a dark forest green surface against a deep green backdrop (#10231b), warm golden rim light from the right"
+    },
+    {
+      "file": "vasos.jpg",
+      "aspect_ratio": "4:3",
+      "prompt": "Three plain white single-wall paper coffee cups of different sizes (4, 8 and 12 oz) with black plastic lids, one with a cream kraft sleeve, on a warm cream seamless background (#ece5d8)"
+    },
+    {
+      "file": "potes.jpg",
+      "aspect_ratio": "4:3",
+      "prompt": "Plain white paper food containers / ice cream tubs of different sizes with paper lids, one open showing vanilla ice cream, on a warm cream seamless background (#ece5d8)"
+    },
+    {
+      "file": "carton.jpg",
+      "aspect_ratio": "4:3",
+      "prompt": "Kraft brown cardboard food packaging: a boat tray filled with golden french fries, a kraft clamshell burger box slightly open showing a burger, on a warm cream seamless background (#ece5d8)"
+    },
+    {
+      "file": "bolsas.jpg",
+      "aspect_ratio": "4:3",
+      "prompt": "Plain kraft brown paper delivery bags with square bottom, one with twisted paper handles and one with flat handles, standing upright, on a warm cream seamless background (#ece5d8)"
+    },
+    {
+      "file": "antigrasa.jpg",
+      "aspect_ratio": "4:3",
+      "prompt": "Greaseproof deli paper sheets, white with a subtle green checkered pattern, one sheet wrapping a burger and a small stack of folded sheets beside it, on a warm cream seamless background (#ece5d8)"
+    },
+    {
+      "file": "plasticas.jpg",
+      "aspect_ratio": "4:3",
+      "prompt": "Clear transparent PET plastic hinged clamshell food containers, one open with a fresh salad inside and one closed with divided compartments, on a warm cream seamless background (#ece5d8)"
+    }
+  ]
+}

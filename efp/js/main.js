@@ -87,6 +87,19 @@ $$("[data-wa-link]").forEach((a) => {
 $$("[data-mail-link]").forEach((a) => { a.href = `mailto:${CONFIG.email}`; });
 $$("[data-year]").forEach((el) => { el.textContent = new Date().getFullYear(); });
 
+/* ---------- Fotos: si la imagen existe, reemplaza a la ilustración ---------- */
+const usePhoto = (img) => {
+  const box = img.parentElement;
+  const ok = () => box.classList.add("has-photo");
+  const fail = () => box.classList.remove("has-photo");
+  if (img.complete && img.naturalWidth) ok();
+  img.addEventListener("load", ok);
+  img.addEventListener("error", fail);
+};
+$$("[data-photo]").forEach(usePhoto);
+const modalPhoto = $("[data-modal-photo]");
+usePhoto(modalPhoto);
+
 /* ---------- Header y navegación ---------- */
 const header = $("[data-header]");
 const nav = $("[data-nav]");
@@ -192,6 +205,9 @@ const openModal = (key) => {
   if (!p) return;
   lastFocus = document.activeElement;
   $("[data-modal-art]", modal).setAttribute("href", p.icon);
+  modalPhoto.parentElement.classList.remove("has-photo");
+  modalPhoto.alt = p.title;
+  modalPhoto.src = `img/${key}.jpg`;
   $("[data-modal-tag]", modal).textContent = p.tag;
   $("[data-modal-title]", modal).textContent = p.title;
   $("[data-modal-desc]", modal).textContent = p.desc;
