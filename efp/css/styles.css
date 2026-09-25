@@ -100,7 +100,7 @@ em { font-style: normal; color: var(--rust); }
   backdrop-filter: blur(8px);
   box-shadow: 0 1px 0 var(--line-light);
 }
-.header__inner { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.header__inner { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: nowrap; }
 
 .brand { display: inline-flex; align-items: center; gap: 12px; }
 .brand__mark {
@@ -110,7 +110,7 @@ em { font-style: normal; color: var(--rust); }
 }
 .brand__text { font-family: var(--mono); font-size: .68rem; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; line-height: 1.4; }
 
-.nav { display: flex; align-items: center; gap: 30px; font-family: var(--mono); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+.nav { display: flex; align-items: center; gap: 30px; font-family: var(--mono); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
 .nav a:not(.btn) { position: relative; opacity: .82; transition: opacity .25s, color .25s; }
 .nav a:not(.btn)::after {
   content: ""; position: absolute; left: 0; right: 0; bottom: -6px; height: 1px; background: var(--rust-light);
@@ -127,7 +127,7 @@ em { font-style: normal; color: var(--rust); }
 .burger[aria-expanded="true"] span:first-child { top: 21px; transform: rotate(45deg); }
 .burger[aria-expanded="true"] span:last-child { top: 21px; transform: rotate(-45deg); }
 
-@media (max-width: 960px) {
+@media (max-width: 1180px) {
   .burger { display: block; z-index: 2; }
   .nav {
     position: fixed; inset: 0; flex-direction: column; justify-content: center; gap: 30px;
