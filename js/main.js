@@ -218,12 +218,16 @@ function fillCustomSelect(select, options) {
 }
 
 if (cupType && cupSize) {
+  const allSizesLabel = document.documentElement.lang === 'en' ? 'All' : 'Todos';
   const cupSizes = {
-    simple: ['4 oz', '8 oz', '10 oz', '12 oz', '14 oz', '16 oz', '21 oz', '24 oz'],
-    doble: ['8 oz', '12 oz'],
+    simple: [allSizesLabel, '4 oz', '6 oz', '8 oz', '10 oz', '12 oz', '14 oz', '16 oz', '21 oz', '24 oz'],
+    doble: [allSizesLabel, '8 oz', '12 oz'],
   };
 
-  const updateCupSizes = () => fillCustomSelect(cupSize, cupSizes[cupType.dataset.value] || cupSizes.simple);
+  const updateCupSizes = () => {
+    fillCustomSelect(cupSize, cupSizes[cupType.dataset.value] || cupSizes.simple);
+    cupSize.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
+  };
   cupType.addEventListener('custom-select-change', updateCupSizes);
   updateCupSizes();
 }

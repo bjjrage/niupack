@@ -58,12 +58,18 @@ window.setupProductShowroom = function (carousel) {
   const images = [], panels = [], tabs = [];
   cards.forEach((card, index) => {
     const image = card.querySelector('.product-card-media img');
+    const isCupCard = card.hasAttribute('data-cup-card');
+    const isBowlCard = Boolean(card.querySelector('[data-bowl-size]'));
     const figure = document.createElement('button');
     figure.type = 'button';
     figure.className = 'showroom-product';
     figure.setAttribute('aria-label', `${copy.explore} ${names[index]}`);
     image.draggable = false;
     figure.append(image);
+    if (isCupCard) {
+      figure.dataset.cupVisual = '';
+      image.classList.add('showroom-cup-image', 'is-current');
+    }
     figure.addEventListener('click', () => show(index));
     art.append(figure);
     images.push(figure);
@@ -74,6 +80,120 @@ window.setupProductShowroom = function (carousel) {
     panel.setAttribute('aria-labelledby', `showroom-tab-${index}`);
     panel.innerHTML = `<p class="showroom-kicker">${copy.madeForBrand}</p>`;
     panel.append(card.querySelector('h3'), card.querySelector('p'), card.querySelector('.product-fields'));
+    if (isCupCard) {
+      const typeSelect = panel.querySelector('[data-cup-type]');
+      const sizeSelect = panel.querySelector('[data-cup-size]');
+      const nextImage = document.createElement('img');
+      nextImage.className = 'showroom-cup-image';
+      nextImage.draggable = false;
+      nextImage.alt = '';
+      figure.append(nextImage);
+
+      const cupImages = {
+        simple: {
+          all: { src: image.getAttribute('src'), scale: '1' },
+          '4 oz': { src: 'assets/showroom/cup-single-4oz-v2.png', scale: '.62' },
+          '6 oz': { src: 'assets/showroom/cup-single-6oz-v2.png', scale: '.7' },
+          '8 oz': { src: 'assets/showroom/cup-single-8oz-v3.png', scale: '.78', widthScale: '1.07' },
+          '12 oz': { src: 'assets/showroom/cup-single-12oz-v2.png', scale: '.88' },
+          '16 oz': { src: 'assets/showroom/cup-single-16oz-v2.png', scale: '.96' },
+          '21 oz': { src: 'assets/showroom/cup-single-21oz-v2.png', scale: '1' },
+          '24 oz': { src: 'assets/showroom/cup-single-24oz-v2.png', scale: '1.04' },
+        },
+        doble: {
+          all: { src: 'assets/showroom/cups-double-all-v2.png', scale: '1' },
+          '8 oz': { src: 'assets/showroom/cup-double-8oz-v2.png', scale: '.78' },
+          '12 oz': { src: 'assets/showroom/cup-double-12oz-v2.png', scale: '.96' },
+        },
+      };
+      let currentImage = image;
+      let requestedImage = 0;
+
+      function updateCupVisual() {
+        const type = typeSelect.dataset.value === 'doble' ? 'doble' : 'simple';
+        const selectedSize = sizeSelect.dataset.value;
+        const size = selectedSize?.endsWith('oz') ? selectedSize : 'all';
+        const variant = cupImages[type][size];
+        const selection = `${typeSelect.querySelector('.custom-select-trigger').textContent}, ${sizeSelect.querySelector('.custom-select-trigger').textContent}`;
+        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}`);
+        const request = ++requestedImage;
+        // Unmocked sizes remain selectable without swapping the displayed product.
+        if (!variant) return;
+        if (currentImage.getAttribute('src') === variant.src) return;
+
+        const preload = new Image();
+        preload.onload = () => {
+          if (request !== requestedImage) return;
+          const incoming = currentImage === image ? nextImage : image;
+          incoming.classList.remove('is-current', 'is-exiting');
+          incoming.src = variant.src;
+          incoming.alt = selection;
+          incoming.style.setProperty('--cup-display-scale', variant.scale);
+          incoming.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+          void incoming.offsetWidth;
+          currentImage.classList.remove('is-current');
+          currentImage.classList.add('is-exiting');
+          incoming.classList.add('is-current');
+          currentImage = incoming;
+        };
+        preload.src = variant.src;
+      }
+
+      panel.addEventListener('custom-select-change', () => queueMicrotask(updateCupVisual));
+      image.style.setProperty('--cup-display-scale', '1');
+      queueMicrotask(updateCupVisual);
+    } else if (isBowlCard) {
+      const sizeSelect = panel.querySelector('[data-bowl-size]');
+      const nextImage = document.createElement('img');
+      nextImage.className = 'showroom-cup-image';
+      nextImage.draggable = false;
+      nextImage.alt = '';
+      figure.dataset.cupVisual = '';
+      image.classList.add('showroom-cup-image', 'is-current');
+      figure.append(nextImage);
+
+      const bowlImages = {
+        all: { src: image.getAttribute('src'), scale: '1' },
+        '3 oz': { src: 'assets/showroom/bowl-icecream-3oz-v2.png', scale: '.62' },
+        '5 oz': { src: 'assets/showroom/bowl-icecream-5oz-v2.png', scale: '.72' },
+        '8 oz': { src: 'assets/showroom/bowl-icecream-8oz-v2.png', scale: '.82' },
+        '20 oz': { src: 'assets/showroom/bowl-icecream-20oz-v3.png', scale: '1' },
+      };
+      let currentImage = image;
+      let requestedImage = 0;
+
+      function updateBowlVisual() {
+        const selectedSize = sizeSelect.dataset.value;
+        const size = selectedSize === 'Todos' || selectedSize === 'All' ? 'all' : selectedSize;
+        const variant = bowlImages[size];
+        const selection = sizeSelect.querySelector('.custom-select-trigger').textContent;
+        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}`);
+        const request = ++requestedImage;
+        if (!variant) return;
+        if (currentImage.getAttribute('src') === variant.src) return;
+
+        const preload = new Image();
+        preload.onload = () => {
+          if (request !== requestedImage) return;
+          const incoming = currentImage === image ? nextImage : image;
+          incoming.classList.remove('is-current', 'is-exiting');
+          incoming.src = variant.src;
+          incoming.alt = selection;
+          incoming.style.setProperty('--cup-display-scale', variant.scale);
+          incoming.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+          void incoming.offsetWidth;
+          currentImage.classList.remove('is-current');
+          currentImage.classList.add('is-exiting');
+          incoming.classList.add('is-current');
+          currentImage = incoming;
+        };
+        preload.src = variant.src;
+      }
+
+      panel.addEventListener('custom-select-change', () => queueMicrotask(updateBowlVisual));
+      image.style.setProperty('--cup-display-scale', '1');
+      queueMicrotask(updateBowlVisual);
+    }
     const link = document.createElement('a');
     link.className = 'button showroom-consult';
     link.textContent = copy.inquire;
