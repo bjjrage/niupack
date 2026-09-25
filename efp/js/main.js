@@ -147,10 +147,6 @@ const revealer = new IntersectionObserver((entries) => {
 }, { threshold: 0.12, rootMargin: "0px 0px -40px 0px" });
 $$(".reveal").forEach((el) => revealer.observe(el));
 
-/* ---------- Marquee: duplica el contenido para el bucle ---------- */
-const track = $("[data-marquee]");
-if (track) track.innerHTML += track.innerHTML;
-
 /* ---------- Parallax del hero ---------- */
 const stage = $("[data-parallax]");
 if (stage && !reduceMotion && window.matchMedia("(pointer: fine)").matches) {
