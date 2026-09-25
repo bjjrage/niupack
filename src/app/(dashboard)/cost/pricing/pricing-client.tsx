@@ -40,12 +40,17 @@ export function PricingClient({ initialUnitCost, initialBenchmark }: Props) {
       key: 'suggested_price_usd',
       header: 'Precio Sugerido',
       render: (s) => (
-        <span className="font-mono text-sm font-bold text-white font-tabular">
-          ${Number(s.suggested_price_usd).toFixed(4)}
-        </span>
+        <div className="text-right">
+          <span className="font-mono text-sm font-bold text-white font-tabular block">
+            ${Number(s.suggested_price_usd).toFixed(4)}
+          </span>
+          <span className="font-mono text-[10px] text-amber-400 font-semibold block">
+            Gs. {Math.round(Number(s.suggested_price_usd) * 6010).toLocaleString('es-PY')}
+          </span>
+        </div>
       ),
       align: 'right',
-      className: 'w-28',
+      className: 'w-32',
     },
     {
       key: 'margin_percent',
@@ -64,14 +69,19 @@ export function PricingClient({ initialUnitCost, initialBenchmark }: Props) {
     },
     {
       key: 'margin_usd',
-      header: 'Margen ($/u)',
+      header: 'Margen ($ / Gs.)',
       render: (s) => (
-        <span className="font-mono text-xs text-slate-300 font-tabular">
-          ${Number(s.margin_usd).toFixed(4)}
-        </span>
+        <div className="text-right">
+          <span className="font-mono text-xs text-slate-300 font-tabular block">
+            ${Number(s.margin_usd).toFixed(4)}
+          </span>
+          <span className="font-mono text-[10px] text-slate-500 block">
+            Gs. {Math.round(Number(s.margin_usd) * 6010).toLocaleString('es-PY')}
+          </span>
+        </div>
       ),
       align: 'right',
-      className: 'w-28',
+      className: 'w-32',
     },
     {
       key: 'price_gap_percent',
@@ -117,10 +127,16 @@ export function PricingClient({ initialUnitCost, initialBenchmark }: Props) {
           <div className="px-3 py-1.5 rounded bg-[#141820] border border-slate-800">
             <span className="text-slate-500 block text-[10px]">Costo Real Actual:</span>
             <span className="font-bold text-white">${unitCost.toFixed(5)} USD</span>
+            <span className="text-[10px] text-amber-400 block font-bold">
+              Gs. {Math.round(unitCost * 6010).toLocaleString('es-PY')} /u
+            </span>
           </div>
           <div className="px-3 py-1.5 rounded bg-[#141820] border border-slate-800">
             <span className="text-slate-500 block text-[10px]">Benchmark BR:</span>
             <span className="font-bold text-emerald-400">${benchmarkPrice.toFixed(4)} USD</span>
+            <span className="text-[10px] text-slate-400 block">
+              Gs. {Math.round(benchmarkPrice * 6010).toLocaleString('es-PY')} /u
+            </span>
           </div>
         </div>
       </div>

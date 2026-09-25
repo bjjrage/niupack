@@ -71,10 +71,59 @@ export class IndustrialCostEngine {
     }
 
     // 2. Costo de Culito (Fondo del Vaso)
-    const cost_bottom_usd =
-      bottom_yield_units_per_ton > 0
-        ? Number((bottom_paper_cost_ton_usd / bottom_yield_units_per_ton).toFixed(5))
-        : 0;
+    // Formulación: CIF ton + Despacho (13%) + Costo del Dinero (6%) -> Costo por Tonelada
+    // Costo por m2 = Tonelada * (GSM + PE) / 1,000,000
+    // Costo por Pliego = Costo por m2 * (Ancho * Largo / 1,000,000)
+    // Costo Unitario = Costo por m2 / units_per_m2 (o Costo por Pliego / units_per_sheet)
+    const bf = input.bottom_formula;
+    let cost_bottom_usd = 0;
+    let bottom_cif_price_ton_usd = 0;
+    let total_bottom_ton_cost_usd = 0;
+    let bottom_customs_dispatch_ton_usd = 0;
+    let bottom_financial_cost_ton_usd = 0;
+    let cost_bottom_m2_usd = 0;
+    let cost_bottom_sheet_usd = 0;
+    let bottom_units_per_m2 = 0;
+    let bottom_units_per_sheet = 0;
+
+    if (bf) {
+      bottom_cif_price_ton_usd = Number(bf.cif_price_ton_usd || 0);
+      const bCustomsPercent = bf.customs_dispatch_percent !== undefined ? bf.customs_dispatch_percent : 13;
+      const bFinancialPercent = bf.financial_cost_percent !== undefined ? bf.financial_cost_percent : 6;
+
+      bottom_customs_dispatch_ton_usd = Number((bottom_cif_price_ton_usd * (bCustomsPercent / 100)).toFixed(2));
+      bottom_financial_cost_ton_usd = Number((bottom_cif_price_ton_usd * (bFinancialPercent / 100)).toFixed(2));
+      total_bottom_ton_cost_usd = Number(
+        (bottom_cif_price_ton_usd + bottom_customs_dispatch_ton_usd + bottom_financial_cost_ton_usd).toFixed(2)
+      );
+
+      const totalBottomGSM = Number(bf.gsm || 0) + Number(bf.coating_gsm || 0);
+      if (totalBottomGSM > 0) {
+        cost_bottom_m2_usd = Number((total_bottom_ton_cost_usd * (totalBottomGSM / 1_000_000)).toFixed(6));
+
+        // Pliego dimensions (default 1000x1000 mm = 1 m2)
+        const sheetWidth = bf.sheet_width_mm || 1000;
+        const sheetHeight = bf.sheet_height_mm || 1000;
+        const sheetAreaM2 = (sheetWidth * sheetHeight) / 1_000_000;
+        cost_bottom_sheet_usd = Number((cost_bottom_m2_usd * sheetAreaM2).toFixed(6));
+
+        bottom_units_per_m2 = Number(bf.units_per_m2 || 0);
+        bottom_units_per_sheet = bf.units_per_sheet || Math.round(bottom_units_per_m2 * sheetAreaM2);
+
+        if (bottom_units_per_m2 > 0) {
+          cost_bottom_usd = Number((cost_bottom_m2_usd / bottom_units_per_m2).toFixed(5));
+        } else if (bottom_units_per_sheet > 0) {
+          cost_bottom_usd = Number((cost_bottom_sheet_usd / bottom_units_per_sheet).toFixed(5));
+        }
+      }
+    }
+
+    // Direct / legacy fallback if bottom_formula was omitted
+    if (cost_bottom_usd <= 0) {
+      if (bottom_yield_units_per_ton > 0) {
+        cost_bottom_usd = Number((bottom_paper_cost_ton_usd / bottom_yield_units_per_ton).toFixed(5));
+      }
+    }
 
     // 3. Impresión y Troquelado (Cotización variable cargada al cotizar)
     let cost_printing_diecut_usd = 0;
@@ -146,6 +195,15 @@ export class IndustrialCostEngine {
       price_per_linear_meter_usd: price_per_linear_meter_usd
         ? Number(price_per_linear_meter_usd.toFixed(4))
         : undefined,
+      // Bottom detail calculations
+      bottom_cif_price_ton_usd,
+      total_bottom_ton_cost_usd,
+      bottom_customs_dispatch_ton_usd,
+      bottom_financial_cost_ton_usd,
+      cost_bottom_m2_usd,
+      cost_bottom_sheet_usd,
+      bottom_units_per_m2,
+      bottom_units_per_sheet,
       share_paper_cone_percent: calcShare(cost_paper_cone_usd),
       share_bottom_percent: calcShare(cost_bottom_usd),
       share_printing_percent: calcShare(cost_printing_diecut_usd),

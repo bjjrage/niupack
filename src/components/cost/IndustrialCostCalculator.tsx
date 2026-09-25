@@ -62,9 +62,20 @@ export function IndustrialCostCalculator({
   // Yield direct
   const [paperYieldUnitsPerTon, setPaperYieldUnitsPerTon] = useState<number>(56500);
 
-  // Culito (Fondo)
+  // Culito (Fondo) - Industrial Formula State
+  const [bottomCifPriceTon, setBottomCifPriceTon] = useState<number>(1350);
+  const [bottomCustomsDispatchPercent, setBottomCustomsDispatchPercent] = useState<number>(13);
+  const [bottomFinancialCostPercent, setBottomFinancialCostPercent] = useState<number>(6);
+  const [bottomGsm, setBottomGsm] = useState<number>(210);
+  const [bottomCoatingGsm, setBottomCoatingGsm] = useState<number>(18);
+  const [bottomSheetWidthMM, setBottomSheetWidthMM] = useState<number>(1000);
+  const [bottomSheetHeightMM, setBottomSheetHeightMM] = useState<number>(1000);
+  const [bottomUnitsPerM2, setBottomUnitsPerM2] = useState<number>(200);
   const [bottomPaperCostTon, setBottomPaperCostTon] = useState<number>(1350);
   const [bottomYieldUnitsPerTon, setBottomYieldUnitsPerTon] = useState<number>(350000);
+
+  // Currency Toggle Mode: USD ($) | PYG (Gs.) | DUAL
+  const [currencyMode, setCurrencyMode] = useState<'USD' | 'PYG' | 'DUAL'>('USD');
 
   // Impresión y troquelado variable
   const [printingCostMode, setPrintingCostMode] = useState<'PER_THOUSAND' | 'PER_UNIT' | 'TOTAL_BATCH'>('PER_THOUSAND');
@@ -129,6 +140,22 @@ export function IndustrialCostCalculator({
           setWebWidthMM(inp.paper_formula.web_width_mm || 850);
           setUnitsPerLinearMeter(inp.paper_formula.units_per_linear_meter || 16);
           setPaperYieldUnitsPerTon(inp.paper_formula.paper_yield_units_per_ton || 56500);
+
+          // Bottom paper formula loading
+          if (inp.bottom_formula) {
+            setBottomCifPriceTon(inp.bottom_formula.cif_price_ton_usd || 1350);
+            setBottomCustomsDispatchPercent(inp.bottom_formula.customs_dispatch_percent !== undefined ? inp.bottom_formula.customs_dispatch_percent : 13);
+            setBottomFinancialCostPercent(inp.bottom_formula.financial_cost_percent !== undefined ? inp.bottom_formula.financial_cost_percent : 6);
+            setBottomGsm(inp.bottom_formula.gsm || 210);
+            setBottomCoatingGsm(inp.bottom_formula.coating_gsm || 18);
+            setBottomSheetWidthMM(inp.bottom_formula.sheet_width_mm || 1000);
+            setBottomSheetHeightMM(inp.bottom_formula.sheet_height_mm || 1000);
+            setBottomUnitsPerM2(inp.bottom_formula.units_per_m2 || (targetSku === 'CUP-4OZ-SW' ? 380 : targetSku === 'CUP-8OZ-SW' ? 280 : targetSku === 'CUP-16OZ-SW' ? 165 : 200));
+          } else {
+            const defaultUnitsM2 = targetSku === 'CUP-4OZ-SW' ? 380 : targetSku === 'CUP-8OZ-SW' ? 280 : targetSku === 'CUP-16OZ-SW' ? 165 : 200;
+            setBottomUnitsPerM2(defaultUnitsM2);
+          }
+
           setBottomPaperCostTon(inp.bottom_paper_cost_ton_usd || 1350);
           setBottomYieldUnitsPerTon(inp.bottom_yield_units_per_ton || 350000);
           setPrintingCostMode(inp.printing_cost_mode || 'PER_THOUSAND');
@@ -147,11 +174,68 @@ export function IndustrialCostCalculator({
     }
   };
 
-  // Automatic calculations from CIF
+  // Automatic calculations from CIF (Papel Cono)
   const numCif = Number(cifPriceTon) || 0;
   const customsDispatchTon = Number((numCif * (customsDispatchPercent / 100)).toFixed(2));
   const financialCostTon = Number((numCif * (financialCostPercent / 100)).toFixed(2));
   const totalPaperTonEstimated = Number((numCif + customsDispatchTon + financialCostTon).toFixed(2));
+
+  // Automatic calculations for Culito (Fondo)
+  const numBottomCif = Number(bottomCifPriceTon) || 0;
+  const bottomCustomsDispatchTon = Number((numBottomCif * (bottomCustomsDispatchPercent / 100)).toFixed(2));
+  const bottomFinancialCostTon = Number((numBottomCif * (bottomFinancialCostPercent / 100)).toFixed(2));
+  const totalBottomPaperTon = Number((numBottomCif + bottomCustomsDispatchTon + bottomFinancialCostTon).toFixed(2));
+  const totalBottomGsm = Number(bottomGsm) + Number(bottomCoatingGsm);
+  const bottomSheetAreaM2 = ((Number(bottomSheetWidthMM) || 1000) * (Number(bottomSheetHeightMM) || 1000)) / 1_000_000;
+  const bottomCostPerM2 = totalBottomGsm > 0 ? (totalBottomPaperTon * (totalBottomGsm / 1_000_000)) : 0;
+  const bottomCostPerSheet = bottomCostPerM2 * bottomSheetAreaM2;
+  const bottomUnitsPerSheet = Math.round((Number(bottomUnitsPerM2) || 200) * bottomSheetAreaM2);
+  const bottomCalculatedYieldTon = totalBottomGsm > 0 && Number(bottomUnitsPerM2) > 0 ? Math.round(Number(bottomUnitsPerM2) / (totalBottomGsm / 1_000_000)) : Number(bottomYieldUnitsPerTon) || 350000;
+
+  // Formatters with Currency Toggle support (USD / PYG / DUAL)
+  const fmtUnit = (usd: number) => {
+    const pyg = Math.round(usd * fxRate);
+    if (currencyMode === 'PYG') {
+      return `Gs. ${pyg.toLocaleString('es-PY')} /u`;
+    }
+    if (currencyMode === 'DUAL') {
+      return `$${usd.toFixed(5)} / Gs. ${pyg.toLocaleString('es-PY')}`;
+    }
+    return `$${usd.toFixed(5)} USD/u`;
+  };
+
+  const fmtThousand = (usdPerThousand: number) => {
+    const pyg = Math.round(usdPerThousand * fxRate);
+    if (currencyMode === 'PYG') {
+      return `Gs. ${pyg.toLocaleString('es-PY')} / millar`;
+    }
+    if (currencyMode === 'DUAL') {
+      return `$${usdPerThousand.toFixed(2)} / Gs. ${pyg.toLocaleString('es-PY')}`;
+    }
+    return `$${usdPerThousand.toFixed(2)} USD / millar`;
+  };
+
+  const fmtTon = (usdPerTon: number) => {
+    const pyg = Math.round(usdPerTon * fxRate);
+    if (currencyMode === 'PYG') {
+      return `Gs. ${pyg.toLocaleString('es-PY')} /ton`;
+    }
+    if (currencyMode === 'DUAL') {
+      return `$${usdPerTon.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / Gs. ${pyg.toLocaleString('es-PY')}`;
+    }
+    return `$${usdPerTon.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD/ton`;
+  };
+
+  const fmtTotal = (usdTotal: number) => {
+    const pyg = Math.round(usdTotal * fxRate);
+    if (currencyMode === 'PYG') {
+      return `Gs. ${pyg.toLocaleString('es-PY')}`;
+    }
+    if (currencyMode === 'DUAL') {
+      return `$${Math.round(usdTotal).toLocaleString('en-US')} USD / Gs. ${pyg.toLocaleString('es-PY')}`;
+    }
+    return `$${Math.round(usdTotal).toLocaleString('en-US')} USD`;
+  };
 
   // Build current input object for real-time calculation
   const currentInput: IndustrialProductCostInput = {
@@ -172,8 +256,25 @@ export function IndustrialCostCalculator({
       units_per_linear_meter: Number(unitsPerLinearMeter) || 0,
       paper_yield_units_per_ton: Number(paperYieldUnitsPerTon) || 0,
     },
-    bottom_paper_cost_ton_usd: Number(bottomPaperCostTon) || 0,
-    bottom_yield_units_per_ton: Number(bottomYieldUnitsPerTon) || 0,
+    bottom_formula: {
+      cif_price_ton_usd: numBottomCif,
+      customs_dispatch_percent: bottomCustomsDispatchPercent,
+      customs_dispatch_ton_usd: bottomCustomsDispatchTon,
+      financial_cost_percent: bottomFinancialCostPercent,
+      financial_cost_ton_usd: bottomFinancialCostTon,
+      total_ton_cost_usd: totalBottomPaperTon,
+      gsm: Number(bottomGsm) || 210,
+      coating_gsm: Number(bottomCoatingGsm) || 18,
+      sheet_width_mm: Number(bottomSheetWidthMM) || 1000,
+      sheet_height_mm: Number(bottomSheetHeightMM) || 1000,
+      units_per_m2: Number(bottomUnitsPerM2) || 200,
+      units_per_sheet: bottomUnitsPerSheet,
+      price_per_m2_usd: Number(bottomCostPerM2.toFixed(6)),
+      price_per_sheet_usd: Number(bottomCostPerSheet.toFixed(6)),
+      yield_units_per_ton: bottomCalculatedYieldTon,
+    },
+    bottom_paper_cost_ton_usd: totalBottomPaperTon || Number(bottomPaperCostTon) || 1350,
+    bottom_yield_units_per_ton: bottomCalculatedYieldTon || Number(bottomYieldUnitsPerTon) || 350000,
     printing_cost_mode: printingCostMode,
     quoted_printing_rate_usd: Number(quotedPrintingRate) || 0,
     operational_cost_per_thousand_usd: Number(operationalCostPerThousand) || 0,
@@ -263,6 +364,46 @@ export function IndustrialCostCalculator({
               <RefreshCw className={`h-3 w-3 ${fxRefreshing ? 'animate-spin text-brand-400' : ''}`} />
             </button>
           </div>
+
+          <div className="h-4 w-[1px] bg-slate-700 hidden sm:block" />
+
+          {/* Currency Toggle Switch */}
+          <div className="flex items-center gap-1 bg-[#0c0f14] p-1 rounded-lg border border-slate-700/80">
+            <span className="text-slate-400 text-[11px] px-1 hidden sm:inline font-medium">Moneda:</span>
+            <button
+              type="button"
+              onClick={() => setCurrencyMode('USD')}
+              className={`px-2 py-0.5 text-xs font-semibold rounded transition-colors ${
+                currencyMode === 'USD'
+                  ? 'bg-brand-500 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              USD ($)
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrencyMode('PYG')}
+              className={`px-2 py-0.5 text-xs font-bold rounded transition-colors ${
+                currencyMode === 'PYG'
+                  ? 'bg-amber-500 text-black font-extrabold shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Gs. (₲)
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrencyMode('DUAL')}
+              className={`px-2 py-0.5 text-xs font-medium rounded transition-colors ${
+                currencyMode === 'DUAL'
+                  ? 'bg-slate-700 text-white font-semibold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Dual
+            </button>
+          </div>
         </div>
 
         {/* View Mode Tabs */}
@@ -312,28 +453,69 @@ export function IndustrialCostCalculator({
             COSTO UNITARIO REAL
           </span>
           <div className="mt-1">
-            <div className="text-2xl font-black text-white font-mono font-tabular">
-              ${breakdown.true_unit_cost_usd.toFixed(5)}{' '}
-              <span className="text-xs font-sans text-slate-400 font-normal">USD/u</span>
-            </div>
-            <div className="text-sm font-bold text-amber-400 font-mono mt-0.5">
-              Gs. {Math.round(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY')}{' '}
-              <span className="text-[10px] text-amber-500/80 font-normal">/u</span>
-            </div>
+            {currencyMode === 'PYG' ? (
+              <>
+                <div className="text-2xl font-black text-amber-400 font-mono font-tabular">
+                  Gs. {Math.round(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY')}{' '}
+                  <span className="text-xs font-sans text-amber-500/80 font-normal">/u</span>
+                </div>
+                <div className="text-xs font-semibold text-slate-400 font-mono mt-0.5">
+                  ${breakdown.true_unit_cost_usd.toFixed(5)} USD/u
+                </div>
+              </>
+            ) : currencyMode === 'DUAL' ? (
+              <>
+                <div className="text-xl font-black text-white font-mono font-tabular">
+                  ${breakdown.true_unit_cost_usd.toFixed(5)}
+                </div>
+                <div className="text-sm font-bold text-amber-400 font-mono mt-0.5">
+                  Gs. {Math.round(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY')} /u
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-black text-white font-mono font-tabular">
+                  ${breakdown.true_unit_cost_usd.toFixed(5)}{' '}
+                  <span className="text-xs font-sans text-slate-400 font-normal">USD/u</span>
+                </div>
+                <div className="text-sm font-bold text-amber-400 font-mono mt-0.5">
+                  Gs. {Math.round(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY')}{' '}
+                  <span className="text-[10px] text-amber-500/80 font-normal">/u</span>
+                </div>
+              </>
+            )}
           </div>
           <span className="text-[10px] text-slate-400 font-mono mt-2 block border-t border-slate-800/80 pt-1.5">
-            Referencia: ${(breakdown.true_unit_cost_usd * 1000).toFixed(2)} USD / 1.000 u
+            {currencyMode === 'PYG'
+              ? `Ref: Gs. ${Math.round(breakdown.true_unit_cost_usd * 1000 * fxRate).toLocaleString('es-PY')} / 1.000 u`
+              : `Referencia: $${(breakdown.true_unit_cost_usd * 1000).toFixed(2)} USD / 1.000 u`}
           </span>
         </div>
 
         <div className="bg-[#141820] border border-slate-800 rounded-lg p-4">
           <span className="text-[11px] text-slate-400 font-medium block">Costo Papel Cono + Fondo</span>
-          <div className="text-xl font-bold text-sky-400 font-mono font-tabular mt-1">
-            ${(breakdown.cost_paper_cone_usd + breakdown.cost_bottom_usd).toFixed(5)}{' '}
-            <span className="text-xs text-slate-400 font-normal">USD/u</span>
-          </div>
-          <div className="text-xs font-mono text-sky-500 mt-0.5">
-            Gs. {Math.round((breakdown.cost_paper_cone_usd + breakdown.cost_bottom_usd) * fxRate).toLocaleString('es-PY')} /u
+          <div className="mt-1">
+            {currencyMode === 'PYG' ? (
+              <>
+                <div className="text-xl font-bold text-amber-400 font-mono font-tabular">
+                  Gs. {Math.round((breakdown.cost_paper_cone_usd + breakdown.cost_bottom_usd) * fxRate).toLocaleString('es-PY')}{' '}
+                  <span className="text-xs text-amber-500/80 font-normal">/u</span>
+                </div>
+                <div className="text-xs font-mono text-sky-400 mt-0.5">
+                  ${(breakdown.cost_paper_cone_usd + breakdown.cost_bottom_usd).toFixed(5)} USD/u
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-xl font-bold text-sky-400 font-mono font-tabular">
+                  ${(breakdown.cost_paper_cone_usd + breakdown.cost_bottom_usd).toFixed(5)}{' '}
+                  <span className="text-xs text-slate-400 font-normal">USD/u</span>
+                </div>
+                <div className="text-xs font-mono text-amber-400 mt-0.5">
+                  Gs. {Math.round((breakdown.cost_paper_cone_usd + breakdown.cost_bottom_usd) * fxRate).toLocaleString('es-PY')} /u
+                </div>
+              </>
+            )}
           </div>
           <span className="text-[10px] text-slate-500 font-mono mt-1.5 block border-t border-slate-800/80 pt-1">
             {(breakdown.share_paper_cone_percent + breakdown.share_bottom_percent).toFixed(1)}% de la estructura
@@ -342,12 +524,28 @@ export function IndustrialCostCalculator({
 
         <div className="bg-[#141820] border border-slate-800 rounded-lg p-4">
           <span className="text-[11px] text-slate-400 font-medium block">Impresión & Operativos</span>
-          <div className="text-xl font-bold text-amber-400 font-mono font-tabular mt-1">
-            ${(breakdown.cost_printing_diecut_usd + breakdown.cost_operational_usd).toFixed(5)}{' '}
-            <span className="text-xs text-slate-400 font-normal">USD/u</span>
-          </div>
-          <div className="text-xs font-mono text-amber-500 mt-0.5">
-            Gs. {Math.round((breakdown.cost_printing_diecut_usd + breakdown.cost_operational_usd) * fxRate).toLocaleString('es-PY')} /u
+          <div className="mt-1">
+            {currencyMode === 'PYG' ? (
+              <>
+                <div className="text-xl font-bold text-amber-400 font-mono font-tabular">
+                  Gs. {Math.round((breakdown.cost_printing_diecut_usd + breakdown.cost_operational_usd) * fxRate).toLocaleString('es-PY')}{' '}
+                  <span className="text-xs text-amber-500/80 font-normal">/u</span>
+                </div>
+                <div className="text-xs font-mono text-slate-300 mt-0.5">
+                  ${(breakdown.cost_printing_diecut_usd + breakdown.cost_operational_usd).toFixed(5)} USD/u
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-xl font-bold text-amber-400 font-mono font-tabular">
+                  ${(breakdown.cost_printing_diecut_usd + breakdown.cost_operational_usd).toFixed(5)}{' '}
+                  <span className="text-xs text-slate-400 font-normal">USD/u</span>
+                </div>
+                <div className="text-xs font-mono text-amber-500 mt-0.5">
+                  Gs. {Math.round((breakdown.cost_printing_diecut_usd + breakdown.cost_operational_usd) * fxRate).toLocaleString('es-PY')} /u
+                </div>
+              </>
+            )}
           </div>
           <span className="text-[10px] text-slate-500 font-mono mt-1.5 block border-t border-slate-800/80 pt-1">
             {(breakdown.share_printing_percent + breakdown.share_operational_percent).toFixed(1)}% del costo
@@ -356,14 +554,31 @@ export function IndustrialCostCalculator({
 
         <div className="bg-[#141820] border border-slate-800 rounded-lg p-4">
           <span className="text-[11px] text-slate-400 font-medium block">Costo Total Lote ({batchSize.toLocaleString()} u)</span>
-          <div className="text-xl font-bold text-white font-mono font-tabular mt-1">
-            ${breakdown.batch_total_cost_usd.toLocaleString()} USD
-          </div>
-          <div className="text-xs font-mono text-emerald-400 mt-0.5">
-            Gs. {Math.round(breakdown.batch_total_cost_usd * fxRate).toLocaleString('es-PY')}
+          <div className="mt-1">
+            {currencyMode === 'PYG' ? (
+              <>
+                <div className="text-xl font-bold text-amber-400 font-mono font-tabular">
+                  Gs. {Math.round(breakdown.batch_total_cost_usd * fxRate).toLocaleString('es-PY')}
+                </div>
+                <div className="text-xs font-mono text-slate-300 mt-0.5">
+                  ${breakdown.batch_total_cost_usd.toLocaleString()} USD
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-xl font-bold text-white font-mono font-tabular">
+                  ${breakdown.batch_total_cost_usd.toLocaleString()} USD
+                </div>
+                <div className="text-xs font-mono text-emerald-400 mt-0.5">
+                  Gs. {Math.round(breakdown.batch_total_cost_usd * fxRate).toLocaleString('es-PY')}
+                </div>
+              </>
+            )}
           </div>
           <span className="text-[10px] text-slate-500 font-mono mt-1.5 block border-t border-slate-800/80 pt-1">
-            Merma ({scrapRatePercent}%): ${((breakdown.cost_scrap_usd * batchSize)).toFixed(1)} USD
+            {currencyMode === 'PYG'
+              ? `Merma (${scrapRatePercent}%): Gs. ${Math.round(breakdown.cost_scrap_usd * batchSize * fxRate).toLocaleString('es-PY')}`
+              : `Merma (${scrapRatePercent}%): $${((breakdown.cost_scrap_usd * batchSize)).toFixed(1)} USD`}
           </span>
         </div>
       </div>
@@ -393,7 +608,7 @@ export function IndustrialCostCalculator({
                 <div className="text-right">
                   <span className="text-[10px] text-slate-500 block">Total Tonelada Papel:</span>
                   <span className="font-mono text-sm font-bold text-emerald-400">
-                    ${breakdown.total_paper_ton_cost_usd} USD/ton
+                    {fmtTon(breakdown.total_paper_ton_cost_usd)}
                   </span>
                 </div>
               </div>
@@ -422,7 +637,7 @@ export function IndustrialCostCalculator({
                     <span className="absolute right-2.5 top-2 text-[10px] text-slate-400">USD/t</span>
                   </div>
                   <span className="text-[10px] text-slate-400 block mt-1.5">
-                    Costo factura marítima CIF
+                    {currencyMode === 'PYG' ? `Gs. ${Math.round(numCif * fxRate).toLocaleString('es-PY')} /t` : 'Costo factura marítima CIF'}
                   </span>
                 </div>
 
@@ -444,7 +659,7 @@ export function IndustrialCostCalculator({
                     <span className="text-[10px] text-slate-400">USD/t</span>
                   </div>
                   <span className="text-[10px] text-slate-400 block mt-1.5">
-                    Aduana, puerto y nacionalización
+                    {currencyMode === 'PYG' ? `Gs. ${Math.round(customsDispatchTon * fxRate).toLocaleString('es-PY')} /t` : 'Aduana, puerto y nacionalización'}
                   </span>
                 </div>
 
@@ -466,7 +681,7 @@ export function IndustrialCostCalculator({
                     <span className="text-[10px] text-slate-400">USD/t</span>
                   </div>
                   <span className="text-[10px] text-slate-400 block mt-1.5">
-                    Inmovilización y financiamiento
+                    {currencyMode === 'PYG' ? `Gs. ${Math.round(financialCostTon * fxRate).toLocaleString('es-PY')} /t` : 'Inmovilización y financiamiento'}
                   </span>
                 </div>
               </div>
@@ -480,7 +695,7 @@ export function IndustrialCostCalculator({
                   </span>
                 </div>
                 <span className="font-mono text-xs font-bold text-emerald-400">
-                  = ${breakdown.total_paper_ton_cost_usd} USD/ton
+                  = {fmtTon(breakdown.total_paper_ton_cost_usd)}
                 </span>
               </div>
 
@@ -566,10 +781,15 @@ export function IndustrialCostCalculator({
                       </div>
                       <div className="flex flex-col justify-end p-2 bg-[#141820] rounded border border-slate-800 text-[11px]">
                         <span className="text-slate-400">
-                          Precio por Pliego: <strong className="text-white">${breakdown.price_per_sheet_usd?.toFixed(4) || '0.00'} USD</strong>
+                          Precio por Pliego:{' '}
+                          <strong className="text-white">
+                            {currencyMode === 'PYG'
+                              ? `Gs. ${Math.round((breakdown.price_per_sheet_usd || 0) * fxRate).toLocaleString('es-PY')}`
+                              : `$${breakdown.price_per_sheet_usd?.toFixed(4) || '0.00'} USD`}
+                          </strong>
                         </span>
                         <span className="text-slate-400 mt-0.5">
-                          Costo Papel Cono: <strong className="text-emerald-400">${breakdown.cost_paper_cone_usd.toFixed(5)} USD/u</strong>
+                          Costo Papel Cono: <strong className="text-emerald-400">{fmtUnit(breakdown.cost_paper_cone_usd)}</strong>
                         </span>
                       </div>
                     </div>
@@ -621,10 +841,15 @@ export function IndustrialCostCalculator({
                       </div>
                       <div className="flex flex-col justify-end p-2 bg-[#141820] rounded border border-slate-800 text-[11px]">
                         <span className="text-slate-400">
-                          Precio por Metro: <strong className="text-white">${breakdown.price_per_linear_meter_usd?.toFixed(4) || '0.00'} USD</strong>
+                          Precio por Metro:{' '}
+                          <strong className="text-white">
+                            {currencyMode === 'PYG'
+                              ? `Gs. ${Math.round((breakdown.price_per_linear_meter_usd || 0) * fxRate).toLocaleString('es-PY')}`
+                              : `$${breakdown.price_per_linear_meter_usd?.toFixed(4) || '0.00'} USD`}
+                          </strong>
                         </span>
                         <span className="text-slate-400 mt-0.5">
-                          Costo Papel Cono: <strong className="text-emerald-400">${breakdown.cost_paper_cone_usd.toFixed(5)} USD/u</strong>
+                          Costo Papel Cono: <strong className="text-emerald-400">{fmtUnit(breakdown.cost_paper_cone_usd)}</strong>
                         </span>
                       </div>
                     </div>
@@ -647,49 +872,268 @@ export function IndustrialCostCalculator({
               </div>
             </div>
 
-            {/* 2. COSTO DE FONDO ("CULITO") */}
-            <div className="bg-[#141820] border border-slate-800 rounded-lg p-4 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            {/* 2. COSTO DE FONDO ("CULITO") - FORMULACIÓN INDUSTRIAL */}
+            <div className="bg-[#141820] border border-slate-800 rounded-lg p-4 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                 <div className="flex items-center gap-2">
                   <div className="p-1.5 rounded bg-sky-500/10 text-sky-400">
                     <Scissors className="h-4 w-4" />
                   </div>
                   <div>
                     <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                      2. Costo de Fondo (&quot;Culito&quot;)
+                      2. Costo de Fondo (&quot;Culito&quot;) — Formulación Industrial
                     </h3>
                     <p className="text-[11px] text-slate-400">
-                      Bobina angosta de fondo &gt; Gramaje y Rendimiento unitario de discos
+                      CIF Tonelada + Despacho (13%) + Costo del Dinero (6%) → Costo por m² y Pliego → Dividido por Rendimiento culitos/m² ({sku})
                     </p>
                   </div>
                 </div>
-                <span className="font-mono text-xs font-bold text-sky-400">
-                  ${breakdown.cost_bottom_usd.toFixed(5)} USD/u
-                </span>
+                <div className="text-right">
+                  <span className="text-[10px] text-slate-500 block">Costo Unitario Fondo:</span>
+                  <span className="font-mono text-sm font-bold text-sky-400">
+                    {fmtUnit(breakdown.cost_bottom_usd)}
+                  </span>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                    Costo Bobina Fondo CIF + Despacho (USD/ton)
-                  </label>
-                  <input
-                    type="number"
-                    value={bottomPaperCostTon}
-                    onChange={(e) => setBottomPaperCostTon(parseFloat(e.target.value) || 0)}
-                    className="w-full bg-[#0c0f14] border border-slate-700 rounded px-3 py-1.5 text-xs text-white font-mono"
-                  />
+              {/* Tonelada Fondo: CIF (Manual) + Despacho 13% (Auto) + Costo del Dinero 6% (Auto) */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                {/* 1. CIF Bobina Fondo */}
+                <div className="bg-[#0c0f14] p-3 rounded-lg border border-slate-700/80">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[11px] font-semibold text-slate-200">
+                      CIF Bobina Fondo
+                    </label>
+                    <span className="text-[9px] bg-sky-950 text-sky-400 px-1.5 py-0.5 rounded border border-sky-800 font-semibold uppercase">
+                      Manual
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-xs text-slate-500 font-mono">$</span>
+                    <input
+                      type="number"
+                      step="any"
+                      value={bottomCifPriceTon}
+                      onChange={(e) => setBottomCifPriceTon(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-[#141820] border border-slate-600 rounded pl-7 pr-12 py-1.5 text-xs text-white font-mono font-bold focus:border-brand-500 focus:outline-none"
+                    />
+                    <span className="absolute right-2.5 top-2 text-[10px] text-slate-400">USD/t</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 block mt-1.5">
+                    {currencyMode === 'PYG' ? `Gs. ${Math.round(numBottomCif * fxRate).toLocaleString('es-PY')} /t` : 'Costo CIF de bobina fondo'}
+                  </span>
                 </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                    Rendimiento de Fondos por Tonelada (fondos/ton)
-                  </label>
-                  <input
-                    type="number"
-                    value={bottomYieldUnitsPerTon}
-                    onChange={(e) => setBottomYieldUnitsPerTon(parseFloat(e.target.value) || 0)}
-                    className="w-full bg-[#0c0f14] border border-slate-700 rounded px-3 py-1.5 text-xs text-white font-mono"
-                  />
+
+                {/* 2. Despacho (13% CIF Auto) */}
+                <div className="bg-[#0c0f14] p-3 rounded-lg border border-slate-800">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[11px] font-semibold text-slate-200">
+                      Despacho Fondo
+                    </label>
+                    <span className="text-[9px] bg-emerald-950 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-800 font-mono font-semibold">
+                      13% CIF (Auto)
+                    </span>
+                  </div>
+                  <div className="px-3 py-1.5 bg-[#141820] rounded border border-slate-800 flex items-center justify-between">
+                    <span className="text-xs text-slate-500 font-mono">$</span>
+                    <span className="text-xs font-bold font-mono text-emerald-400">
+                      {bottomCustomsDispatchTon.toFixed(2)}
+                    </span>
+                    <span className="text-[10px] text-slate-400">USD/t</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 block mt-1.5">
+                    {currencyMode === 'PYG' ? `Gs. ${Math.round(bottomCustomsDispatchTon * fxRate).toLocaleString('es-PY')} /t` : 'Aduana y nacionalización'}
+                  </span>
+                </div>
+
+                {/* 3. Costo del Dinero (6% CIF Auto) */}
+                <div className="bg-[#0c0f14] p-3 rounded-lg border border-slate-800">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[11px] font-semibold text-slate-200">
+                      Costo Dinero Fondo
+                    </label>
+                    <span className="text-[9px] bg-amber-950 text-amber-400 px-1.5 py-0.5 rounded border border-amber-800 font-mono font-semibold">
+                      6% CIF (Auto)
+                    </span>
+                  </div>
+                  <div className="px-3 py-1.5 bg-[#141820] rounded border border-slate-800 flex items-center justify-between">
+                    <span className="text-xs text-slate-500 font-mono">$</span>
+                    <span className="text-xs font-bold font-mono text-amber-400">
+                      {bottomFinancialCostTon.toFixed(2)}
+                    </span>
+                    <span className="text-[10px] text-slate-400">USD/t</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 block mt-1.5">
+                    {currencyMode === 'PYG' ? `Gs. ${Math.round(bottomFinancialCostTon * fxRate).toLocaleString('es-PY')} /t` : 'Financiamiento importación'}
+                  </span>
+                </div>
+
+                {/* 4. Total Tonelada Papel Fondo (CIF * 1.19) */}
+                <div className="bg-[#0c0f14] p-3 rounded-lg border border-sky-900/40">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[11px] font-semibold text-slate-200">
+                      Total Tonelada Fondo
+                    </label>
+                    <span className="text-[9px] bg-sky-950 text-sky-300 px-1.5 py-0.5 rounded border border-sky-800 font-mono font-semibold">
+                      CIF × 1.19
+                    </span>
+                  </div>
+                  <div className="px-3 py-1.5 bg-[#141820] rounded border border-slate-800 flex items-center justify-between">
+                    <span className="text-xs text-slate-500 font-mono">$</span>
+                    <span className="text-xs font-bold font-mono text-sky-400">
+                      {totalBottomPaperTon.toFixed(2)}
+                    </span>
+                    <span className="text-[10px] text-slate-400">USD/t</span>
+                  </div>
+                  <span className="text-[10px] text-amber-400 font-mono block mt-1.5">
+                    Gs. {Math.round(totalBottomPaperTon * fxRate).toLocaleString('es-PY')} /t
+                  </span>
+                </div>
+              </div>
+
+              {/* Gramaje y Rendimiento x m² */}
+              <div className="bg-[#0c0f14] p-3.5 rounded-lg border border-slate-800 space-y-3">
+                <div className="text-[11px] font-semibold text-slate-200 uppercase tracking-wide flex items-center justify-between">
+                  <span>Gramaje, Formato Pliego y Rendimiento por m² ({sku})</span>
+                  <span className="text-[10px] text-slate-400 font-mono lowercase">
+                    gsm total: <strong className="text-white font-mono">{totalBottomGsm} g/m²</strong>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">GSM Papel Base Fondo</label>
+                    <input
+                      type="number"
+                      value={bottomGsm}
+                      onChange={(e) => setBottomGsm(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-[#141820] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono"
+                    />
+                    <span className="text-[9px] text-slate-500 block mt-0.5">ej. 210 g/m²</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Capa PE Fondo (GSM)</label>
+                    <input
+                      type="number"
+                      value={bottomCoatingGsm}
+                      onChange={(e) => setBottomCoatingGsm(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-[#141820] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono"
+                    />
+                    <span className="text-[9px] text-slate-500 block mt-0.5">ej. 18 g/m²</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Dimensiones Pliego (mm)</label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        value={bottomSheetWidthMM}
+                        onChange={(e) => setBottomSheetWidthMM(parseFloat(e.target.value) || 1000)}
+                        className="w-1/2 bg-[#141820] border border-slate-700 rounded px-1.5 py-1.5 text-xs text-white font-mono text-center"
+                        title="Ancho mm"
+                      />
+                      <span className="text-slate-500 text-xs">×</span>
+                      <input
+                        type="number"
+                        value={bottomSheetHeightMM}
+                        onChange={(e) => setBottomSheetHeightMM(parseFloat(e.target.value) || 1000)}
+                        className="w-1/2 bg-[#141820] border border-slate-700 rounded px-1.5 py-1.5 text-xs text-white font-mono text-center"
+                        title="Largo mm"
+                      />
+                    </div>
+                    <span className="text-[9px] text-slate-500 block mt-0.5 font-mono">
+                      Área: {bottomSheetAreaM2.toFixed(2)} m²
+                    </span>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[10px] font-semibold text-amber-300">
+                        Culitos por m² ({sku})
+                      </label>
+                      <span className="text-[9px] text-emerald-400 font-mono">Clave SKU</span>
+                    </div>
+                    <input
+                      type="number"
+                      value={bottomUnitsPerM2}
+                      onChange={(e) => setBottomUnitsPerM2(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-[#141820] border border-amber-500/80 rounded px-2.5 py-1.5 text-xs text-amber-300 font-mono font-bold"
+                    />
+                    <div className="flex gap-1 mt-1">
+                      {[
+                        { label: '4oz (380)', val: 380 },
+                        { label: '8oz (280)', val: 280 },
+                        { label: '12oz (200)', val: 200 },
+                        { label: '16oz (165)', val: 165 },
+                      ].map((preset) => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => setBottomUnitsPerM2(preset.val)}
+                          className={`text-[8px] px-1 py-0.5 rounded border font-mono ${
+                            bottomUnitsPerM2 === preset.val
+                              ? 'bg-amber-500 text-black border-amber-400 font-bold'
+                              : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                          }`}
+                        >
+                          {preset.label.split(' ')[0]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3 Result Metric Cards: Cost per m², Cost per Sheet, Unit Cost of Culito */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-800/80">
+                  {/* Card A: Costo por m² */}
+                  <div className="bg-[#141820] p-2.5 rounded border border-slate-700/60">
+                    <span className="text-[10px] text-slate-400 block font-medium">Costo por m² de Fondo:</span>
+                    <div className="text-sm font-bold text-white font-mono mt-0.5">
+                      ${bottomCostPerM2.toFixed(4)} <span className="text-[10px] text-slate-400 font-normal">USD/m²</span>
+                    </div>
+                    <div className="text-xs font-mono text-amber-400 mt-0.5">
+                      Gs. {Math.round(bottomCostPerM2 * fxRate).toLocaleString('es-PY')} /m²
+                    </div>
+                    <span className="text-[9px] text-slate-500 block mt-1 font-mono">
+                      = Total Ton × ({totalBottomGsm} GSM / 1M)
+                    </span>
+                  </div>
+
+                  {/* Card B: Costo por Pliego */}
+                  <div className="bg-[#141820] p-2.5 rounded border border-slate-700/60">
+                    <span className="text-[10px] text-slate-400 block font-medium">Costo por Pliego Fondo:</span>
+                    <div className="text-sm font-bold text-sky-400 font-mono mt-0.5">
+                      ${bottomCostPerSheet.toFixed(4)} <span className="text-[10px] text-slate-400 font-normal">USD/pliego</span>
+                    </div>
+                    <div className="text-xs font-mono text-amber-400 mt-0.5">
+                      Gs. {Math.round(bottomCostPerSheet * fxRate).toLocaleString('es-PY')} /pliego
+                    </div>
+                    <span className="text-[9px] text-slate-500 block mt-1 font-mono">
+                      Rinde {bottomUnitsPerSheet} culitos / pliego
+                    </span>
+                  </div>
+
+                  {/* Card C: Costo Unitario de Culito */}
+                  <div className="bg-[#141820] p-2.5 rounded border border-sky-500/40">
+                    <span className="text-[10px] text-sky-300 block font-bold">Costo Unitario Culito:</span>
+                    <div className="text-base font-black text-sky-400 font-mono mt-0.5">
+                      ${breakdown.cost_bottom_usd.toFixed(5)} <span className="text-[10px] text-slate-400 font-normal">USD/u</span>
+                    </div>
+                    <div className="text-xs font-bold font-mono text-amber-400 mt-0.5">
+                      Gs. {Math.round(breakdown.cost_bottom_usd * fxRate).toLocaleString('es-PY')} /u
+                    </div>
+                    <span className="text-[9px] text-slate-400 block mt-1 font-mono">
+                      = Costo Pliego ÷ {bottomUnitsPerSheet} culitos ({breakdown.share_bottom_percent}% del vaso)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-slate-500 flex items-center justify-between pt-1 font-mono">
+                  <span>Rendimiento industrial derivado por tonelada:</span>
+                  <span className="text-slate-300 font-semibold">
+                    ~{bottomCalculatedYieldTon.toLocaleString('es-PY')} culitos / tonelada
+                  </span>
                 </div>
               </div>
             </div>
@@ -711,7 +1155,7 @@ export function IndustrialCostCalculator({
                   </div>
                 </div>
                 <span className="font-mono text-xs font-bold text-amber-400">
-                  ${breakdown.cost_printing_diecut_usd.toFixed(5)} USD/u
+                  {fmtUnit(breakdown.cost_printing_diecut_usd)}
                 </span>
               </div>
 
@@ -741,6 +1185,9 @@ export function IndustrialCostCalculator({
                     onChange={(e) => setQuotedPrintingRate(parseFloat(e.target.value) || 0)}
                     className="w-full bg-[#0c0f14] border border-slate-700 rounded px-3 py-1.5 text-xs text-white font-mono font-bold"
                   />
+                  <span className="text-[10px] text-slate-400 block mt-1 font-mono">
+                    {currencyMode === 'PYG' ? `Equivale a Gs. ${Math.round((quotedPrintingRate / 1000) * fxRate).toLocaleString('es-PY')} / vaso` : `Equivale a $${(quotedPrintingRate / 1000).toFixed(5)} USD / vaso`}
+                  </span>
                 </div>
               </div>
             </div>
@@ -771,8 +1218,8 @@ export function IndustrialCostCalculator({
                     onChange={(e) => setOperationalCostPerThousand(parseFloat(e.target.value) || 0)}
                     className="w-full bg-[#0c0f14] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono"
                   />
-                  <span className="text-[10px] text-slate-500 block mt-0.5">
-                    ${breakdown.cost_operational_usd.toFixed(5)}/u
+                  <span className="text-[10px] text-slate-400 block mt-0.5 font-mono">
+                    {fmtUnit(breakdown.cost_operational_usd)}
                   </span>
                 </div>
 
@@ -785,8 +1232,8 @@ export function IndustrialCostCalculator({
                     onChange={(e) => setDepreciationPerThousand(parseFloat(e.target.value) || 0)}
                     className="w-full bg-[#0c0f14] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono"
                   />
-                  <span className="text-[10px] text-slate-500 block mt-0.5">
-                    ${breakdown.cost_depreciation_usd.toFixed(5)}/u
+                  <span className="text-[10px] text-slate-400 block mt-0.5 font-mono">
+                    {fmtUnit(breakdown.cost_depreciation_usd)}
                   </span>
                 </div>
 
@@ -799,8 +1246,8 @@ export function IndustrialCostCalculator({
                     onChange={(e) => setScrapRatePercent(parseFloat(e.target.value) || 0)}
                     className="w-full bg-[#0c0f14] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono"
                   />
-                  <span className="text-[10px] text-slate-500 block mt-0.5">
-                    ${breakdown.cost_scrap_usd.toFixed(5)}/u
+                  <span className="text-[10px] text-slate-400 block mt-0.5 font-mono">
+                    {fmtUnit(breakdown.cost_scrap_usd)}
                   </span>
                 </div>
 
@@ -813,8 +1260,8 @@ export function IndustrialCostCalculator({
                     onChange={(e) => setPackagingPerThousand(parseFloat(e.target.value) || 0)}
                     className="w-full bg-[#0c0f14] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono"
                   />
-                  <span className="text-[10px] text-slate-500 block mt-0.5">
-                    ${breakdown.cost_packaging_usd.toFixed(5)}/u
+                  <span className="text-[10px] text-slate-400 block mt-0.5 font-mono">
+                    {fmtUnit(breakdown.cost_packaging_usd)}
                   </span>
                 </div>
               </div>
@@ -827,7 +1274,7 @@ export function IndustrialCostCalculator({
             <div className="bg-[#141820] border border-slate-800 rounded-lg p-4 space-y-4">
               <h4 className="text-xs font-bold text-white uppercase tracking-wider pb-2 border-b border-slate-800 flex items-center justify-between">
                 <span>Estructura de Costo Unitario</span>
-                <Badge variant="brand">${breakdown.true_unit_cost_usd.toFixed(5)}</Badge>
+                <Badge variant="brand">{fmtUnit(breakdown.true_unit_cost_usd)}</Badge>
               </h4>
 
               <div className="space-y-2 text-xs">
@@ -836,27 +1283,54 @@ export function IndustrialCostCalculator({
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-slate-200 font-semibold block">Papel Cono:</span>
-                      <span className="text-[10px] text-amber-400 font-mono">
-                        Gs. {Math.round(breakdown.cost_paper_cone_usd * fxRate).toLocaleString('es-PY')} /u
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        ({breakdown.share_paper_cone_percent}% del total)
                       </span>
                     </div>
                     <div className="text-right">
-                      <span className="font-mono text-white font-bold">${breakdown.cost_paper_cone_usd.toFixed(5)}</span>
-                      <span className="text-[10px] text-slate-500 block">({breakdown.share_paper_cone_percent}%)</span>
+                      {currencyMode === 'PYG' ? (
+                        <>
+                          <span className="font-mono text-amber-400 font-bold block">
+                            Gs. {Math.round(breakdown.cost_paper_cone_usd * fxRate).toLocaleString('es-PY')} /u
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono block">
+                            ${breakdown.cost_paper_cone_usd.toFixed(5)} USD/u
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-mono text-white font-bold block">${breakdown.cost_paper_cone_usd.toFixed(5)}</span>
+                          <span className="text-[10px] text-amber-400 font-mono block">
+                            Gs. {Math.round(breakdown.cost_paper_cone_usd * fxRate).toLocaleString('es-PY')} /u
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="pt-1 border-t border-slate-800/60 space-y-0.5 text-[10px] font-mono text-slate-400">
                     <div className="flex justify-between">
                       <span className="text-slate-400">• Base CIF:</span>
-                      <span>${Math.max(0, breakdown.cost_paper_cone_usd - (breakdown.cost_dispatch_usd || 0) - (breakdown.cost_financial_usd || 0)).toFixed(5)}</span>
+                      <span>
+                        {currencyMode === 'PYG'
+                          ? `Gs. ${Math.round(Math.max(0, breakdown.cost_paper_cone_usd - (breakdown.cost_dispatch_usd || 0) - (breakdown.cost_financial_usd || 0)) * fxRate).toLocaleString('es-PY')}`
+                          : `$${Math.max(0, breakdown.cost_paper_cone_usd - (breakdown.cost_dispatch_usd || 0) - (breakdown.cost_financial_usd || 0)).toFixed(5)}`}
+                      </span>
                     </div>
                     <div className="flex justify-between text-emerald-400/90">
                       <span>• Despacho (13%):</span>
-                      <span>+${(breakdown.cost_dispatch_usd || 0).toFixed(5)}</span>
+                      <span>
+                        {currencyMode === 'PYG'
+                          ? `+Gs. ${Math.round((breakdown.cost_dispatch_usd || 0) * fxRate).toLocaleString('es-PY')}`
+                          : `+$${(breakdown.cost_dispatch_usd || 0).toFixed(5)}`}
+                      </span>
                     </div>
                     <div className="flex justify-between text-amber-400/90">
                       <span>• Costo Dinero (6%):</span>
-                      <span>+${(breakdown.cost_financial_usd || 0).toFixed(5)}</span>
+                      <span>
+                        {currencyMode === 'PYG'
+                          ? `+Gs. ${Math.round((breakdown.cost_financial_usd || 0) * fxRate).toLocaleString('es-PY')}`
+                          : `+$${(breakdown.cost_financial_usd || 0).toFixed(5)}`}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -865,13 +1339,28 @@ export function IndustrialCostCalculator({
                 <div className="flex items-center justify-between py-1 border-b border-slate-800/50">
                   <div>
                     <span className="text-slate-300 font-medium block">Fondo (&quot;Culito&quot;):</span>
-                    <span className="text-[10px] text-amber-400 font-mono">
-                      Gs. {Math.round(breakdown.cost_bottom_usd * fxRate).toLocaleString('es-PY')} /u
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      ({breakdown.share_bottom_percent}% del total)
                     </span>
                   </div>
                   <div className="text-right">
-                    <span className="font-mono text-white font-bold">${breakdown.cost_bottom_usd.toFixed(5)}</span>
-                    <span className="text-[10px] text-slate-500 block">({breakdown.share_bottom_percent}%)</span>
+                    {currencyMode === 'PYG' ? (
+                      <>
+                        <span className="font-mono text-amber-400 font-bold block">
+                          Gs. {Math.round(breakdown.cost_bottom_usd * fxRate).toLocaleString('es-PY')} /u
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono block">
+                          ${breakdown.cost_bottom_usd.toFixed(5)} USD/u
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-mono text-white font-bold block">${breakdown.cost_bottom_usd.toFixed(5)}</span>
+                        <span className="text-[10px] text-amber-400 font-mono block">
+                          Gs. {Math.round(breakdown.cost_bottom_usd * fxRate).toLocaleString('es-PY')} /u
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -879,13 +1368,28 @@ export function IndustrialCostCalculator({
                 <div className="flex items-center justify-between py-1 border-b border-slate-800/50">
                   <div>
                     <span className="text-slate-300 font-medium block">Impresión y Troquelado:</span>
-                    <span className="text-[10px] text-amber-400 font-mono">
-                      Gs. {Math.round(breakdown.cost_printing_diecut_usd * fxRate).toLocaleString('es-PY')} /u
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      ({breakdown.share_printing_percent}% del total)
                     </span>
                   </div>
                   <div className="text-right">
-                    <span className="font-mono text-white font-bold">${breakdown.cost_printing_diecut_usd.toFixed(5)}</span>
-                    <span className="text-[10px] text-slate-500 block">({breakdown.share_printing_percent}%)</span>
+                    {currencyMode === 'PYG' ? (
+                      <>
+                        <span className="font-mono text-amber-400 font-bold block">
+                          Gs. {Math.round(breakdown.cost_printing_diecut_usd * fxRate).toLocaleString('es-PY')} /u
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono block">
+                          ${breakdown.cost_printing_diecut_usd.toFixed(5)} USD/u
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-mono text-white font-bold block">${breakdown.cost_printing_diecut_usd.toFixed(5)}</span>
+                        <span className="text-[10px] text-amber-400 font-mono block">
+                          Gs. {Math.round(breakdown.cost_printing_diecut_usd * fxRate).toLocaleString('es-PY')} /u
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -893,13 +1397,28 @@ export function IndustrialCostCalculator({
                 <div className="flex items-center justify-between py-1 border-b border-slate-800/50">
                   <div>
                     <span className="text-slate-300 font-medium block">Costos Operativos:</span>
-                    <span className="text-[10px] text-amber-400 font-mono">
-                      Gs. {Math.round(breakdown.cost_operational_usd * fxRate).toLocaleString('es-PY')} /u
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      ({breakdown.share_operational_percent}% del total)
                     </span>
                   </div>
                   <div className="text-right">
-                    <span className="font-mono text-white font-bold">${breakdown.cost_operational_usd.toFixed(5)}</span>
-                    <span className="text-[10px] text-slate-500 block">({breakdown.share_operational_percent}%)</span>
+                    {currencyMode === 'PYG' ? (
+                      <>
+                        <span className="font-mono text-amber-400 font-bold block">
+                          Gs. {Math.round(breakdown.cost_operational_usd * fxRate).toLocaleString('es-PY')} /u
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono block">
+                          ${breakdown.cost_operational_usd.toFixed(5)} USD/u
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-mono text-white font-bold block">${breakdown.cost_operational_usd.toFixed(5)}</span>
+                        <span className="text-[10px] text-amber-400 font-mono block">
+                          Gs. {Math.round(breakdown.cost_operational_usd * fxRate).toLocaleString('es-PY')} /u
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -907,13 +1426,28 @@ export function IndustrialCostCalculator({
                 <div className="flex items-center justify-between py-1 border-b border-slate-800/50">
                   <div>
                     <span className="text-slate-300 font-medium block">Depreciación Máquina:</span>
-                    <span className="text-[10px] text-amber-400 font-mono">
-                      Gs. {Math.round(breakdown.cost_depreciation_usd * fxRate).toLocaleString('es-PY')} /u
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      ({breakdown.share_depreciation_percent}% del total)
                     </span>
                   </div>
                   <div className="text-right">
-                    <span className="font-mono text-white font-bold">${breakdown.cost_depreciation_usd.toFixed(5)}</span>
-                    <span className="text-[10px] text-slate-500 block">({breakdown.share_depreciation_percent}%)</span>
+                    {currencyMode === 'PYG' ? (
+                      <>
+                        <span className="font-mono text-amber-400 font-bold block">
+                          Gs. {Math.round(breakdown.cost_depreciation_usd * fxRate).toLocaleString('es-PY')} /u
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono block">
+                          ${breakdown.cost_depreciation_usd.toFixed(5)} USD/u
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-mono text-white font-bold block">${breakdown.cost_depreciation_usd.toFixed(5)}</span>
+                        <span className="text-[10px] text-amber-400 font-mono block">
+                          Gs. {Math.round(breakdown.cost_depreciation_usd * fxRate).toLocaleString('es-PY')} /u
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -921,13 +1455,28 @@ export function IndustrialCostCalculator({
                 <div className="flex items-center justify-between py-1 border-b border-slate-800/50">
                   <div>
                     <span className="text-slate-300 font-medium block">Merma ({scrapRatePercent}%):</span>
-                    <span className="text-[10px] text-amber-400 font-mono">
-                      Gs. {Math.round(breakdown.cost_scrap_usd * fxRate).toLocaleString('es-PY')} /u
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      ({breakdown.share_scrap_percent}% del total)
                     </span>
                   </div>
                   <div className="text-right">
-                    <span className="font-mono text-white font-bold">${breakdown.cost_scrap_usd.toFixed(5)}</span>
-                    <span className="text-[10px] text-slate-500 block">({breakdown.share_scrap_percent}%)</span>
+                    {currencyMode === 'PYG' ? (
+                      <>
+                        <span className="font-mono text-amber-400 font-bold block">
+                          Gs. {Math.round(breakdown.cost_scrap_usd * fxRate).toLocaleString('es-PY')} /u
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono block">
+                          ${breakdown.cost_scrap_usd.toFixed(5)} USD/u
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-mono text-white font-bold block">${breakdown.cost_scrap_usd.toFixed(5)}</span>
+                        <span className="text-[10px] text-amber-400 font-mono block">
+                          Gs. {Math.round(breakdown.cost_scrap_usd * fxRate).toLocaleString('es-PY')} /u
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -935,13 +1484,28 @@ export function IndustrialCostCalculator({
                 <div className="flex items-center justify-between py-1 border-b border-slate-800/50">
                   <div>
                     <span className="text-slate-300 font-medium block">Empaque Cajas/Bolsas:</span>
-                    <span className="text-[10px] text-amber-400 font-mono">
-                      Gs. {Math.round(breakdown.cost_packaging_usd * fxRate).toLocaleString('es-PY')} /u
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      ({breakdown.share_packaging_percent}% del total)
                     </span>
                   </div>
                   <div className="text-right">
-                    <span className="font-mono text-white font-bold">${breakdown.cost_packaging_usd.toFixed(5)}</span>
-                    <span className="text-[10px] text-slate-500 block">({breakdown.share_packaging_percent}%)</span>
+                    {currencyMode === 'PYG' ? (
+                      <>
+                        <span className="font-mono text-amber-400 font-bold block">
+                          Gs. {Math.round(breakdown.cost_packaging_usd * fxRate).toLocaleString('es-PY')} /u
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono block">
+                          ${breakdown.cost_packaging_usd.toFixed(5)} USD/u
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-mono text-white font-bold block">${breakdown.cost_packaging_usd.toFixed(5)}</span>
+                        <span className="text-[10px] text-amber-400 font-mono block">
+                          Gs. {Math.round(breakdown.cost_packaging_usd * fxRate).toLocaleString('es-PY')} /u
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -949,13 +1513,27 @@ export function IndustrialCostCalculator({
                 <div className="pt-3 border-t border-slate-700/80 flex items-center justify-between font-bold">
                   <div>
                     <span className="text-white block text-xs">Costo Unitario Real:</span>
-                    <span className="text-xs font-mono text-amber-400 font-bold">
-                      Gs. {Math.round(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY')} /u
-                    </span>
+                    {currencyMode === 'PYG' ? (
+                      <span className="text-sm font-mono text-amber-400 font-black">
+                        Gs. {Math.round(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY')} /u
+                      </span>
+                    ) : (
+                      <span className="text-xs font-mono text-amber-400 font-bold">
+                        Gs. {Math.round(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY')} /u
+                      </span>
+                    )}
                   </div>
-                  <span className="font-mono text-emerald-400 text-sm font-bold">
-                    ${breakdown.true_unit_cost_usd.toFixed(5)} USD/u
-                  </span>
+                  <div className="text-right">
+                    {currencyMode === 'PYG' ? (
+                      <span className="font-mono text-slate-300 text-xs font-bold block">
+                        ${breakdown.true_unit_cost_usd.toFixed(5)} USD/u
+                      </span>
+                    ) : (
+                      <span className="font-mono text-emerald-400 text-sm font-bold block">
+                        ${breakdown.true_unit_cost_usd.toFixed(5)} USD/u
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1083,25 +1661,45 @@ export function IndustrialCostCalculator({
               <div className="p-3 bg-[#141820] rounded border border-slate-800">
                 <span className="text-[10px] text-slate-500 block">Costo Unitario Real:</span>
                 <span className="text-lg font-bold text-white block mt-1">
-                  ${breakdown.true_unit_cost_usd.toFixed(5)}
+                  {currencyMode === 'PYG'
+                    ? `Gs. ${Math.round(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY')}`
+                    : `$${breakdown.true_unit_cost_usd.toFixed(5)}`}
+                </span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">
+                  {currencyMode === 'PYG' ? `$${breakdown.true_unit_cost_usd.toFixed(5)} USD/u` : `Gs. ${Math.round(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY')} /u`}
                 </span>
               </div>
               <div className="p-3 bg-[#141820] rounded border border-slate-800">
                 <span className="text-[10px] text-slate-500 block">Costo Total Producción:</span>
                 <span className="text-lg font-bold text-sky-400 block mt-1">
-                  ${breakdown.batch_total_cost_usd.toLocaleString()}
+                  {currencyMode === 'PYG'
+                    ? `Gs. ${Math.round(breakdown.batch_total_cost_usd * fxRate).toLocaleString('es-PY')}`
+                    : `$${breakdown.batch_total_cost_usd.toLocaleString()} USD`}
+                </span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">
+                  {currencyMode === 'PYG' ? `$${breakdown.batch_total_cost_usd.toLocaleString()} USD` : `Gs. ${Math.round(breakdown.batch_total_cost_usd * fxRate).toLocaleString('es-PY')}`}
                 </span>
               </div>
               <div className="p-3 bg-[#141820] rounded border border-slate-800">
                 <span className="text-[10px] text-slate-500 block">Precio Sugerido (15%):</span>
                 <span className="text-lg font-bold text-emerald-400 block mt-1">
-                  ${(breakdown.true_unit_cost_usd / 0.85).toFixed(4)}
+                  {currencyMode === 'PYG'
+                    ? `Gs. ${Math.round((breakdown.true_unit_cost_usd / 0.85) * fxRate).toLocaleString('es-PY')}`
+                    : `$${(breakdown.true_unit_cost_usd / 0.85).toFixed(4)}`}
+                </span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">
+                  {currencyMode === 'PYG' ? `$${(breakdown.true_unit_cost_usd / 0.85).toFixed(4)} USD/u` : `Gs. ${Math.round((breakdown.true_unit_cost_usd / 0.85) * fxRate).toLocaleString('es-PY')} /u`}
                 </span>
               </div>
               <div className="p-3 bg-[#141820] rounded border border-slate-800">
                 <span className="text-[10px] text-slate-500 block">Ganancia Neta Esperada:</span>
                 <span className="text-lg font-bold text-emerald-400 block mt-1">
-                  ${(((breakdown.true_unit_cost_usd / 0.85) - breakdown.true_unit_cost_usd) * batchSize).toFixed(2)}
+                  {currencyMode === 'PYG'
+                    ? `Gs. ${Math.round((((breakdown.true_unit_cost_usd / 0.85) - breakdown.true_unit_cost_usd) * batchSize) * fxRate).toLocaleString('es-PY')}`
+                    : `$${(((breakdown.true_unit_cost_usd / 0.85) - breakdown.true_unit_cost_usd) * batchSize).toFixed(2)} USD`}
+                </span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">
+                  {currencyMode === 'PYG' ? `$${(((breakdown.true_unit_cost_usd / 0.85) - breakdown.true_unit_cost_usd) * batchSize).toFixed(2)} USD` : `Gs. ${Math.round((((breakdown.true_unit_cost_usd / 0.85) - breakdown.true_unit_cost_usd) * batchSize) * fxRate).toLocaleString('es-PY')}`}
                 </span>
               </div>
             </div>
@@ -1137,10 +1735,14 @@ export function IndustrialCostCalculator({
 
                   <div className="mt-3 flex items-baseline justify-between font-mono">
                     <span className="text-2xl font-black text-white font-tabular">
-                      ${strat.suggested_price_usd.toFixed(4)}
+                      {currencyMode === 'PYG'
+                        ? `Gs. ${Math.round(strat.suggested_price_usd * fxRate).toLocaleString('es-PY')}`
+                        : `$${strat.suggested_price_usd.toFixed(4)}`}
                     </span>
                     <span className="text-xs text-slate-400">
-                      Margen: ${strat.margin_usd.toFixed(4)}/u
+                      {currencyMode === 'PYG'
+                        ? `Margen: Gs. ${Math.round(strat.margin_usd * fxRate).toLocaleString('es-PY')}/u`
+                        : `Margen: $${strat.margin_usd.toFixed(4)}/u`}
                     </span>
                   </div>
 

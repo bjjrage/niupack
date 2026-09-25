@@ -729,11 +729,30 @@ export interface IndustrialPaperFormula {
   paper_yield_units_per_ton: number;  // Rendimiento total de conos por tonelada
 }
 
+export interface IndustrialBottomFormula {
+  cif_price_ton_usd: number;           // Costo CIF por tonelada papel fondo
+  customs_dispatch_percent?: number;   // % Despacho / gastos importación (default 13%)
+  customs_dispatch_ton_usd?: number;   // Calculado (CIF * 13%)
+  financial_cost_percent?: number;     // % Costo del dinero (default 6%)
+  financial_cost_ton_usd?: number;     // Calculado (CIF * 6%)
+  total_ton_cost_usd?: number;         // CIF + Despacho + Costo del Dinero (CIF * 1.19)
+  gsm: number;                         // Gramaje base papel fondo (ej. 210)
+  coating_gsm?: number;                // Recubrimiento PE fondo (ej. 18)
+  sheet_width_mm?: number;             // Ancho pliego mm (default 1000)
+  sheet_height_mm?: number;            // Largo pliego mm (default 1000)
+  units_per_m2: number;                // Rendimiento culitos x m² del SKU (ej. 200 para 12oz)
+  units_per_sheet?: number;            // Cantidad de culitos por pliego
+  price_per_m2_usd?: number;           // Costo por m² calculado
+  price_per_sheet_usd?: number;        // Costo por pliego calculado
+  yield_units_per_ton?: number;        // Rendimiento total culitos x ton calculado
+}
+
 export interface IndustrialProductCostInput {
   sku: string;
   paper_formula: IndustrialPaperFormula;
-  bottom_paper_cost_ton_usd: number;        // Costo bobina fondo CIF + despacho (USD/ton)
-  bottom_yield_units_per_ton: number;       // Rendimiento fondos por ton
+  bottom_formula?: IndustrialBottomFormula;  // Formulación por rendimiento m² / pliego
+  bottom_paper_cost_ton_usd: number;        // Costo bobina fondo CIF (USD/ton)
+  bottom_yield_units_per_ton: number;       // Rendimiento fondos por ton (legacy o fallback)
   printing_cost_mode: 'PER_THOUSAND' | 'PER_UNIT' | 'TOTAL_BATCH';
   quoted_printing_rate_usd: number;         // Cotización de imprenta variable
   operational_cost_per_thousand_usd: number;// Mano de obra directa + energía + planta ($/1000u)
@@ -753,7 +772,7 @@ export interface IndustrialCostBreakdown {
   cost_packaging_usd: number;
   true_unit_cost_usd: number;
   batch_total_cost_usd: number;
-  // Detail calculations
+  // Detail calculations for cone
   total_paper_ton_cost_usd: number;
   customs_dispatch_ton_usd: number;
   financial_cost_ton_usd: number;
@@ -761,6 +780,15 @@ export interface IndustrialCostBreakdown {
   cost_dispatch_usd?: number;
   price_per_sheet_usd?: number;
   price_per_linear_meter_usd?: number;
+  // Detail calculations for bottom (culito)
+  bottom_cif_price_ton_usd?: number;
+  total_bottom_ton_cost_usd?: number;
+  bottom_customs_dispatch_ton_usd?: number;
+  bottom_financial_cost_ton_usd?: number;
+  cost_bottom_m2_usd?: number;
+  cost_bottom_sheet_usd?: number;
+  bottom_units_per_m2?: number;
+  bottom_units_per_sheet?: number;
   // Share percentages
   share_paper_cone_percent: number;
   share_bottom_percent: number;
