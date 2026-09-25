@@ -111,7 +111,7 @@ em { font-style: normal; color: var(--rust); }
 .brand__logo { display: none; position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .brand__mark.has-photo .brand__logo { display: block; }
 .brand__mark.has-photo { color: transparent; }
-.brand__text { font-family: var(--mono); font-size: .68rem; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; line-height: 1.4; }
+.brand__text { font-family: var(--sans); font-size: .74rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; line-height: 1.4; }
 
 .nav { display: flex; align-items: center; gap: 30px; font-family: var(--mono); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
 .nav a:not(.btn) { position: relative; opacity: .82; transition: opacity .25s, color .25s; }
@@ -131,9 +131,9 @@ em { font-style: normal; color: var(--rust); }
 .burger[aria-expanded="true"] span:last-child { top: 21px; transform: rotate(-45deg); }
 
 @media (max-width: 1180px) {
-  .burger { display: block; z-index: 2; }
+  .burger { display: block; z-index: 56; }
   .nav {
-    position: fixed; inset: 0; flex-direction: column; justify-content: center; gap: 30px;
+    position: fixed; inset: 0; z-index: 55; flex-direction: column; justify-content: center; gap: 30px;
     background: var(--ink); font-family: var(--serif); font-size: 1.7rem; text-transform: none; letter-spacing: 0;
     opacity: 0; visibility: hidden; transition: opacity .4s, visibility .4s;
   }
