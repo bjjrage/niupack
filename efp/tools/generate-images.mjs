@@ -92,6 +92,7 @@ const { _style: style, images } = JSON.parse(await readFile(join(here, "prompts.
 const jobs = only.length ? images.filter((i) => only.includes(i.file)) : images;
 console.log(`Proveedor: ${provider} · ${jobs.length} imágenes`);
 
+let failed = 0;
 for (const img of jobs) {
   process.stdout.write(`→ ${img.file} … `);
   try {
@@ -100,5 +101,7 @@ for (const img of jobs) {
     console.log("ok");
   } catch (err) {
     console.log(`error: ${err.message}`);
+    failed++;
   }
 }
+if (failed === jobs.length) process.exit(1);
