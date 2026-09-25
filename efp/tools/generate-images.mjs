@@ -96,7 +96,8 @@ let failed = 0;
 for (const img of jobs) {
   process.stdout.write(`→ ${img.file} … `);
   try {
-    const b64 = await PROVIDERS[provider](`${img.prompt}. ${style}`, img.aspect_ratio);
+    const fullPrompt = "style" in img ? `${img.prompt}. ${img.style}` : `${img.prompt}. ${style}`;
+    const b64 = await PROVIDERS[provider](fullPrompt, img.aspect_ratio);
     await writeFile(join(outDir, img.file), Buffer.from(b64, "base64"));
     console.log("ok");
   } catch (err) {

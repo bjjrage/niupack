@@ -2,11 +2,11 @@ name: EFP - generar fotos
 
 on:
   workflow_dispatch:
-  push:
-    branches: [claude/awesome-einstein-mko6dg]
-    paths:
-      - "efp/tools/**"
-      - ".github/workflows/efp-images.yml"
+    inputs:
+      files:
+        description: "Archivos a generar (nombres separados por espacio, p. ej. 'logo.png'). Vacío = todos."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -31,13 +31,13 @@ jobs:
             echo "::warning::No hay ninguna clave cargada en Settings > Secrets > Actions (XAI_API_KEY, GEMINI_API_KEY u OPENAI_API_KEY)."
             exit 0
           fi
-          node efp/tools/generate-images.mjs
+          node efp/tools/generate-images.mjs ${{ inputs.files }}
 
       - name: Subir fotos al repositorio
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add efp/img/*.jpg 2>/dev/null || true
+          git add efp/img/*.jpg efp/img/*.png 2>/dev/null || true
           if git diff --cached --quiet; then echo "Sin fotos nuevas."; exit 0; fi
           git commit -m "Add generated EFP product photos"
           git push
