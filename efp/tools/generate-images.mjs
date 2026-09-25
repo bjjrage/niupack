@@ -29,7 +29,7 @@ const provider =
 const only = args.filter((a) => !a.startsWith("--"));
 
 const need = (name) => {
-  const v = process.env[name];
+  const v = (process.env[name] || "").trim();
   if (!v) { console.error(`Falta la variable ${name}.`); process.exit(1); }
   return v;
 };
