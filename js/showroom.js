@@ -88,22 +88,61 @@ window.setupProductShowroom = function (carousel) {
       nextImage.draggable = false;
       nextImage.alt = '';
       figure.append(nextImage);
+      const measures = document.createElement('span');
+      measures.className = 'showroom-cup-measures';
+      measures.setAttribute('aria-hidden', 'true');
+      measures.innerHTML = '<span class="cup-measure cup-measure-diameter"><span class="cup-measure-value"></span></span><span class="cup-measure cup-measure-height"><span class="cup-measure-value"></span></span>';
+      figure.append(measures);
+      const dimensionSource = document.createElement('p');
+      dimensionSource.className = 'showroom-dimension-source';
+      dimensionSource.hidden = true;
+      panel.querySelector('.product-fields').after(dimensionSource);
+
+      // Boca superior (A) y altura (B), en mm, de las fichas técnicas provistas.
+      const cupDimensions = {
+        '6 oz': { diameter: '70,5', height: '66' },
+        '8 oz': { diameter: '78,12', height: '83' },
+        '12 oz': { diameter: '83,8', height: '110' },
+        '16 oz': { diameter: '89,4', height: '124,5', sheetType: 'doble' },
+        '21 oz': { diameter: '89,65', height: '161', sheetType: 'doble' },
+        '24 oz': { diameter: '91,5', height: '177', sheetType: 'doble' },
+      };
+      const diameterValue = measures.querySelector('.cup-measure-diameter .cup-measure-value');
+      const heightValue = measures.querySelector('.cup-measure-height .cup-measure-value');
+      function showCupDimensions(type, size, variant) {
+        const dimensions = type === 'simple' ? cupDimensions[size] : null;
+        figure.classList.toggle('has-cup-measures', Boolean(dimensions && variant));
+        dimensionSource.hidden = !dimensions?.sheetType;
+        if (dimensions?.sheetType) dimensionSource.textContent = isPortuguese
+          ? 'Cotas da ficha de parede dupla; imagem ilustrativa de parede simples.'
+          : isEnglish
+            ? 'Dimensions from the double-wall sheet; single-wall image is illustrative.'
+            : 'Cotas de la ficha de pared doble; imagen ilustrativa de pared simple.';
+        if (!dimensions || !variant) return;
+        diameterValue.textContent = `Ø ${dimensions.diameter} mm`;
+        heightValue.textContent = `${dimensions.height} mm`;
+        measures.style.setProperty('--cup-display-scale', variant.scale);
+        measures.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+        measures.style.setProperty('--cup-measure-aspect', variant.measureAspect || '2 / 3');
+        measures.style.setProperty('--cup-measure-top', variant.measureTop || '15%');
+        measures.style.setProperty('--cup-measure-bottom', variant.measureBottom || '12%');
+      }
 
       const cupImages = {
         simple: {
           all: { src: image.getAttribute('src'), scale: '1' },
           '4 oz': { src: 'assets/showroom/cup-single-4oz-v2.png', scale: '.62' },
-          '6 oz': { src: 'assets/showroom/cup-single-6oz-v2.png', scale: '.7' },
-          '8 oz': { src: 'assets/showroom/cup-single-8oz-v3.png', scale: '.78', widthScale: '1.07' },
-          '12 oz': { src: 'assets/showroom/cup-single-12oz-v2.png', scale: '.88' },
-          '16 oz': { src: 'assets/showroom/cup-single-16oz-v2.png', scale: '.96' },
-          '21 oz': { src: 'assets/showroom/cup-single-21oz-v2.png', scale: '1' },
-          '24 oz': { src: 'assets/showroom/cup-single-24oz-v2.png', scale: '1.04' },
+          '6 oz': { src: 'assets/showroom/cup-single-6oz-v2.png', scale: '.7', measureTop: '20%', measureBottom: '14%' },
+          '8 oz': { src: 'assets/showroom/cup-single-8oz-v3.png', scale: '.78', widthScale: '1.07', measureTop: '18%', measureBottom: '13%' },
+          '12 oz': { src: 'assets/showroom/cup-single-12oz-v2.png', scale: '.88', measureTop: '15%', measureBottom: '11%' },
+          '16 oz': { src: 'assets/showroom/cup-single-16oz-v3.png', scale: '.96', measureTop: '10%', measureBottom: '8%', measureAspect: '1079 / 1457' },
+          '21 oz': { src: 'assets/showroom/cup-single-21oz-v2.png', scale: '1', measureTop: '9%', measureBottom: '8%' },
+          '24 oz': { src: 'assets/showroom/cup-single-24oz-v2.png', scale: '1.04', measureTop: '5%', measureBottom: '8%' },
         },
         doble: {
-          all: { src: 'assets/showroom/cups-double-all-v2.png', scale: '1' },
-          '8 oz': { src: 'assets/showroom/cup-double-8oz-v2.png', scale: '.78' },
-          '12 oz': { src: 'assets/showroom/cup-double-12oz-v2.png', scale: '.96' },
+          all: { src: 'assets/showroom/cups-double-all-v3.png', scale: '1' },
+          '8 oz': { src: 'assets/showroom/cup-double-8oz-v3.png', scale: '.78' },
+          '12 oz': { src: 'assets/showroom/cup-double-12oz-v3.png', scale: '.96' },
         },
       };
       let currentImage = image;
@@ -115,11 +154,14 @@ window.setupProductShowroom = function (carousel) {
         const size = selectedSize?.endsWith('oz') ? selectedSize : 'all';
         const variant = cupImages[type][size];
         const selection = `${typeSelect.querySelector('.custom-select-trigger').textContent}, ${sizeSelect.querySelector('.custom-select-trigger').textContent}`;
-        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}`);
+        const dimensions = type === 'simple' ? cupDimensions[size] : null;
+        const dimensionLabel = dimensions ? `, Ø ${dimensions.diameter} mm, ${dimensions.height} mm` : '';
+        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}${dimensionLabel}`);
         const request = ++requestedImage;
         // Unmocked sizes remain selectable without swapping the displayed product.
-        if (!variant) return;
-        if (currentImage.getAttribute('src') === variant.src) return;
+        if (!variant) { showCupDimensions(type, size, null); return; }
+        if (currentImage.getAttribute('src') === variant.src) { showCupDimensions(type, size, variant); return; }
+        showCupDimensions(type, size, null);
 
         const preload = new Image();
         preload.onload = () => {
@@ -135,6 +177,7 @@ window.setupProductShowroom = function (carousel) {
           currentImage.classList.add('is-exiting');
           incoming.classList.add('is-current');
           currentImage = incoming;
+          showCupDimensions(type, size, variant);
         };
         preload.src = variant.src;
       }
@@ -154,10 +197,10 @@ window.setupProductShowroom = function (carousel) {
 
       const bowlImages = {
         all: { src: image.getAttribute('src'), scale: '1' },
-        '3 oz': { src: 'assets/showroom/bowl-icecream-3oz-v2.png', scale: '.62' },
-        '5 oz': { src: 'assets/showroom/bowl-icecream-5oz-v2.png', scale: '.72' },
-        '8 oz': { src: 'assets/showroom/bowl-icecream-8oz-v2.png', scale: '.82' },
-        '20 oz': { src: 'assets/showroom/bowl-icecream-20oz-v3.png', scale: '1' },
+        '3 oz': { src: 'assets/showroom/bowl-icecream-3oz-v3.png', scale: '.62' },
+        '5 oz': { src: 'assets/showroom/bowl-icecream-5oz-v3.png', scale: '.72' },
+        '8 oz': { src: 'assets/showroom/bowl-icecream-8oz-v3.png', scale: '.82' },
+        '20 oz': { src: 'assets/showroom/bowl-icecream-20oz-v4.png', scale: '1' },
       };
       let currentImage = image;
       let requestedImage = 0;

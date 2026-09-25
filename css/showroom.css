@@ -28,8 +28,24 @@
 .showroom-product[data-cup-visual] .showroom-cup-image { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; transform: translateY(-18px) scale(.9); animation: none; transition: opacity 360ms ease, transform 520ms cubic-bezier(.2,.8,.2,1); }
 .showroom-product[data-cup-visual] .showroom-cup-image.is-current { opacity: 1; transform: translateY(0) scaleX(var(--cup-display-width-scale, 1)) scale(var(--cup-display-scale, 1)); }
 .showroom-product[data-cup-visual] .showroom-cup-image.is-exiting { opacity: 0; transform: translateY(24px) scale(.9); }
+.showroom-cup-measures { position: absolute; top: 0; left: 50%; height: 100%; aspect-ratio: var(--cup-measure-aspect, 2 / 3); pointer-events: none; opacity: 0; transform: translateX(-50%) scaleX(var(--cup-display-width-scale, 1)) scale(var(--cup-display-scale, 1)); transition: opacity 320ms ease 160ms, transform 520ms cubic-bezier(.2,.8,.2,1); z-index: 2; }
+.showroom-product.has-cup-measures[data-position="active"] .showroom-cup-measures { opacity: 1; }
+.cup-measure { position: absolute; display: block; color: #fff; filter: drop-shadow(0 2px 3px #171923a0); }
+.cup-measure::before, .cup-measure::after { content: ''; position: absolute; width: 9px; height: 9px; background: #fff; }
+.cup-measure-diameter { top: max(3%, calc(var(--cup-measure-top) - 7%)); left: 9%; right: 9%; border-top: 1.5px solid #fff; }
+.cup-measure-diameter::before { top: -5px; left: -1px; clip-path: polygon(0 50%, 100% 0, 100% 100%); }
+.cup-measure-diameter::after { top: -5px; right: -1px; clip-path: polygon(100% 50%, 0 0, 0 100%); }
+.cup-measure-height { top: var(--cup-measure-top); bottom: var(--cup-measure-bottom); right: -4%; border-right: 1.5px solid #fff; }
+.cup-measure-height::before { top: -1px; right: -5px; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.cup-measure-height::after { bottom: -1px; right: -5px; clip-path: polygon(50% 100%, 0 0, 100% 0); }
+.cup-measure-value { position: absolute; display: block; padding: 4px 7px; border: 1px solid #ffffff45; border-radius: 5px; background: #171923d9; color: #fff; font-size: clamp(10px, 1vw, 13px); font-weight: 800; line-height: 1; letter-spacing: .01em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cup-measure-diameter .cup-measure-value { left: 50%; bottom: 6px; transform: translateX(-50%); }
+.cup-measure-height .cup-measure-value { top: 50%; left: 8px; transform: translateY(-50%); }
 .showroom-product[data-position="active"] { transform: translate(-50%, -48%) translateZ(60px); opacity: 1; z-index: 3; }
 .showroom-product[data-position="active"] img { animation: showroom-float 4.5s ease-in-out infinite alternate; }
+.showroom-product[data-cup-visual][data-position="active"] .showroom-cup-image.is-current { animation: showroom-cup-float 4.5s ease-in-out infinite alternate; }
+.showroom-product[data-cup-visual][data-position="active"] .showroom-cup-image:not(.is-current),
+.showroom-product.has-cup-measures[data-position="active"] .showroom-cup-image.is-current { animation: none; }
 .showroom-product[data-position="previous"] { transform: translate(-112%, -51%) translateZ(-300px) rotateY(32deg) scale(.68); opacity: .54; z-index: 1; filter: saturate(.8) blur(1px); }
 .showroom-product[data-position="next"] { transform: translate(12%, -51%) translateZ(-300px) rotateY(-32deg) scale(.68); opacity: .54; z-index: 1; filter: saturate(.8) blur(1px); }
 .showroom-product[data-position="hidden"] { transform: translate(-50%, -60%) translateZ(-500px) scale(.3); opacity: 0; pointer-events: none; visibility: hidden; }
@@ -65,6 +81,8 @@
 #productos .showroom .custom-select-menu { max-height: 220px; border: 1px solid #ffffff4a; background: #24232cea; -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
 #productos .showroom .custom-select-option { color: #fff; }
 #productos .showroom .custom-select-option.active { color: #fff; }
+.showroom-dimension-source { margin: 10px 0 0; color: #e8dee0; font-size: 11px; line-height: 1.35; }
+.showroom-dimension-source[hidden] { display: none; }
 .showroom-consult { width: 100%; margin-top: 18px; font-size: 12px; min-height: 44px; }
 .showroom-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 19px; padding: 0; border-top: 1px solid #ffffff42; background: transparent; }
 .showroom-tabs button { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 55px; padding: 16px 8px; border: 0; background: transparent; color: #ebe4e7; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: color 180ms ease, background 180ms ease; }
@@ -77,6 +95,7 @@
 .showroom.is-dragging .showroom-product, .showroom.is-dragging .showroom-art { transition: none; }
 @keyframes showroom-enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 @keyframes showroom-float { from { transform: translateY(-5px) rotateX(var(--look-y, 0deg)) rotateY(var(--look-x, 0deg)); } to { transform: translateY(5px) rotateX(var(--look-y, 0deg)) rotateY(var(--look-x, 0deg)); } }
+@keyframes showroom-cup-float { from { transform: translateY(-5px) scaleX(var(--cup-display-width-scale, 1)) scale(var(--cup-display-scale, 1)) rotateX(var(--look-y, 0deg)) rotateY(var(--look-x, 0deg)); } to { transform: translateY(5px) scaleX(var(--cup-display-width-scale, 1)) scale(var(--cup-display-scale, 1)) rotateX(var(--look-y, 0deg)) rotateY(var(--look-x, 0deg)); } }
 @media (max-width: 900px) {
   #productos > .container { width: calc(100% - 40px); }
   .showroom-layout { grid-template-columns: 1fr; gap: 18px; }
@@ -96,6 +115,8 @@
   .showroom-details { padding: 22px 18px; border-radius: 18px; }
   .showroom-tabs { display: flex; overflow-x: auto; margin-top: 24px; }
   .showroom-tabs button { flex: 0 0 auto; min-width: 132px; padding: 18px 16px; }
+  .cup-measure-value { font-size: 10px; padding: 3px 4px; }
+  .cup-measure-height .cup-measure-value { left: 5px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .showroom *, .showroom *::before { animation: none !important; transition: none !important; }
