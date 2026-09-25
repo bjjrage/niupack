@@ -81,7 +81,7 @@ export function IndustrialCostCalculator({
   const [activeTab, setActiveTab] = useState<'FORMULA' | 'QUOTER' | 'STRATEGIES'>('FORMULA');
 
   // FX state
-  const [fxRate, setFxRate] = useState<number>(7550);
+  const [fxRate, setFxRate] = useState<number>(6010);
   const [fxStatus, setFxStatus] = useState<string>('CURRENT');
   const [fxRefreshing, setFxRefreshing] = useState<boolean>(false);
 

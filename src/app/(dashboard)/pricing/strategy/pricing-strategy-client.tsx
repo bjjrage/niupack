@@ -70,7 +70,7 @@ export function PricingStrategyClient({
   const [activeTab, setActiveTab] = useState<'STRATEGIES' | 'SIMULATOR' | 'NESTING' | 'CAPEX' | 'INCOTERMS'>('STRATEGIES');
 
   // FX Rate State
-  const [fxRate, setFxRate] = useState<number>(7550);
+  const [fxRate, setFxRate] = useState<number>(6010);
 
   useEffect(() => {
     fetch('/api/fx')

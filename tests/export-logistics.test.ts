@@ -139,7 +139,7 @@ describe('Export Logistics Engine (FCL, LCL, Break-Even & Landed Cost)', () => {
       insuranceUSD: 0.0005,
       destinationChargesUSD: 0.002,
       dutiesPercent: 10,
-      fxRate: 7550,
+      fxRate: 6010,
     });
 
     // EXW = 0.04609
@@ -153,7 +153,7 @@ describe('Export Logistics Engine (FCL, LCL, Break-Even & Landed Cost)', () => {
     expect(landed.landed_unit_usd).toBe(0.07547);
 
     // Dual currency check
-    expect(landed.exw_unit_pyg).toBe(Math.round(0.04609 * 7550));
-    expect(landed.landed_unit_pyg).toBe(Math.round(0.07547 * 7550));
+    expect(landed.exw_unit_pyg).toBe(Math.round(0.04609 * 6010));
+    expect(landed.landed_unit_pyg).toBe(Math.round(0.07547 * 6010));
   });
 });

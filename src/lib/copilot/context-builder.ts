@@ -112,6 +112,7 @@ ${question}`;
     const bench = context.benchmarkUSD || 0.0490;
     const vol = context.volume || 300000;
     const breakdown = context.breakdownSnapshot || {};
+    const currentRate = Number(context.customParams?.fxRate) || 6010;
 
     let text = '';
     const proposedActions: CopilotAction[] = [];
@@ -223,7 +224,7 @@ Impacto comercial: Permite ofrecer un precio escala de USD ${(scaleCost / 0.88).
 • Volumen total del lote: ${boxes} cajas × 0.09 m³ = ${totalM3} m³
 • Tarifa aplicada: USD ${targetM3Rate}/m³
 • Flete marítimo/terrestre subtotal: USD ${freightBase.toLocaleString()}
-• Flete unitario puro por vaso: USD ${freightPerUnit.toFixed(5)}/u (Gs. ${Math.round(freightPerUnit * 7550)}/u)
+• Flete unitario puro por vaso: USD ${freightPerUnit.toFixed(5)}/u (Gs. ${Math.round(freightPerUnit * currentRate)}/u)
 
 ${q.includes('freight a') || q.includes('0.005') 
   ? `Para bajar el flete unitario a USD 0.0050/u: Se requiere contratar un contenedor completo FCL 40HC (tarifa estándar USD 3.200) con un despacho mínimo de 640.000 unidades ($3.200 / 0.0050 = 640.000 u).` 
@@ -261,7 +262,6 @@ Comparativa para 500.000 unidades (500 cajas = 45 m³):
         status: 'PROPOSED',
       });
     } else if (q.includes('dólar') || q.includes('dolar') || q.includes('sube') || q.includes('fx') || q.includes('cambio')) {
-      const currentRate = 7550;
       const ratePlus5 = Math.round(currentRate * 1.05);
       const costPygCurrent = Math.round(cost * currentRate);
       const costPygNew = Math.round(cost * ratePlus5);
@@ -291,19 +291,19 @@ Efecto Competitivo para Exportación:
       const cifUSD = Number((fobUSD + 0.0162 + 0.0005).toFixed(5));
       const landedUSD = Number((cifUSD * 1.10 + 0.002).toFixed(5));
 
-      text = `Estructura de Landed Cost en Doble Moneda (USD / Gs.) [TC: 7.550]:
+      text = `Estructura de Landed Cost en Doble Moneda (USD / Gs.) [TC: ${currentRate.toLocaleString('es-PY')}]:
 
 1. EXW (Planta Asunción):
-   • USD ${exwUSD.toFixed(5)} /u | Gs. ${Math.round(exwUSD * 7550)} /u
+   • USD ${exwUSD.toFixed(5)} /u | Gs. ${Math.round(exwUSD * currentRate)} /u
 
 2. FOB (Terminal Asunción):
-   • USD ${fobUSD.toFixed(5)} /u | Gs. ${Math.round(fobUSD * 7550)} /u (+Empaque & Logística origen)
+   • USD ${fobUSD.toFixed(5)} /u | Gs. ${Math.round(fobUSD * currentRate)} /u (+Empaque & Logística origen)
 
 3. CIF (Puerto Destino Santos):
-   • USD ${cifUSD.toFixed(5)} /u | Gs. ${Math.round(cifUSD * 7550)} /u (+Flete LCL $0.0162/u & Seguro)
+   • USD ${cifUSD.toFixed(5)} /u | Gs. ${Math.round(cifUSD * currentRate)} /u (+Flete LCL $0.0162/u & Seguro)
 
 4. LANDED (Depósito Cliente Final):
-   • USD ${landedUSD.toFixed(5)} /u | Gs. ${Math.round(landedUSD * 7550)} /u (+Arancel 10% & Aduana)`;
+   • USD ${landedUSD.toFixed(5)} /u | Gs. ${Math.round(landedUSD * currentRate)} /u (+Arancel 10% & Aduana)`;
 
       proposedActions.push({
         id: `act-${Date.now()}-landed`,
@@ -318,7 +318,7 @@ Efecto Competitivo para Exportación:
 
 • SKU: ${context.sku || 'CUP-12OZ-SW'}
 • Mercado: ${context.market || 'BR'}
-• Costo Unitario Real: USD ${cost.toFixed(5)} | Gs. ${Math.round(cost * 7550)} /u
+• Costo Unitario Real: USD ${cost.toFixed(5)} | Gs. ${Math.round(cost * currentRate)} /u
 • Benchmark Mercado: USD ${bench.toFixed(4)}
 • Brecha Competitiva: ${((cost - bench) / bench * 100).toFixed(2)}%
 

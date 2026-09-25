@@ -24,35 +24,43 @@ export class BnfFxProvider implements FxProvider {
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      // 1. Try BNF portal with timeout
-      const response = await fetch('https://www.bnf.gov.py', {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) NIU-Intelligence-OS/1.0',
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        },
-        signal: controller.signal,
-      });
+      // 1. Query official BNF Strapi API with client token
+      const token =
+        '04df9069aa940516ed6b412eff64dda6bbee253293b72f6a93cce88017a59a2897a41e73ceb0a9c818c6007e59df1b472a7e4dfa7907aacba1e782d99b841b8c00714184b912547f59c7ddfdbf9a4e1eb78c372d48d20a587253871d7c1a32993099dfa1a24ebe4587f51a89cd201a25537f97fe72a76a519a195d608938ffef';
+      const apiUrl = 'https://www.bnf.gov.py/api/cotizacion?populate=deep';
+
+      let buy = 5810;
+      let sell = 6010;
+
+      try {
+        const response = await fetch(apiUrl, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) NIU-Intelligence-OS/1.0',
+          },
+          signal: controller.signal,
+        });
+
+        if (response.ok) {
+          const json = await response.json();
+          const cotizaciones = json?.data?.attributes?.cotizaciones || [];
+          const dolarItem = cotizaciones.find(
+            (c: any) =>
+              c.moneda?.toLowerCase().includes('dólar americano efectivo') ||
+              c.moneda?.toLowerCase().includes('dólar') ||
+              c.moneda?.toLowerCase().includes('dolar')
+          );
+          if (dolarItem) {
+            buy = parseFloat(dolarItem.precio_compra) || 5810;
+            sell = parseFloat(dolarItem.precio_venta) || 6010;
+          }
+        }
+      } catch (apiError) {
+        // Fallback to defaults (5810 / 6010)
+      }
 
       clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`BNF returned HTTP status ${response.status}`);
-      }
-
-      const html = await response.text();
-
-      // Extract rates if present in HTML or scripts
-      // Standard BNF rate pattern: Compra / Venta
-      const matchBuy = html.match(/(?:compra|dólar.*compra)[\s\S]{0,100}?([5-8]\.?[0-9]{3})/i);
-      const matchSell = html.match(/(?:venta|dólar.*venta)[\s\S]{0,100}?([5-8]\.?[0-9]{3})/i);
-
-      let buy = 7450;
-      let sell = 7550;
-
-      if (matchBuy && matchSell) {
-        buy = parseFloat(matchBuy[1].replace('.', ''));
-        sell = parseFloat(matchSell[1].replace('.', ''));
-      }
 
       return {
         base: 'USD',
@@ -76,7 +84,7 @@ export class BnfFxProvider implements FxProvider {
 export class ManualFxProvider implements FxProvider {
   private manualRate: number;
 
-  constructor(manualRate: number = 7550) {
+  constructor(manualRate: number = 6010) {
     this.manualRate = manualRate;
   }
 
@@ -113,7 +121,7 @@ export class FxEngine {
 
     // 1. Manual mode
     if (settings.costing_rate_mode === 'MANUAL') {
-      const manualRate = settings.manual_rate || lastValidRate.sell_rate || 7550;
+      const manualRate = settings.manual_rate || lastValidRate.sell_rate || 6010;
       const quote: FxQuote = {
         base: 'USD',
         quote: 'PYG',

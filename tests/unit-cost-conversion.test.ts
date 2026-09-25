@@ -57,13 +57,13 @@ describe('Unit Cost Canonical Conversion & Dual Currency', () => {
 
   it('should calculate dual currency representation in USD and PYG accurately', () => {
     const unitCostUSD = 0.04609;
-    const fxRate = 7550; // BNF Sell rate
+    const fxRate = 6010; // BNF Sell rate
     const dual = FxEngine.toDualCurrency(unitCostUSD, fxRate);
 
     expect(dual.amount_usd).toBe(0.04609);
-    // 0.04609 * 7550 = 347.9795 -> Math.round = 348 Gs.
-    expect(dual.amount_pyg).toBe(348);
+    // 0.04609 * 6010 = 277.0009 -> Math.round = 277 Gs.
+    expect(dual.amount_pyg).toBe(277);
     expect(dual.formatted_usd).toBe('$0.04609 USD/u');
-    expect(dual.formatted_pyg).toContain('348');
+    expect(dual.formatted_pyg).toContain('277');
   });
 });

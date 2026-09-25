@@ -47,7 +47,7 @@ export function ExportLogisticsClient() {
   const [boxWeightKg, setBoxWeightKg] = useState<number>(9.5);
 
   // FX State
-  const [fxRate, setFxRate] = useState<number>(7550);
+  const [fxRate, setFxRate] = useState<number>(6010);
   const [fxStatus, setFxStatus] = useState<string>('CURRENT');
   const [fxRefreshing, setFxRefreshing] = useState<boolean>(false);
 

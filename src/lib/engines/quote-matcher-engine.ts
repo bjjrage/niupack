@@ -188,7 +188,7 @@ export class QuoteMatcherEngine {
     } else if (quote.currency === 'ARS') {
       externalPriceUSD = Number((quote.quoted_unit_price * 0.00095).toFixed(5));
     } else if (quote.currency === 'PYG') {
-      externalPriceUSD = Number((quote.quoted_unit_price / 7550).toFixed(5));
+      externalPriceUSD = Number((quote.quoted_unit_price / 6010).toFixed(5));
     }
 
     // Get NIUPACK Real Industrial Cost
