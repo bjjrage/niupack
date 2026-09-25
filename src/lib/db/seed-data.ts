@@ -15,6 +15,9 @@ import {
   SystemSettings,
   AuditEvent,
   IndustrialProductCostInput,
+  ProductPackagingSpec,
+  FxRate,
+  FxSettings,
 } from '@/types';
 
 export const INITIAL_ORG: Organization = {
@@ -1061,6 +1064,80 @@ export const INITIAL_INDUSTRIAL_COST_INPUTS: IndustrialProductCostInput[] = [
     scrap_rate_percent: 8.0,
     packaging_cost_per_thousand_usd: 2.80,
     batch_size: 150000,
+  },
+];
+
+export const INITIAL_FX_RATES: FxRate[] = [
+  {
+    id: 'fx-bnf-usd-pyg-initial',
+    base_currency: 'USD',
+    quote_currency: 'PYG',
+    buy_rate: 7450,
+    sell_rate: 7550,
+    source: 'BNF',
+    effective_at: new Date().toISOString(),
+    fetched_at: new Date().toISOString(),
+    is_active: true,
+    created_at: new Date().toISOString(),
+  },
+];
+
+export const INITIAL_FX_SETTINGS: FxSettings = {
+  organization_id: INITIAL_ORG.id,
+  costing_rate_mode: 'BNF_SELL',
+  manual_rate: 7550,
+  custom_margin_percent: 0,
+  refresh_interval_minutes: 60,
+  last_checked_at: new Date().toISOString(),
+  status: 'CURRENT',
+  updated_at: new Date().toISOString(),
+};
+
+export const INITIAL_PACKAGING_SPECS: ProductPackagingSpec[] = [
+  {
+    sku: 'CUP-12OZ-SW',
+    units_per_box: 1000,
+    box_length_cm: 50,
+    box_width_cm: 40,
+    box_height_cm: 45,
+    box_weight_kg: 9.5,
+    box_volume_m3: 0.09, // (0.5 * 0.4 * 0.45)
+  },
+  {
+    sku: 'CUP-8OZ-SW',
+    units_per_box: 1000,
+    box_length_cm: 46,
+    box_width_cm: 38,
+    box_height_cm: 42,
+    box_weight_kg: 8.2,
+    box_volume_m3: 0.0734,
+  },
+  {
+    sku: 'CUP-16OZ-SW',
+    units_per_box: 1000,
+    box_length_cm: 52,
+    box_width_cm: 42,
+    box_height_cm: 48,
+    box_weight_kg: 11.0,
+    box_volume_m3: 0.1048,
+  },
+  {
+    sku: 'CUP-12OZ-DW',
+    units_per_box: 500,
+    box_length_cm: 50,
+    box_width_cm: 40,
+    box_height_cm: 45,
+    box_weight_kg: 8.5,
+    box_volume_m3: 0.09,
+  },
+  {
+    sku: 'CUP-4OZ-SW',
+    units_per_box: 2000,
+    box_length_cm: 45,
+    box_width_cm: 35,
+    box_height_cm: 40,
+    box_weight_kg: 7.5,
+    box_volume_m3: 0.063,
   },
 ];
 

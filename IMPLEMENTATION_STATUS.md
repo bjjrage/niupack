@@ -2,179 +2,184 @@
 
 **Sistema:** NIU Intelligence OS  
 **Organización:** GARDINER S.A. (NIUPACK) — Asunción, Paraguay  
-**Versión:** 1.2.0 (Producción Ready con NIU Copilot & Pricing Strategy)  
+**Versión:** 1.3.0 (Costeo Unitario Canónico, Doble Moneda USD/PYG, Motor FX BNF, Export Logistics & Quote Matcher)  
 **Fecha de Certificación:** 2026-09-25  
 **Entorno de Validación:** Node.js v24.20.0 | Next.js 15.5.26 App Router | TypeScript 5.7.3 | Vitest 3.2.7 | ESLint 9  
 
 ---
 
-## 1. RESUMEN DE CAMBIOS ARQUITECTÓNICOS RECIENTES
+## 1. RESUMEN DE CAMBIOS Y AMPLIACIONES RECIENTES (v1.3.0)
 
-### 1.1 Root Cause del Routing Incorrecto y Corrección
-- **Causa Raíz:** Anteriormente, el enlace del sidebar titulado *"Estrategias de Precio"* (`/cost/pricing`) apuntaba a una pantalla que en realidad contenía la hoja de costos industriales desglosados (`IndustrialCostCalculator` con CIF, despacho, culito, impresión, operativos, merma y depreciación). Eso correspondía conceptualmente a **Cost Intelligence** y no a una pantalla de **Pricing Strategy**.
-- **Corrección Quirúrgica:**
-  1. Se reestructuró la sección 3 del menú lateral como **3. COST INTELLIGENCE**, reuniendo:
-     - *Productos & SKUs* (`/cost/skus`)
-     - *Hojas de Costo Real* (`/cost/cost-sheets`) — donde se integró la formulación industrial de planta viva con soporte de 22+ componentes contables.
-     - *Procesos Industriales* (`/cost/processes`)
-     - *Simulador de Escenarios* (`/cost/scenarios`)
-     - *Oportunidades de Eficiencia* (`/cost/efficiency`)
-  2. Se creó la sección dedicada **4. PRICING STRATEGY** con su pantalla propia en `/pricing/strategy`.
-  3. Se preservó compatibilidad retroactiva configurando una redirección permanente en `/cost/pricing` hacia `/pricing/strategy`, evitando la rotura de enlaces o bookmarks existentes.
+### 1.1 Costeo Unitario Canónico y Soporte Dual USD / Guaraníes (PYG)
+- **Principio Central:** La unidad interna canónica del motor de costos es ahora **COSTO POR UNIDAD** (ej. `USD 0.04609 / u` y `Gs. 348 / u`). El costo "por millar" (`USD 46.09 / 1.000 u`) se mantiene exclusivamente como vista de referencia secundaria en tablas y tarjetas.
+- **Campos Normalizados en CostComponent:** Se introdujo la estructura `DualCurrencyValue` con:
+  - `amount_original`, `currency_original`, `fx_rate_used`, `amount_usd`, `amount_pyg`
+  - Base de costo explícita `CostBasis`: `PER_UNIT | PER_1000 | PER_KG | PER_TON | PER_SHEET | PER_M2 | PER_M3 | PER_BOX | PER_CONTAINER | FIXED | PER_BATCH`.
+- **Hoja de Costos (`IndustrialCostCalculator`):** Visualización destacada en tarjeta de resumen superior con badge en vivo de cotización BNF, selector de moneda preferida (USD / PYG / DUAL) y columnas simultáneas en el desglose de componentes.
+
+### 1.2 Motor FX y Conexión Banco Nacional de Fomento (BNF)
+- **Arquitectura Resiliente (`BnfFxProvider`):** Consulta directa al portal institucional del BNF con timeout estricto de 3.5 segundos mediante `AbortController`.
+- **Estrategia Fallback Graceful:** Si la conexión externa falla o demora, el sistema **nunca lanza excepciones** no controladas; retorna el último tipo de cambio válido almacenado con estado `UNAVAILABLE_SOURCE_USING_LAST_VALID` o `STALE`.
+- **Modos de Costeo Configurables:**
+  - `BNF_SELL` (Venta oficial, valor por defecto conservador para costeo industrial).
+  - `BNF_BUY` (Compra oficial).
+  - `MANUAL` (Tipo de cambio fijo ingresado por tesorería).
+  - `CUSTOM_MARGIN` (Cotización oficial + spread de seguridad cambiaria).
+- **Matriz de Sensibilidad:** Escenarios automáticos a -5%, Cotización Actual, +5% y +10% para evaluar la exposición cambiaria en contratos a largo plazo.
+
+### 1.3 Export Cost Engine & Landed Cost (`/cost/logistics`)
+- **Módulo Dedicado en Navegación:** Nueva pantalla y subsección en el menú lateral bajo *3. COST INTELLIGENCE* (`/cost/logistics`).
+- **Cálculo LCL (Carga Consolidada):**
+  $$\text{Volumen por Caja } (m^3) = \frac{\text{Largo (cm)}}{100} \times \frac{\text{Ancho (cm)}}{100} \times \frac{\text{Alto (cm)}}{100}$$
+  $$\text{Volumen Total } (m^3) = \text{Cajas} \times \text{Volumen Caja}$$
+  $$\text{Flete Base} = \max(\text{Volumen Total} \times \text{Tarifa USD/}m^3, \; \text{Mínimo USD})$$
+  $$\text{Flete Unitario} = \frac{\text{Flete Total}}{\text{Unidades Totales}}$$
+  *(Caso validado en tests: Caja 50×40×45 cm = 0.09 m³, 1.000 u/caja, tarifa $180/m³ $\rightarrow$ $16.20/caja $\rightarrow$ $0.01620/u).*
+- **Cálculo FCL (Contenedores 20FT, 40FT, 40HC, CUSTOM):**
+  - Estimación por volumen útil con factor de estiba (85% eficiencia).
+  - Control de peso máximo por payload permitido.
+  - Detección automática del factor limitante (`VOLUME_LIMITED` vs. `WEIGHT_LIMITED`).
+  - Campo de anulación manual de cajas reales cabidas (`actual_boxes_per_container`).
+- **Punto de Equilibrio Logístico (Break-Even LCL vs. FCL):**
+  $$\text{Cajas Break-Even} = \left\lceil \frac{\text{Flete FCL}}{\text{Flete por Caja LCL}} \right\rceil$$
+  Informa al usuario el volumen exacto en unidades a partir del cual conviene contratar contenedor completo.
+- **Cascada de Precios por Incoterm:**
+  $$\text{EXW} \rightarrow \text{FOB} \rightarrow \text{CIF} \rightarrow \text{LANDED}$$
+  Calculado en tiempo real en USD y Guaraníes con desglose de empaque de exportación, flete internacional, seguro de carga y aranceles/despacho en destino.
+
+### 1.4 Quote-to-Cost Matcher
+- **Ingesta de Cotizaciones Externas:** Extrae datos estructurados desde emails, textos, RFQs o pegado manual (soporta español, portugués e inglés).
+- **Algoritmo de Matching de SKU (`matchClosestSku`):** Compara capacidad en oz/ml, tipo de pared (`single` vs `double`), gramaje y material para emparejar automáticamente la oferta contra el catálogo de NIUPACK con score de confianza.
+- **Comparación Industrial Directa:**
+  - Convierte precio cotizado a USD/unidad.
+  - Contrasta contra el **Costo de Fábrica NIUPACK** y el **Landed Cost** equivalente.
+  - Asigna estatus de competitividad: `COMPETITIVE` (margen > 15%), `PARITY` (margen 5–15%), `DISADVANTAGE` (0–5%), `CRITICAL` (< 0%).
+  - **Detección de Disparidad de Incoterms:** Emite alertas explícitas si la cotización externa es FOB Santos y el costo NIUPACK es EXW Asunción para evitar comparaciones erróneas.
+- **Modal Interactivo:** Disponible directamente desde la bandeja de cotizaciones de compras (`/rfq/quotes`) mediante el botón *[Quote-to-Cost Matcher]*.
+
+### 1.5 Ampliación de NIU Copilot & Pricing Strategy
+- **Copilot Context Builder Expandido:** El asistente contextual reconoce automáticamente los parámetros logísticos (método LCL/FCL, tipo de contenedor, costo landed, brecha FOB/CIF vs benchmark, y tipo de cambio BNF).
+- **Tab 5 en Pricing Strategy:** Pestaña dedicada a la comparativa de Incoterms (EXW vs FOB vs CIF vs LANDED) frente al benchmark regional con banner de advertencia sobre fletes y aranceles.
 
 ---
 
-## 2. OBJETIVO 1: NIU COPILOT (ARQUITECTURA DE CONTEXTO & UI)
+## 2. ARQUITECTURA DE ENGINES & COMPONENTES
 
-### 2.1 Arquitectura del Context Builder
 ```
-Pantalla Actual (Route + Module)
-               +
-  Datos Activos del OS (SKU, Mercado, Volumen, Costo, Benchmark, Gap)
-               ↓
-    ContextBuilder (Filtrado estricto sin token bloat)
-               ↓
- OpenAIService (gpt-4o-mini / Fallback Analítico Determinista Local)
-               ↓
-   Respuesta Estructurada Numérica + [PROPOSED_ACTIONS]
-               ↓
-UI Right-Side Drawer (Confirmación Obligatoria del Usuario antes de Ejecutar)
+                    ┌────────────────────────────┐
+                    │    BnfFxProvider (BNF)     │
+                    │  (Timeout 3.5s + Fallback) │
+                    └─────────────┬──────────────┘
+                                  │
+                    ┌─────────────▼──────────────┐
+                    │         FxEngine           │
+                    │ (Costing Rates USD / PYG)  │
+                    └──────┬──────────────┬──────┘
+                           │              │
+        ┌──────────────────▼──┐        ┌──▼──────────────────┐
+        │  IndustrialCost     │        │  ExportLogistics    │
+        │  Calculator         │        │  Engine             │
+        │ (True Unit Cost)    │        │ (LCL / FCL / Landed)│
+        └──────────┬──────────┘        └──┬──────────────────┘
+                   │                      │
+                   └──────────┬───────────┘
+                              │
+               ┌──────────────▼──────────────┐
+               │    Quote-to-Cost Matcher    │
+               │  (SKU Match & Cost Analysis)│
+               └──────────────┬──────────────┘
+                              │
+               ┌──────────────▼──────────────┐
+               │  Pricing Strategy & Copilot │
+               └─────────────────────────────┘
 ```
 
-- **Filtrado por Módulo:**
-  - **Cost Intelligence:** SKU, True Cost, desglose de componentes, merma, costos de papel, culito, impresión, operativos.
-  - **Pricing Strategy:** Costo unitario, benchmark regional (BR/AR/BO/PY), gap competitivo, margen a precio de mercado, RFQs, escenarios.
-  - **RFQ:** Proveedores, cotizaciones recibidas, condiciones comerciales.
-  - **AI Visibility:** Baterías de queries, menciones de marca, competidores citados, fuentes.
-- **Acciones Ejecutables con Human-in-the-Loop:** El copiloto nunca altera datos automáticamente. Propone acciones con el tag `[PROPOSED_ACTIONS]` (ej. `SIMULATE_WASTE`, `CHANGE_VOLUME`, `APPLY_PRICE_TARGET`, `NAVIGATE`), requiriendo que el usuario presione **[Confirmar]** en el Drawer para que la aplicación las aplique en el estado activo.
-- **Estética B2B SaaS (Zero AI Slop):** Se empleó estrictamente la paleta institucional de NIUPACK: Grafito oscuro (`#0c0f14`, `#141820`), Blanco, Negro, Gris neutro y Rojo NIUPACK (`bg-brand-500`) reservado exclusivamente para acciones primarias e identidad visual.
-
 ---
 
-## 3. OBJETIVO 2: PRICING STRATEGY & COMPETITIVIDAD INDUSTRIAL
-
-### 3.1 Componentes de la Nueva Pantalla (`/pricing/strategy`)
-1. **Header & Selectores:** SKU activo (`CUP-12OZ-SW`, etc.), Mercado objetivo (`BR`, `AR`, `BO`, `PY`) y Volumen a cotizar (`100k`, `300k`, `500k`, `1M`, o entrada manual).
-2. **KPIs en Tiempo Real:** Costo Unitario Real, Benchmark de Mercado, Target Price (Margen deseado), Competitive Gap (%) y Margen al Benchmark.
-3. **Matriz de 7 Estrategias de Precio:** Target Margin (Cost-Plus 15%), Market Match (Benchmark), Penetration (-5% bajo mercado), Volume (>500k), Contract (Acuerdo anual 12%), Minimum Defensible (Walk-Away floor), Premium (SGS FSSC 22000).
-4. **Simulador de Sensibilidad en Vivo:** Sliders de margen objetivo, merma de proceso, precio CIF de papel y flete a destino.
-5. **Modelado Separado de Tercerizados vs. Internos:**
-   - Impresión Tercerizada (`$4.50/1000u`) vs. Impresión Interna Flexo (`$0.00289/u`).
-   - Troquelado Tercerizado (`$2.50/1000u`) vs. Troquelado Interno (`$0.00185/u`).
-6. **Yield / Nesting Calculator (Comparación Tecnológica de Impresión):**
-   - Caso real de planta: Pliego Paraguay actual 900×1000 mm (18 piezas, 0.050 m²/u) vs. Pliego Competitivo de Banda Ancha 750×1000 mm (18 piezas, 0.04167 m²/u).
-   - **Ahorro de materia prima:** **16.67% menos papel por vaso** (Ahorro de ~USD 0.00438/u y USD 93,600 anuales a 20M u/año).
-7. **Matriz de 4 Escenarios Industriales & Análisis CAPEX / Payback:**
-   - **Escenario A (Actual Tercerizado Banda Angosta):** Pliegos 900x1000, 100% tercerizado. CAPEX: $0.
-   - **Escenario B (Tercerizado Optimizado Banda Ancha):** Pliegos 750x1000 con proveedor externo. CAPEX: $0. Ahorro inmediato de USD 93,600/año.
-   - **Escenario C (Integración Parcial - Flexo Propia):** Impresora flexográfica central drum propia (CAPEX: USD 180,000). Ahorro anual: USD 120,000. Payback: **1.5 años**. ROI simple: **66.7% anual**.
-   - **Escenario D (Integración Total - Flexo + Troqueladora Propia):** Inversión total USD 300,000. Ahorro anual: USD 132,800. Payback: **2.25 años**.
-
----
-
-## 4. FÓRMULAS MATEMÁTICAS UTILIZADAS
-
-1. **Costo de Tonelada de Papel en Planta:**
-   $$\text{Total Tonelada Papel} = \text{CIF} + \text{Despacho (13\% CIF)} + \text{Costo del Dinero (6\% CIF)} = \text{CIF} \times 1.19$$
-2. **Aprovechamiento Geométrico de Pliego (Yield %):**
-   $$\text{Área Pliego} = \frac{\text{Ancho (mm)} \times \text{Largo (mm)}}{1.000.000} \quad (m^2)$$
-   $$\text{Área Consumida por Vaso} = \frac{\text{Área Total Pliego}}{\text{Piezas por Pliego}} \quad (m^2/\text{unidad})$$
-   $$\text{Yield \%} = \frac{\text{Piezas} \times \text{Área Bounding Box}}{\text{Área Total Pliego}} \times 100, \quad \text{Merma Geométrica \%} = 100 - \text{Yield \%}$$
-3. **Precio con Margen Objetivo:**
-   $$\text{Precio} = \frac{\text{Costo Unitario Real}}{1 - \text{Margen Target \%}}$$
-4. **Análisis CAPEX y Período de Repago:**
-   $$\text{Ahorro Anual (USD)} = (\text{Costo Unitario Actual} - \text{Costo Unitario Escenario}) \times \text{Volumen Anual (20M)}$$
-   $$\text{Punto de Equilibrio (unidades)} = \frac{\text{Inversión CAPEX}}{\text{Ahorro Unitario}}$$
-   $$\text{Payback (Años)} = \frac{\text{Inversión CAPEX}}{\text{Ahorro Anual (USD)}}, \quad \text{ROI \%} = \frac{\text{Ahorro Anual}}{\text{Inversión CAPEX}} \times 100$$
-
----
-
-## 5. ARCHIVOS MODIFICADOS Y CREADOS
+## 3. ARCHIVOS MODIFICADOS Y CREADOS EN v1.3.0
 
 ### Tipos & Repositorio
-- `src/types/index.ts`: Agregadas interfaces de `CopilotScreenContext`, `CopilotThread`, `CopilotMessage`, `CopilotAction`, `YieldNestingConfig`, `YieldNestingResult`, `IndustrialScenarioComparison`, `IndustrialCapexConfig`.
-- `src/lib/db/repository.ts`: Agregadas colecciones `copilotThreads`, `copilotMessages`, `copilotActions` y métodos CRUD de persistencia.
+- `src/types/index.ts`: Definición de `CostBasis`, `DualCurrencyValue`, `FxRate`, `FxSettings`, `FxQuote`, `ProductPackagingSpec`, `ContainerType`, `ContainerSpec`, `FclLogisticsInput/Result`, `LclLogisticsInput/Result`, `LogisticsBreakEvenResult`, `LandedCostBreakdown`, `ExternalQuoteInput`, `QuoteMatchResult`.
+- `src/lib/db/seed-data.ts`: Semillas de tipos de cambio BNF (`INITIAL_FX_RATES`), ajustes (`INITIAL_FX_SETTINGS`) y especificaciones de empaque por SKU (`INITIAL_PACKAGING_SPECS`).
+- `src/lib/db/repository.ts`: Persistencia en memoria y métodos CRUD para FX, Packaging Specs y Quote Matches.
 
 ### Motores Analíticos
-- `src/lib/engines/nesting-engine.ts`: Motor de anidamiento y cálculo de rendimiento geométrico de pliegos y bobinas.
-- `src/lib/engines/industrial-capex-engine.ts`: Evaluador de escenarios industriales A-D con modelado de CAPEX, depreciación y repago.
-- `src/lib/copilot/context-builder.ts`: Constructor de prompts contextuales y generador local determinista.
+- `src/lib/fx/fx-provider.ts`: `BnfFxProvider`, `ManualFxProvider` y `FxEngine` (conversión, fallback sin throws, sensibilidad).
+- `src/lib/engines/export-logistics-engine.ts`: Motor de cubicaje, LCL con cargo mínimo, FCL por volumen/peso con override, punto de equilibrio y cascada de landed cost.
+- `src/lib/engines/quote-matcher-engine.ts`: Ingesta y normalización de cotizaciones externas, emparejamiento con catálogo y análisis de brecha de costo.
+- `src/lib/copilot/context-builder.ts`: Contexto ampliado para logística de exportación, LCL/FCL, landed cost y sensibilidad BNF.
 
 ### Endpoints API
-- `src/app/api/copilot/chat/route.ts`: Endpoint de chat de Copilot con soporte OpenAI `gpt-4o-mini`, tracking de costo y fallback local.
-- `src/app/api/copilot/actions/route.ts`: Endpoint de actualización y confirmación de acciones propuestas.
+- `src/app/api/fx/route.ts`: Endpoint GET/POST para consulta, refresco forzado y configuración de tasas de cambio.
+- `src/app/api/cost/logistics/route.ts`: Endpoint para cálculo en tiempo real de LCL, FCL, Break-Even y Landed Cost.
+- `src/app/api/market/quote-matcher/route.ts`: Endpoint para ingesta y emparejamiento de cotizaciones externas.
 
 ### Interfaz de Usuario
-- `src/components/copilot/CopilotContext.tsx`: Contexto y hook `useCopilot()` para comunicación entre componentes y el Drawer.
-- `src/components/copilot/CopilotLayoutWrapper.tsx`: Wrapper cliente que monta el drawer en el layout principal.
-- `src/components/copilot/NiuCopilotDrawer.tsx`: Panel lateral deslizante con cápsula de contexto activo, sugerencias y botones de confirmación.
-- `src/components/navigation/topbar.tsx`: Incorporado el botón *"NIU Copilot"* con estado activo en vivo.
-- `src/components/navigation/sidebar.tsx`: Separación limpia de *3. COST INTELLIGENCE* y *4. PRICING STRATEGY*.
-- `src/app/(dashboard)/layout.tsx`: Integración global de CopilotLayoutWrapper.
-- `src/app/(dashboard)/cost/cost-sheets/page.tsx`: Incorporado el selector de vista para Formulación Industrial viva (`IndustrialCostCalculator`) y Matriz Contable.
-- `src/app/(dashboard)/cost/pricing/page.tsx`: Redirección permanente a `/pricing/strategy`.
-- `src/app/(dashboard)/pricing/strategy/page.tsx`: Página del servidor de Pricing Strategy.
-- `src/app/(dashboard)/pricing/strategy/pricing-strategy-client.tsx`: Pantalla completa de fijación de precios, simulador en vivo, Nesting Calculator y matriz CAPEX.
+- `src/components/cost/IndustrialCostCalculator.tsx`: Tarjeta principal de costo unitario canónico ($/u y Gs./u), badge de cotización BNF con refresco en vivo, columnas de doble moneda.
+- `src/app/(dashboard)/cost/logistics/page.tsx` & `logistics-client.tsx`: Pantalla completa de Logística de Exportación con 4 pestañas interactivas (LCL, FCL, Break-Even, Landed Cost).
+- `src/components/navigation/sidebar.tsx`: Enlace permanente a `/cost/logistics` en *3. COST INTELLIGENCE*.
+- `src/components/rfq/QuoteCostMatcherModal.tsx`: Modal para ingreso de cotizaciones externas, matching y visualización de brecha contra costo NIUPACK.
+- `src/app/(dashboard)/rfq/quotes/page.tsx`: Botón de acceso directo al matcher de cotizaciones.
+- `src/app/(dashboard)/pricing/strategy/pricing-strategy-client.tsx`: Incorporación de Tab 5 (Incoterms Comparativa vs Benchmark con banner de advertencia).
 
 ### Tests Unitarios
-- `tests/nesting-engine.test.ts`: Pruebas de cálculo de aprovechamiento de pliegos y ahorro de 16.7% entre formatos.
-- `tests/industrial-capex.test.ts`: Pruebas de evaluación de los 4 escenarios industriales, ahorros y payback.
-- `tests/copilot-context.test.ts`: Pruebas del constructor de contexto sin token bloat y respuestas numéricas deterministas.
+- `tests/unit-cost-conversion.test.ts`: Pruebas de conversión canónica a costo unitario y visualización por millar.
+- `tests/fx-engine.test.ts`: Pruebas de resiliencia del proveedor BNF, fallback a último valor válido y matriz de sensibilidad.
+- `tests/export-logistics.test.ts`: Pruebas de cubicaje de cajas (Caso 2 y Caso 3), mínimo de LCL, contenedor 40HC, punto de equilibrio y cascada de landed cost.
+- `tests/quote-matcher.test.ts`: Pruebas de extracción de email en portugués, matching con catálogo de SKUs y cálculo de brecha de competitividad.
 
 ---
 
-## 6. RESULTADOS DE LA VALIDACIÓN TÉCNICA
+## 4. RESULTADOS DE LA VALIDACIÓN TÉCNICA
 
-### 6.1 Tests Automatizados (`npm run test`):
+### 4.1 Tests Automatizados (`npm run test`):
 ```bash
  RUN  v3.2.7 C:/Users/User/Desktop/PORYECTOS/niupack
 
- ✓ tests/visibility-score.test.ts (4 tests)
- ✓ tests/pricing-strategies.test.ts (5 tests)
- ✓ tests/true-cost-calculation.test.ts (3 tests)
+ ✓ tests/export-logistics.test.ts (7 tests)
  ✓ tests/copilot-context.test.ts (3 tests)
+ ✓ tests/quote-matcher.test.ts (3 tests)
  ✓ tests/rfq-state-machine.test.ts (4 tests)
  ✓ tests/battery-freeze.test.ts (4 tests)
- ✓ tests/job-idempotency.test.ts (3 tests)
- ✓ tests/currency-normalization.test.ts (4 tests)
- ✓ tests/scenario-engine.test.ts (3 tests)
- ✓ tests/industrial-cost-engine.test.ts (2 tests)
+ ✓ tests/unit-cost-conversion.test.ts (3 tests)
+ ✓ tests/fx-engine.test.ts (4 tests)
  ✓ tests/industrial-capex.test.ts (1 test)
- ✓ tests/quote-normalization.test.ts (3 tests)
+ ✓ tests/currency-normalization.test.ts (4 tests)
+ ✓ tests/true-cost-calculation.test.ts (3 tests)
+ ✓ tests/industrial-cost-engine.test.ts (2 tests)
+ ✓ tests/job-idempotency.test.ts (3 tests)
  ✓ tests/query-dedupe.test.ts (5 tests)
+ ✓ tests/quote-normalization.test.ts (3 tests)
+ ✓ tests/visibility-score.test.ts (4 tests)
  ✓ tests/nesting-engine.test.ts (2 tests)
+ ✓ tests/pricing-strategies.test.ts (5 tests)
+ ✓ tests/scenario-engine.test.ts (3 tests)
 
- Test Files  14 passed (14)
-      Tests  46 passed (46)
-   Duration  2.32s
+ Test Files  18 passed (18)
+      Tests  63 passed (63)
+   Duration  2.56s
 ```
 
-### 6.2 Chequeo de Tipos TypeScript (`npm run typecheck`):
+### 4.2 Chequeo de Tipos TypeScript (`npm run typecheck`):
 ```bash
 > tsc --noEmit
 Exit code: 0 (Cero errores de tipos en todo el proyecto)
 ```
 
-### 6.3 Chequeo de Linting ESLint (`npm run lint`):
+### 4.3 Chequeo de Linting ESLint (`npm run lint`):
 ```bash
 > next lint
 ✔ No ESLint warnings or errors
 Exit code: 0
 ```
 
-### 6.4 Compilación de Producción Next.js (`npm run build`):
-```bash
-> next build
- ✓ Compiled successfully in 11.2s
- ✓ Generating static pages (39/39)
- ✓ Finalizing page optimization ...
-Exit code: 0 (Todas las 39 rutas generadas sin advertencias)
-```
+### 4.4 Compilación de Producción Next.js (`npm run build`):
+Completada con éxito (Exit code: 0). Todas las rutas estáticas y dinámicas compiladas.
 
 ---
 
-## 7. BLOCKERS EXTERNOS Y DISPONIBILIDAD
+## 5. REGLAS DE DESPLIEGUE Y OPERACIÓN
 
-- **OpenAI API Key:** El Copilot y el módulo de visibilidad operan con un motor analítico determinista local cuando no hay clave provista, o con `gpt-4o-mini` y `gpt-4o` en tiempo real cuando el usuario ingresa su clave `sk-...` en `/settings`.
-- **Servidor SMTP:** Configurable desde `/settings` para el envío de RFQs de flexibles vía SMTP corporativo autenticado.
-- **Ruta Legacy `/cost/pricing`:** Redirige a `/pricing/strategy` mediante `redirect()`, garantizando cero impacto en enlaces existentes.
+- **Git Push:** Restringido bajo orden explícita del usuario. Los commits se mantienen locales hasta instrucción de despliegue.
+- **Proveedor BNF:** Totalmente tolerante a caídas de red o demoras del portal gubernamental gracias al fallback automático del `FxEngine`.
+- **Incoterms de Referencia:** Asunción (EXW/FOB), Santos/Paranaguá/Buenos Aires (CIF/Destino).

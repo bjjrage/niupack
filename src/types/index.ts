@@ -330,16 +330,42 @@ export type CostCategory =
   | 'herramental'
   | 'otros';
 
+export type CostBasis =
+  | 'PER_UNIT'
+  | 'PER_1000'
+  | 'PER_KG'
+  | 'PER_TON'
+  | 'PER_SHEET'
+  | 'PER_M2'
+  | 'PER_M3'
+  | 'PER_BOX'
+  | 'PER_CONTAINER'
+  | 'FIXED'
+  | 'PER_BATCH';
+
+export interface DualCurrencyValue {
+  amount_original: number;
+  currency_original: string;
+  fx_rate_used: number;
+  amount_usd: number;
+  amount_pyg: number;
+  formatted_usd?: string;
+  formatted_pyg?: string;
+}
+
 export interface CostComponent {
   id: string;
   cost_sheet_id: string;
   category: CostCategory;
   name: string;
   component_type: 'FIXED' | 'VARIABLE';
-  basis: 'PER_UNIT' | 'PER_BATCH';
+  basis: CostBasis;
   rate_usd: number;
   quantity: number;
   unit_of_measure: string;
+  normalized_unit_cost_usd?: number;
+  normalized_unit_cost_pyg?: number;
+  currency?: string;
   effective_date: string;
   notes?: string;
 }
@@ -355,7 +381,11 @@ export interface CostSheetVersion {
   effective_date: string;
   status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
   true_unit_cost_usd: number;
+  true_unit_cost_pyg?: number;
+  fx_rate_id?: string;
+  fx_rate_used?: number;
   minimum_sustainable_price_usd: number;
+  minimum_sustainable_price_pyg?: number;
   break_even_units: number;
   components?: CostComponent[];
   notes?: string;
@@ -884,5 +914,227 @@ export interface IndustrialScenarioComparison {
   roi_percent: number;
   feasibility_status: 'CURRENT' | 'IMMEDIATE' | 'CAPEX_VIABLE' | 'LONG_TERM';
   recommendation: string;
+}
+
+// ==========================================
+// 10. FX & EXCHANGE RATE ENGINE TYPES
+// ==========================================
+
+export type FxCostingRateMode = 'BNF_SELL' | 'BNF_BUY' | 'MANUAL' | 'CUSTOM_MARGIN';
+export type FxStatus = 'CURRENT' | 'STALE' | 'MANUAL' | 'UNAVAILABLE_SOURCE_USING_LAST_VALID';
+
+export interface FxQuote {
+  base: string;
+  quote: string;
+  buy: number;
+  sell: number;
+  effectiveAt: string;
+  fetchedAt: string;
+  source: string;
+}
+
+export interface FxRate {
+  id: string;
+  base_currency: string;
+  quote_currency: string;
+  buy_rate: number;
+  sell_rate: number;
+  source: string;
+  effective_at: string;
+  fetched_at: string;
+  is_active: boolean;
+  raw_reference?: string;
+  created_at: string;
+}
+
+export interface FxSettings {
+  organization_id: string;
+  costing_rate_mode: FxCostingRateMode;
+  manual_rate?: number;
+  custom_margin_percent?: number;
+  refresh_interval_minutes: number;
+  last_checked_at: string;
+  status: FxStatus;
+  updated_at: string;
+}
+
+// ==========================================
+// 11. EXPORT COST & LOGISTICS TYPES
+// ==========================================
+
+export type ContainerType = '20FT' | '40FT' | '40HC' | 'CUSTOM';
+export type IncotermType = 'EXW' | 'FOB' | 'CIF' | 'LANDED';
+
+export interface ProductPackagingSpec {
+  sku: string;
+  units_per_box: number;
+  box_length_cm: number;
+  box_width_cm: number;
+  box_height_cm: number;
+  box_weight_kg: number;
+  box_volume_m3: number;
+}
+
+export interface ContainerSpec {
+  type: ContainerType;
+  name: string;
+  usable_m3: number;
+  max_payload_kg: number;
+  default_freight_usd: number;
+}
+
+export interface FclLogisticsInput {
+  container_type: ContainerType;
+  packaging: ProductPackagingSpec;
+  container_freight_cost_usd: number;
+  origin_charges_usd?: number;
+  destination_charges_usd?: number;
+  documentation_usd?: number;
+  customs_usd?: number;
+  insurance_usd?: number;
+  other_export_costs_usd?: number;
+  usable_m3?: number;
+  max_weight_kg?: number;
+  actual_boxes_per_container?: number;
+}
+
+export interface FclLogisticsResult {
+  container_type: ContainerType;
+  box_volume_m3: number;
+  boxes_by_volume: number;
+  boxes_by_weight: number;
+  usable_boxes: number;
+  is_manual_override: boolean;
+  units_per_container: number;
+  volume_utilization_percent: number;
+  weight_utilization_percent: number;
+  freight_cost_per_box_usd: number;
+  freight_cost_per_unit_usd: number;
+  origin_cost_per_unit_usd: number;
+  documentation_cost_per_unit_usd: number;
+  insurance_cost_per_unit_usd: number;
+  customs_cost_per_unit_usd: number;
+  other_cost_per_unit_usd: number;
+  total_export_cost_per_unit_usd: number;
+  total_container_cost_usd: number;
+}
+
+export interface LclLogisticsInput {
+  packaging: ProductPackagingSpec;
+  number_of_boxes?: number;
+  number_of_units?: number;
+  freight_cost_per_m3_usd: number;
+  minimum_charge_usd?: number;
+  origin_charges_usd?: number;
+  destination_charges_usd?: number;
+  documentation_usd?: number;
+  customs_usd?: number;
+  insurance_usd?: number;
+  other_export_costs_usd?: number;
+}
+
+export interface LclLogisticsResult {
+  number_of_boxes: number;
+  total_units: number;
+  box_volume_m3: number;
+  total_m3: number;
+  freight_rate_per_m3_usd: number;
+  minimum_charge_applied: boolean;
+  freight_subtotal_usd: number;
+  freight_cost_per_box_usd: number;
+  freight_cost_per_unit_usd: number;
+  other_charges_subtotal_usd: number;
+  total_lcl_cost_usd: number;
+  total_cost_per_box_usd: number;
+  total_cost_per_unit_usd: number;
+}
+
+export interface LogisticsBreakEvenPoint {
+  volume_units: number;
+  boxes: number;
+  total_m3: number;
+  lcl_cost_usd: number;
+  lcl_unit_cost_usd: number;
+  fcl_20ft_cost_usd: number;
+  fcl_20ft_unit_cost_usd: number;
+  fcl_40hc_cost_usd: number;
+  fcl_40hc_unit_cost_usd: number;
+  best_method: 'LCL' | '20FT' | '40HC';
+}
+
+export interface LogisticsBreakEvenResult {
+  break_even_units_20ft: number;
+  break_even_boxes_20ft: number;
+  break_even_units_40hc: number;
+  break_even_boxes_40hc: number;
+  summary_message: string;
+  volume_breakdown: LogisticsBreakEvenPoint[];
+}
+
+export interface LandedCostBreakdown {
+  sku: string;
+  factory_cost_usd: number;
+  export_packaging_usd: number;
+  origin_logistics_usd: number;
+  documentation_usd: number;
+  freight_usd: number;
+  insurance_usd: number;
+  destination_charges_usd: number;
+  duties_taxes_usd: number;
+  // Unit summaries USD
+  exw_unit_usd: number;
+  fob_unit_usd: number;
+  cif_unit_usd: number;
+  landed_unit_usd: number;
+  // Unit summaries PYG
+  fx_rate_used: number;
+  exw_unit_pyg: number;
+  fob_unit_pyg: number;
+  cif_unit_pyg: number;
+  landed_unit_pyg: number;
+}
+
+// ==========================================
+// 12. QUOTE-TO-COST MATCHER TYPES
+// ==========================================
+
+export interface ExternalQuoteInput {
+  supplier_name: string;
+  country: MarketCode | string;
+  quote_date?: string;
+  product_description: string;
+  product_name?: string;
+  size_oz?: number;
+  size_ml?: number;
+  material?: string;
+  paper?: string;
+  quantity?: number;
+  quoted_unit_price: number;
+  currency: string;
+  incoterm?: string;
+  lead_time_days?: number;
+  source_type: 'EMAIL' | 'PDF' | 'XLSX' | 'CSV' | 'MANUAL_TEXT' | 'RFQ_REPLY';
+  raw_text?: string;
+}
+
+export interface QuoteMatchResult {
+  id: string;
+  external_quote: ExternalQuoteInput;
+  matched_sku: string;
+  matched_sku_name: string;
+  sku_similarity_score: number; // 0 to 1
+  size_match: boolean;
+  material_match: boolean;
+  external_unit_price_usd: number;
+  niupack_factory_unit_cost_usd: number;
+  niupack_landed_unit_cost_usd: number;
+  fx_rate_used: number;
+  niupack_factory_unit_cost_pyg: number;
+  price_gap_usd: number;
+  price_gap_percent: number;
+  margin_at_external_price_percent: number;
+  competitive_status: 'COMPETITIVE' | 'PARITY' | 'DISADVANTAGE' | 'CRITICAL';
+  comparable_warning?: string;
+  created_at: string;
 }
 

@@ -26,6 +26,10 @@ import {
   CopilotThread,
   CopilotMessage,
   CopilotAction,
+  FxRate,
+  FxSettings,
+  ProductPackagingSpec,
+  QuoteMatchResult,
 } from '@/types';
 import {
   INITIAL_ORG,
@@ -43,6 +47,9 @@ import {
   INITIAL_SETTINGS,
   INITIAL_AUDIT_EVENTS,
   INITIAL_INDUSTRIAL_COST_INPUTS,
+  INITIAL_FX_RATES,
+  INITIAL_FX_SETTINGS,
+  INITIAL_PACKAGING_SPECS,
 } from './seed-data';
 import { supabase, isSupabaseConfigured } from './supabase';
 
@@ -74,6 +81,10 @@ class Store {
   copilotThreads: CopilotThread[] = [];
   copilotMessages: CopilotMessage[] = [];
   copilotActions: CopilotAction[] = [];
+  fxRates: FxRate[] = [...INITIAL_FX_RATES];
+  fxSettings: FxSettings = { ...INITIAL_FX_SETTINGS };
+  packagingSpecs: ProductPackagingSpec[] = [...INITIAL_PACKAGING_SPECS];
+  quoteMatches: QuoteMatchResult[] = [];
 }
 
 // Global singleton across server restarts during dev
@@ -569,5 +580,86 @@ export const repository = {
     if (idx === -1) return null;
     store.copilotActions[idx].status = status;
     return store.copilotActions[idx];
+  },
+
+  // FX & Exchange Rates
+  async getFxSettings(): Promise<FxSettings> {
+    return { ...store.fxSettings };
+  },
+
+  async updateFxSettings(updates: Partial<FxSettings>): Promise<FxSettings> {
+    store.fxSettings = {
+      ...store.fxSettings,
+      ...updates,
+      updated_at: new Date().toISOString(),
+    };
+    return { ...store.fxSettings };
+  },
+
+  async getLatestFxRate(base: string = 'USD', quote: string = 'PYG'): Promise<FxRate> {
+    const matching = store.fxRates
+      .filter((r) => r.base_currency === base && r.quote_currency === quote && r.is_active)
+      .sort((a, b) => b.fetched_at.localeCompare(a.fetched_at));
+    if (matching.length > 0) return { ...matching[0] };
+    return { ...INITIAL_FX_RATES[0] };
+  },
+
+  async addFxRate(rate: Omit<FxRate, 'id' | 'created_at'>): Promise<FxRate> {
+    const newRate: FxRate = {
+      ...rate,
+      id: crypto.randomUUID(),
+      created_at: new Date().toISOString(),
+    };
+    store.fxRates.unshift(newRate);
+    return newRate;
+  },
+
+  async getFxRateHistory(limit: number = 30): Promise<FxRate[]> {
+    return store.fxRates.slice(0, limit);
+  },
+
+  // Packaging Specs
+  async getPackagingSpecs(): Promise<ProductPackagingSpec[]> {
+    return [...store.packagingSpecs];
+  },
+
+  async getPackagingSpec(sku: string): Promise<ProductPackagingSpec | undefined> {
+    const spec = store.packagingSpecs.find((s) => s.sku === sku);
+    if (spec) return { ...spec };
+    // Fallback default
+    return {
+      sku,
+      units_per_box: 1000,
+      box_length_cm: 50,
+      box_width_cm: 40,
+      box_height_cm: 45,
+      box_weight_kg: 9.5,
+      box_volume_m3: 0.09,
+    };
+  },
+
+  async updatePackagingSpec(spec: ProductPackagingSpec): Promise<ProductPackagingSpec> {
+    const idx = store.packagingSpecs.findIndex((s) => s.sku === spec.sku);
+    if (idx !== -1) {
+      store.packagingSpecs[idx] = { ...spec };
+    } else {
+      store.packagingSpecs.push({ ...spec });
+    }
+    return spec;
+  },
+
+  // Quote-to-Cost Matches
+  async getQuoteMatches(): Promise<QuoteMatchResult[]> {
+    return [...store.quoteMatches];
+  },
+
+  async saveQuoteMatch(match: Omit<QuoteMatchResult, 'id' | 'created_at'>): Promise<QuoteMatchResult> {
+    const newMatch: QuoteMatchResult = {
+      ...match,
+      id: crypto.randomUUID(),
+      created_at: new Date().toISOString(),
+    };
+    store.quoteMatches.unshift(newMatch);
+    return newMatch;
   },
 };

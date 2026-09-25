@@ -2,15 +2,17 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { CheckCircle2, ShieldCheck, ArrowRight, DollarSign, Clock, FileText, Check, AlertCircle } from 'lucide-react';
+import { CheckCircle2, ShieldCheck, ArrowRight, DollarSign, Clock, FileText, Check, AlertCircle, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { SupplierQuote } from '@/types';
+import { QuoteCostMatcherModal } from '@/components/rfq/QuoteCostMatcherModal';
 
 export default function QuotesPage() {
   const [quotes, setQuotes] = useState<SupplierQuote[]>([]);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
+  const [isMatcherOpen, setIsMatcherOpen] = useState<boolean>(false);
 
   useEffect(() => {
     fetchQuotes();
@@ -61,12 +63,33 @@ export default function QuotesPage() {
           </p>
         </div>
 
-        <Link href="/market/prices">
-          <Button variant="secondary" size="sm">
-            Ver Observaciones de Mercado
+        <div className="flex items-center gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setIsMatcherOpen(true)}
+            className="flex items-center gap-2"
+          >
+            <Sparkles className="h-4 w-4" />
+            <span>Quote-to-Cost Matcher</span>
           </Button>
-        </Link>
+
+          <Link href="/market/prices">
+            <Button variant="secondary" size="sm">
+              Ver Observaciones de Mercado
+            </Button>
+          </Link>
+        </div>
       </div>
+
+      <QuoteCostMatcherModal
+        isOpen={isMatcherOpen}
+        onClose={() => setIsMatcherOpen(false)}
+        onMatchSaved={(match) => {
+          setFeedback(`✓ Cotización de ${match.external_quote.supplier_name} emparejada con ${match.matched_sku} ($${match.niupack_factory_unit_cost_usd.toFixed(5)} USD/u)`);
+          setTimeout(() => setFeedback(null), 5000);
+        }}
+      />
 
       {feedback && (
         <div className="p-3 bg-emerald-950/40 border border-emerald-800/60 rounded text-xs text-emerald-300 flex items-center justify-between">

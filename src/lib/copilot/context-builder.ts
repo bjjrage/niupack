@@ -209,21 +209,125 @@ Impacto comercial: Permite ofrecer un precio escala de USD ${(scaleCost / 0.88).
         payload: { newVolume: 500000 },
         status: 'PROPOSED',
       });
+    } else if (q.includes('exportar') || q.includes('lcl') || q.includes('flete') || q.includes('m3') || q.includes('freight')) {
+      const targetM3Rate = q.includes('160') ? 160 : 180;
+      const targetUnits = q.includes('500.000') || q.includes('500k') ? 500000 : q.includes('300.000') || q.includes('300k') ? 300000 : vol;
+      const boxes = Math.ceil(targetUnits / 1000);
+      const totalM3 = Number((boxes * 0.09).toFixed(2));
+      const freightBase = Number((totalM3 * targetM3Rate).toFixed(2));
+      const freightPerUnit = Number((freightBase / targetUnits).toFixed(5));
+
+      text = `Cálculo de Exportación LCL (${targetUnits.toLocaleString()} vasos ${context.sku || 'CUP-12OZ-SW'}):
+
+• Especificación empaque: 1.000 u/caja (50×40×45 cm) = 0.0900 m³/caja
+• Volumen total del lote: ${boxes} cajas × 0.09 m³ = ${totalM3} m³
+• Tarifa aplicada: USD ${targetM3Rate}/m³
+• Flete marítimo/terrestre subtotal: USD ${freightBase.toLocaleString()}
+• Flete unitario puro por vaso: USD ${freightPerUnit.toFixed(5)}/u (Gs. ${Math.round(freightPerUnit * 7550)}/u)
+
+${q.includes('freight a') || q.includes('0.005') 
+  ? `Para bajar el flete unitario a USD 0.0050/u: Se requiere contratar un contenedor completo FCL 40HC (tarifa estándar USD 3.200) con un despacho mínimo de 640.000 unidades ($3.200 / 0.0050 = 640.000 u).` 
+  : `El flete representa aproximadamente el ${((freightPerUnit / (cost + freightPerUnit + 0.005)) * 100).toFixed(1)}% del costo puesto en destino (Landed).`}`;
+
+      proposedActions.push({
+        id: `act-${Date.now()}-lcl`,
+        action_type: 'NAVIGATE',
+        label: 'Ver Módulo Export Logistics',
+        payload: { targetRoute: '/cost/logistics' },
+        status: 'PROPOSED',
+      });
+    } else if (q.includes('40hc') || q.includes('40ft') || q.includes('conviene') || q.includes('break-even') || q.includes('comparame lcl')) {
+      const breakEven20 = 115000;
+      const breakEven40 = 198000;
+      text = `Análisis de Break-Even Logístico (LCL vs FCL Contenedor):
+
+1. Break-Even FCL 20FT ($1.850 flete):
+   • Conviene a partir de ~${breakEven20.toLocaleString()} unidades (115 cajas = 10.35 m³).
+   • Por debajo de 115.000 u, LCL consolidado es más barato.
+
+2. Break-Even FCL 40HC ($3.200 flete):
+   • Conviene a partir de ~${breakEven40.toLocaleString()} unidades (198 cajas = 17.8 m³).
+
+Comparativa para 500.000 unidades (500 cajas = 45 m³):
+• LCL consolidado (USD 180/m³): USD 8.100 total (USD 0.01620/u)
+• FCL 40HC (tarifa fija USD 3.200): USD 3.200 total (USD 0.00640/u)
+• Ahorro neto en el lote contratando 40HC: USD 4.900 (-60.5% en flete)`;
+
+      proposedActions.push({
+        id: `act-${Date.now()}-be`,
+        action_type: 'NAVIGATE',
+        label: 'Abrir Comparador Break-Even FCL',
+        payload: { targetRoute: '/cost/logistics' },
+        status: 'PROPOSED',
+      });
+    } else if (q.includes('dólar') || q.includes('dolar') || q.includes('sube') || q.includes('fx') || q.includes('cambio')) {
+      const currentRate = 7550;
+      const ratePlus5 = Math.round(currentRate * 1.05);
+      const costPygCurrent = Math.round(cost * currentRate);
+      const costPygNew = Math.round(cost * ratePlus5);
+
+      text = `Simulación de Sensibilidad Cambiaria (Dólar sube +5%):
+
+• Tipo de cambio actual (BNF Venta): Gs. ${currentRate.toLocaleString('es-PY')} / USD
+• Tipo de cambio proyectado (+5%): Gs. ${ratePlus5.toLocaleString('es-PY')} / USD
+
+Impacto sobre Costo de Fabricación:
+• Costo en USD: USD ${cost.toFixed(5)}/u (Invariante si los insumos son cotizados en USD)
+• Costo en Guaraníes: Sube de Gs. ${costPygCurrent} a Gs. ${costPygNew} por vaso (+Gs. ${costPygNew - costPygCurrent}/u)
+
+Efecto Competitivo para Exportación:
+• Para exportar a Brasil o Argentina cobrando en USD, la devaluación del Guaraní abarata los costos operativos locales (mano de obra y energía en Gs.), aumentando el margen neto en un ~0.8 pp.`;
+
+      proposedActions.push({
+        id: `act-${Date.now()}-fx`,
+        action_type: 'NAVIGATE',
+        label: 'Ver Análisis Cambiario en Cost Sheets',
+        payload: { targetRoute: '/cost/cost-sheets' },
+        status: 'PROPOSED',
+      });
+    } else if (q.includes('landed') || q.includes('gs y usd') || q.includes('costo en gs')) {
+      const exwUSD = cost;
+      const fobUSD = Number((cost + 0.0035).toFixed(5));
+      const cifUSD = Number((fobUSD + 0.0162 + 0.0005).toFixed(5));
+      const landedUSD = Number((cifUSD * 1.10 + 0.002).toFixed(5));
+
+      text = `Estructura de Landed Cost en Doble Moneda (USD / Gs.) [TC: 7.550]:
+
+1. EXW (Planta Asunción):
+   • USD ${exwUSD.toFixed(5)} /u | Gs. ${Math.round(exwUSD * 7550)} /u
+
+2. FOB (Terminal Asunción):
+   • USD ${fobUSD.toFixed(5)} /u | Gs. ${Math.round(fobUSD * 7550)} /u (+Empaque & Logística origen)
+
+3. CIF (Puerto Destino Santos):
+   • USD ${cifUSD.toFixed(5)} /u | Gs. ${Math.round(cifUSD * 7550)} /u (+Flete LCL $0.0162/u & Seguro)
+
+4. LANDED (Depósito Cliente Final):
+   • USD ${landedUSD.toFixed(5)} /u | Gs. ${Math.round(landedUSD * 7550)} /u (+Arancel 10% & Aduana)`;
+
+      proposedActions.push({
+        id: `act-${Date.now()}-landed`,
+        action_type: 'NAVIGATE',
+        label: 'Ver Cascada Landed Cost Completa',
+        payload: { targetRoute: '/cost/logistics' },
+        status: 'PROPOSED',
+      });
     } else {
       // Default contextual response
       text = `Datos contextuales activos en pantalla:
 
 • SKU: ${context.sku || 'CUP-12OZ-SW'}
 • Mercado: ${context.market || 'BR'}
-• Costo Unitario Real: USD ${cost.toFixed(5)}
+• Costo Unitario Real: USD ${cost.toFixed(5)} | Gs. ${Math.round(cost * 7550)} /u
 • Benchmark Mercado: USD ${bench.toFixed(4)}
 • Brecha Competitiva: ${((cost - bench) / bench * 100).toFixed(2)}%
 
-Podés preguntarme sobre:
-1. Impacto de variar la merma de materia prima.
-2. Comparación entre pliego 900x1000 vs 750x1000 (banda ancha).
-3. Precios sugeridos por margen objetivo (10%, 12%, 15%).
-4. Inversión CAPEX y punto de equilibrio para comprar impresora flexo propia.`;
+Podés consultarme sobre:
+1. "¿Cuánto me cuesta exportar 300.000 vasos por LCL?"
+2. "¿A partir de qué cantidad me conviene 40HC?"
+3. "¿Qué pasa si el dólar sube 5%?"
+4. "¿Cuál es mi landed cost en Gs y USD?"
+5. "Comparame LCL vs 40FT para 500.000 unidades."`;
 
       proposedActions.push({
         id: `act-${Date.now()}-5`,

@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Info,
   Maximize2,
+  Scale,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -66,7 +67,19 @@ export function PricingStrategyClient({
   const [freightUSDPerThousand, setFreightUSDPerThousand] = useState<number>(1.80);
 
   // Active View Tab for Deep Dives
-  const [activeTab, setActiveTab] = useState<'STRATEGIES' | 'SIMULATOR' | 'NESTING' | 'CAPEX'>('STRATEGIES');
+  const [activeTab, setActiveTab] = useState<'STRATEGIES' | 'SIMULATOR' | 'NESTING' | 'CAPEX' | 'INCOTERMS'>('STRATEGIES');
+
+  // FX Rate State
+  const [fxRate, setFxRate] = useState<number>(7550);
+
+  useEffect(() => {
+    fetch('/api/fx')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.costingRate) setFxRate(d.costingRate);
+      })
+      .catch((e) => console.error(e));
+  }, []);
 
   // Benchmark for selected market
   const marketBenchmark = useMemo(() => {
@@ -246,12 +259,18 @@ export function PricingStrategyClient({
       key: 'suggested_price_usd',
       header: 'Precio Sugerido',
       render: (s) => (
-        <span className="font-mono text-sm font-bold text-white font-tabular">
-          ${Number(s.suggested_price_usd).toFixed(4)}
-        </span>
+        <div>
+          <span className="font-mono text-sm font-bold text-white font-tabular block">
+            ${Number(s.suggested_price_usd).toFixed(4)}{' '}
+            <span className="text-[10px] text-slate-400 font-normal font-sans">USD/u</span>
+          </span>
+          <span className="font-mono text-[10px] text-amber-400 font-semibold block">
+            Gs. {Math.round(Number(s.suggested_price_usd) * fxRate).toLocaleString('es-PY')} /u
+          </span>
+        </div>
       ),
       align: 'right',
-      className: 'w-28',
+      className: 'w-36',
     },
     {
       key: 'margin_percent',
@@ -517,6 +536,17 @@ export function PricingStrategyClient({
           }`}
         >
           4. Escenarios Industriales & Análisis CAPEX
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('INCOTERMS')}
+          className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+            activeTab === 'INCOTERMS'
+              ? 'bg-brand-500 text-white'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+          }`}
+        >
+          5. Comparación Incoterms vs Benchmark
         </button>
       </div>
 
@@ -973,6 +1003,81 @@ export function PricingStrategyClient({
                 <br />
                 2. <strong>Paso Estratégico (Año 1-2):</strong> Evaluar la adquisición de una <strong>Impresora Flexográfica Central Drum de 850mm</strong> (Escenario C, inversión USD 180.000). A volúmenes superiores a <strong>20M unidades anuales</strong>, la inversión se repaga en <strong>1.5 años</strong> y deja a NIUPACK con una ventaja de costo estructural definitiva para liderar el Cono Sur.
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: INCOTERMS COMPARISON VS BENCHMARK */}
+      {activeTab === 'INCOTERMS' && (
+        <div className="bg-[#141820] border border-slate-800 rounded-lg p-5 space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <Scale className="h-4 w-4 text-brand-400" />
+                Comparativa de Incoterms vs Benchmark de {selectedMarket}
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Normalización de bases comerciales: evita comparar precios EXW de fábrica contra cotizaciones locales en destino.
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-[10px] text-slate-500 block">Benchmark Regional ({selectedMarket}):</span>
+              <span className="font-mono text-base font-bold text-white">${marketBenchmark.toFixed(4)} USD</span>
+            </div>
+          </div>
+
+          {/* Comparability Warning Banner */}
+          <div className="p-4 bg-amber-950/40 border border-amber-800/60 rounded-lg flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
+              <span className="font-bold text-amber-300 block">Advertencia de Base Comercial y Aranceles:</span>
+              <p className="text-slate-300 leading-relaxed">
+                El precio cotizado por fabricantes en <strong>{selectedMarket}</strong> (${marketBenchmark.toFixed(4)} USD) corresponde a entrega en su mercado local. Si NIUPACK cotiza únicamente en base <strong>EXW Planta Asunción (${unitCost.toFixed(5)} USD)</strong>, el comprador percibirá un precio aparente pero deberá absorber el flete internacional y gastos de aduana. Para una comparación fidedigna frente a compras locales, evaluá la base <strong>LANDED</strong> en la puerta del cliente.
+              </p>
+            </div>
+          </div>
+
+          {/* Incoterms Breakdown Table */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 font-mono text-xs">
+            {/* 1. EXW */}
+            <div className="bg-[#0c0f14] p-3.5 rounded-lg border border-slate-800 space-y-1">
+              <span className="text-[10px] font-sans font-bold text-slate-400 block uppercase">1. EXW (Planta Asunción)</span>
+              <div className="text-base font-bold text-white">${unitCost.toFixed(5)} <span className="text-[10px] font-normal text-slate-500 font-sans">USD/u</span></div>
+              <div className="text-xs text-amber-400">Gs. {Math.round(unitCost * fxRate).toLocaleString('es-PY')} /u</div>
+              <div className="pt-2 border-t border-slate-800 text-[10px] font-sans text-slate-400">
+                Brecha vs Benchmark: <span className="text-emerald-400 font-mono font-bold">{(((marketBenchmark - unitCost) / marketBenchmark) * 100).toFixed(1)}%</span>
+              </div>
+            </div>
+
+            {/* 2. FOB */}
+            <div className="bg-[#0c0f14] p-3.5 rounded-lg border border-slate-800 space-y-1">
+              <span className="text-[10px] font-sans font-bold text-sky-400 block uppercase">2. FOB (Terminal Asunción)</span>
+              <div className="text-base font-bold text-sky-400">${(unitCost + 0.0035).toFixed(5)} <span className="text-[10px] font-normal text-slate-500 font-sans">USD/u</span></div>
+              <div className="text-xs text-sky-500">Gs. {Math.round((unitCost + 0.0035) * fxRate).toLocaleString('es-PY')} /u</div>
+              <div className="pt-2 border-t border-slate-800 text-[10px] font-sans text-slate-400">
+                + Empaque exp. & despacho
+              </div>
+            </div>
+
+            {/* 3. CIF */}
+            <div className="bg-[#0c0f14] p-3.5 rounded-lg border border-slate-800 space-y-1">
+              <span className="text-[10px] font-sans font-bold text-amber-400 block uppercase">3. CIF (Puerto Destino)</span>
+              <div className="text-base font-bold text-amber-400">${(unitCost + 0.0035 + (freightUSDPerThousand / 1000) + 0.0005).toFixed(5)} <span className="text-[10px] font-normal text-slate-500 font-sans">USD/u</span></div>
+              <div className="text-xs text-amber-500">Gs. {Math.round((unitCost + 0.0035 + (freightUSDPerThousand / 1000) + 0.0005) * fxRate).toLocaleString('es-PY')} /u</div>
+              <div className="pt-2 border-t border-slate-800 text-[10px] font-sans text-slate-400">
+                + Flete int. (${(freightUSDPerThousand / 1000).toFixed(5)}) & seguro
+              </div>
+            </div>
+
+            {/* 4. LANDED */}
+            <div className="bg-[#0c0f14] p-3.5 rounded-lg border border-emerald-500/50 space-y-1">
+              <span className="text-[10px] font-sans font-bold text-emerald-400 block uppercase">4. LANDED (Depósito Cliente)</span>
+              <div className="text-base font-bold text-emerald-400">${( (unitCost + 0.0035 + (freightUSDPerThousand / 1000) + 0.0005) * 1.10 + 0.002 ).toFixed(5)} <span className="text-[10px] font-normal text-slate-500 font-sans">USD/u</span></div>
+              <div className="text-xs text-emerald-500">Gs. {Math.round(( (unitCost + 0.0035 + (freightUSDPerThousand / 1000) + 0.0005) * 1.10 + 0.002 ) * fxRate).toLocaleString('es-PY')} /u</div>
+              <div className="pt-2 border-t border-slate-800 text-[10px] font-sans text-slate-400">
+                Arancel 10% & gastos aduaneros
+              </div>
             </div>
           </div>
         </div>
