@@ -119,6 +119,7 @@ a { color: inherit; text-decoration: none; }
 
 .flag {
   display: block;
+  flex: 0 0 24px;
   width: 24px;
   height: 16px;
   overflow: hidden;
@@ -158,26 +159,30 @@ a { color: inherit; text-decoration: none; }
 
 .flag-br {
   position: relative;
-  background: #009b3a;
+  background: #009c3b;
 }
 
 .flag-br::before {
   content: "";
   position: absolute;
-  inset: 2px 5px;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
   background: #ffdf00;
-  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  transform: translate(-50%, -50%) rotate(45deg);
 }
 
 .flag-br::after {
   content: "";
   position: absolute;
-  top: 4.5px;
-  left: 8.5px;
-  width: 7px;
-  height: 7px;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: #002776;
+  transform: translate(-50%, -50%);
 }
 
 .language-switch a:hover,

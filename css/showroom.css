@@ -25,6 +25,9 @@
 .showroom-art { position: absolute; inset: 0 0 56px; perspective: 1100px; transform-style: preserve-3d; transform: translate3d(var(--scene-x, 0px), var(--scene-y, 0px), 0); transition: transform 300ms ease-out; }
 .showroom-product { position: absolute; top: 50%; left: 50%; width: 80%; height: 84%; padding: 0; background: transparent; border: 0; cursor: pointer; transform: translate(-50%, -50%); transition: transform 700ms cubic-bezier(.22,.8,.22,1), opacity 500ms, filter 500ms; }
 .showroom-product img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 36px 30px #05071188); user-select: none; transform: rotateX(var(--look-y, 0deg)) rotateY(var(--look-x, 0deg)); transition: transform 180ms ease-out; }
+.showroom-product[data-cup-visual] .showroom-cup-image { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; transform: translateY(-18px) scale(.9); animation: none; transition: opacity 360ms ease, transform 520ms cubic-bezier(.2,.8,.2,1); }
+.showroom-product[data-cup-visual] .showroom-cup-image.is-current { opacity: 1; transform: translateY(0) scaleX(var(--cup-display-width-scale, 1)) scale(var(--cup-display-scale, 1)); }
+.showroom-product[data-cup-visual] .showroom-cup-image.is-exiting { opacity: 0; transform: translateY(24px) scale(.9); }
 .showroom-product[data-position="active"] { transform: translate(-50%, -48%) translateZ(60px); opacity: 1; z-index: 3; }
 .showroom-product[data-position="active"] img { animation: showroom-float 4.5s ease-in-out infinite alternate; }
 .showroom-product[data-position="previous"] { transform: translate(-112%, -51%) translateZ(-300px) rotateY(32deg) scale(.68); opacity: .54; z-index: 1; filter: saturate(.8) blur(1px); }
@@ -55,7 +58,7 @@
 #productos .showroom .product-fields { margin: 0; padding-top: 14px; gap: 11px; border-top: 1px solid #ffffff42; }
 #productos .showroom .product-fields label { font-size: 12px; gap: 7px; font-weight: 700; color: #f3ecee; }
 #productos .showroom .custom-select, #productos .showroom .product-static-select { width: 100%; max-width: none; }
-.showroom .product-static-select,
+#productos .showroom .product-static-select,
 #productos .showroom .custom-select-trigger { color: #fff; }
 #productos .showroom .custom-select-trigger,
 #productos .showroom .product-static-select { min-height: 42px; border-radius: 10px; border: 1px solid #ffffff45; background: #ffffff1c; box-shadow: inset 0 1px 0 #ffffff20; font-size: 13px; }

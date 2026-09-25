@@ -3,51 +3,50 @@ window.setupProductShowroom = function (carousel) {
   if (!carousel) return;
   const cards = [...carousel.querySelectorAll('.product-card')];
   if (!cards.length) return;
-  const language = document.documentElement.lang;
-  const isEnglish = language === 'en';
-  const isPortuguese = language === 'pt-BR';
+  const isEnglish = document.documentElement.lang === 'en';
+  const isPortuguese = document.documentElement.lang === 'pt-BR';
   const copy = isPortuguese
     ? {
         exploreLines: 'EXPLORE NOSSAS LINHAS',
-        perspective: 'Produtos em perspectiva',
+        stageLabel: 'Produtos em perspectiva',
         previous: 'Produto anterior',
-        drag: 'ARRASTE PARA EXPLORAR',
         next: 'Próximo produto',
+        drag: 'ARRASTE PARA EXPLORAR',
         productLines: 'Linhas de produtos',
         explore: 'Explorar',
-        madeForBrand: 'FEITO PARA A SUA MARCA',
-        inquire: 'Consulte este produto ↗',
-        message: name => `Olá, gostaria de consultar sobre ${name}.`,
+        madeForBrand: 'FEITO PARA SUA MARCA',
+        inquire: 'Consultar este produto ↗',
+        inquireIntro: (name) => `Olá, gostaria de consultar sobre ${name}.`,
       }
     : isEnglish
       ? {
           exploreLines: 'EXPLORE OUR LINES',
-          perspective: 'Products in perspective',
+          stageLabel: 'Products in perspective',
           previous: 'Previous product',
-          drag: 'DRAG TO EXPLORE',
           next: 'Next product',
+          drag: 'DRAG TO EXPLORE',
           productLines: 'Product lines',
           explore: 'Explore',
           madeForBrand: 'MADE FOR YOUR BRAND',
           inquire: 'Inquire about this product ↗',
-          message: name => `Hello, I would like to inquire about ${name}.`,
+          inquireIntro: (name) => `Hello, I would like to inquire about ${name}.`,
         }
       : {
           exploreLines: 'EXPLORÁ NUESTRAS LÍNEAS',
-          perspective: 'Productos en perspectiva',
+          stageLabel: 'Productos en perspectiva',
           previous: 'Producto anterior',
-          drag: 'ARRASTRÁ PARA EXPLORAR',
           next: 'Producto siguiente',
+          drag: 'ARRASTRÁ PARA EXPLORAR',
           productLines: 'Líneas de producto',
           explore: 'Explorar',
           madeForBrand: 'HECHO PARA TU MARCA',
           inquire: 'Consultar este producto ↗',
-          message: name => `Hola, quiero consultar por ${name}.`,
+          inquireIntro: (name) => `Hola, quiero consultar por ${name}.`,
         };
   const names = cards.map(card => card.querySelector('h3').textContent);
   carousel.className = 'showroom';
   carousel.innerHTML = `<div class="showroom-top"><span>${copy.exploreLines}</span><span class="showroom-counter" aria-live="polite"></span></div>
-    <div class="showroom-layout"><div class="showroom-stage" aria-label="${copy.perspective}">
+    <div class="showroom-layout"><div class="showroom-stage" aria-label="${copy.stageLabel}">
       <div class="showroom-art"></div>
       <div class="showroom-stage-controls"><button type="button" data-step="-1" aria-label="${copy.previous}">←</button><span>${copy.drag}</span><button type="button" data-step="1" aria-label="${copy.next}">→</button></div>
     </div><div class="showroom-details"></div></div><div class="showroom-tabs" role="tablist" aria-label="${copy.productLines}"></div>`;
@@ -59,12 +58,18 @@ window.setupProductShowroom = function (carousel) {
   const images = [], panels = [], tabs = [];
   cards.forEach((card, index) => {
     const image = card.querySelector('.product-card-media img');
+    const isCupCard = card.hasAttribute('data-cup-card');
+    const isBowlCard = Boolean(card.querySelector('[data-bowl-size]'));
     const figure = document.createElement('button');
     figure.type = 'button';
     figure.className = 'showroom-product';
     figure.setAttribute('aria-label', `${copy.explore} ${names[index]}`);
     image.draggable = false;
     figure.append(image);
+    if (isCupCard) {
+      figure.dataset.cupVisual = '';
+      image.classList.add('showroom-cup-image', 'is-current');
+    }
     figure.addEventListener('click', () => show(index));
     art.append(figure);
     images.push(figure);
@@ -75,6 +80,120 @@ window.setupProductShowroom = function (carousel) {
     panel.setAttribute('aria-labelledby', `showroom-tab-${index}`);
     panel.innerHTML = `<p class="showroom-kicker">${copy.madeForBrand}</p>`;
     panel.append(card.querySelector('h3'), card.querySelector('p'), card.querySelector('.product-fields'));
+    if (isCupCard) {
+      const typeSelect = panel.querySelector('[data-cup-type]');
+      const sizeSelect = panel.querySelector('[data-cup-size]');
+      const nextImage = document.createElement('img');
+      nextImage.className = 'showroom-cup-image';
+      nextImage.draggable = false;
+      nextImage.alt = '';
+      figure.append(nextImage);
+
+      const cupImages = {
+        simple: {
+          all: { src: image.getAttribute('src'), scale: '1' },
+          '4 oz': { src: 'assets/showroom/cup-single-4oz-v2.png', scale: '.62' },
+          '6 oz': { src: 'assets/showroom/cup-single-6oz-v2.png', scale: '.7' },
+          '8 oz': { src: 'assets/showroom/cup-single-8oz-v3.png', scale: '.78', widthScale: '1.07' },
+          '12 oz': { src: 'assets/showroom/cup-single-12oz-v2.png', scale: '.88' },
+          '16 oz': { src: 'assets/showroom/cup-single-16oz-v2.png', scale: '.96' },
+          '21 oz': { src: 'assets/showroom/cup-single-21oz-v2.png', scale: '1' },
+          '24 oz': { src: 'assets/showroom/cup-single-24oz-v2.png', scale: '1.04' },
+        },
+        doble: {
+          all: { src: 'assets/showroom/cups-double-all-v2.png', scale: '1' },
+          '8 oz': { src: 'assets/showroom/cup-double-8oz-v2.png', scale: '.78' },
+          '12 oz': { src: 'assets/showroom/cup-double-12oz-v2.png', scale: '.96' },
+        },
+      };
+      let currentImage = image;
+      let requestedImage = 0;
+
+      function updateCupVisual() {
+        const type = typeSelect.dataset.value === 'doble' ? 'doble' : 'simple';
+        const selectedSize = sizeSelect.dataset.value;
+        const size = selectedSize?.endsWith('oz') ? selectedSize : 'all';
+        const variant = cupImages[type][size];
+        const selection = `${typeSelect.querySelector('.custom-select-trigger').textContent}, ${sizeSelect.querySelector('.custom-select-trigger').textContent}`;
+        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}`);
+        const request = ++requestedImage;
+        // Unmocked sizes remain selectable without swapping the displayed product.
+        if (!variant) return;
+        if (currentImage.getAttribute('src') === variant.src) return;
+
+        const preload = new Image();
+        preload.onload = () => {
+          if (request !== requestedImage) return;
+          const incoming = currentImage === image ? nextImage : image;
+          incoming.classList.remove('is-current', 'is-exiting');
+          incoming.src = variant.src;
+          incoming.alt = selection;
+          incoming.style.setProperty('--cup-display-scale', variant.scale);
+          incoming.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+          void incoming.offsetWidth;
+          currentImage.classList.remove('is-current');
+          currentImage.classList.add('is-exiting');
+          incoming.classList.add('is-current');
+          currentImage = incoming;
+        };
+        preload.src = variant.src;
+      }
+
+      panel.addEventListener('custom-select-change', () => queueMicrotask(updateCupVisual));
+      image.style.setProperty('--cup-display-scale', '1');
+      queueMicrotask(updateCupVisual);
+    } else if (isBowlCard) {
+      const sizeSelect = panel.querySelector('[data-bowl-size]');
+      const nextImage = document.createElement('img');
+      nextImage.className = 'showroom-cup-image';
+      nextImage.draggable = false;
+      nextImage.alt = '';
+      figure.dataset.cupVisual = '';
+      image.classList.add('showroom-cup-image', 'is-current');
+      figure.append(nextImage);
+
+      const bowlImages = {
+        all: { src: image.getAttribute('src'), scale: '1' },
+        '3 oz': { src: 'assets/showroom/bowl-icecream-3oz-v2.png', scale: '.62' },
+        '5 oz': { src: 'assets/showroom/bowl-icecream-5oz-v2.png', scale: '.72' },
+        '8 oz': { src: 'assets/showroom/bowl-icecream-8oz-v2.png', scale: '.82' },
+        '20 oz': { src: 'assets/showroom/bowl-icecream-20oz-v3.png', scale: '1' },
+      };
+      let currentImage = image;
+      let requestedImage = 0;
+
+      function updateBowlVisual() {
+        const selectedSize = sizeSelect.dataset.value;
+        const size = selectedSize === 'Todos' || selectedSize === 'All' ? 'all' : selectedSize;
+        const variant = bowlImages[size];
+        const selection = sizeSelect.querySelector('.custom-select-trigger').textContent;
+        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}`);
+        const request = ++requestedImage;
+        if (!variant) return;
+        if (currentImage.getAttribute('src') === variant.src) return;
+
+        const preload = new Image();
+        preload.onload = () => {
+          if (request !== requestedImage) return;
+          const incoming = currentImage === image ? nextImage : image;
+          incoming.classList.remove('is-current', 'is-exiting');
+          incoming.src = variant.src;
+          incoming.alt = selection;
+          incoming.style.setProperty('--cup-display-scale', variant.scale);
+          incoming.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+          void incoming.offsetWidth;
+          currentImage.classList.remove('is-current');
+          currentImage.classList.add('is-exiting');
+          incoming.classList.add('is-current');
+          currentImage = incoming;
+        };
+        preload.src = variant.src;
+      }
+
+      panel.addEventListener('custom-select-change', () => queueMicrotask(updateBowlVisual));
+      image.style.setProperty('--cup-display-scale', '1');
+      queueMicrotask(updateBowlVisual);
+    }
     const link = document.createElement('a');
     link.className = 'button showroom-consult';
     link.textContent = copy.inquire;
@@ -86,7 +205,7 @@ window.setupProductShowroom = function (carousel) {
         const value = label.querySelector('.custom-select-trigger, .product-static-select')?.textContent.trim();
         return `${title}: ${value || '-'}`;
       });
-      const intro = copy.message(names[index]);
+      const intro = copy.inquireIntro(names[index]);
       link.href = `https://wa.me/595971350619?text=${encodeURIComponent([intro, ...selection].join('\n'))}`;
     }
     panel.addEventListener('custom-select-change', updateLink);

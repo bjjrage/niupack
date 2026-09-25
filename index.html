@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="NIU PACK fabrica vasos, envases y termoformados para alimentos, bebidas e industria. Soluciones de packaging con calidad, personalización y producción confiable.">
     <title>NIU PACK | Soluciones de packaging</title>
-    <link rel="preload" href="css/styles.css" as="style">
-    <link rel="stylesheet" href="css/styles.css">
-    <link rel="stylesheet" href="css/showroom.css?v=13">
+    <link rel="preload" href="css/styles.css?v=14" as="style">
+    <link rel="stylesheet" href="css/styles.css?v=14">
+    <link rel="stylesheet" href="css/showroom.css?v=16">
   </head>
   <body>
     <header class="site-header" data-header>
@@ -36,7 +36,7 @@
           <span>|</span>
           <a href="en.html" aria-label="English" title="English"><span class="flag flag-us" aria-hidden="true"></span></a>
           <span>|</span>
-          <a href="pt.html" aria-label="Português (Brasil)" title="Português (Brasil)"><span class="flag flag-br" aria-hidden="true"></span></a>
+          <a href="pt.html" aria-label="Português" title="Português"><span class="flag flag-br" aria-hidden="true"></span></a>
         </div>
         <a class="button button-small" href="https://wa.me/595971350619?text=Hola%2C%20quiero%20solicitar%20una%20cotizaci%C3%B3n%20de%20productos%20NIU%20PACK." target="_blank" rel="noopener">Solicitar cotización</a>
       </div>
@@ -176,9 +176,11 @@
                   </div>
                 </label>
                 <label>Tamaños disponibles
-                  <div class="custom-select" data-custom-select data-cup-size data-value="">
-                    <button class="custom-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"></button>
-                    <div class="custom-select-menu" role="listbox"></div>
+                  <div class="custom-select" data-custom-select data-cup-size data-value="Todos">
+                    <button class="custom-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">Todos</button>
+                    <div class="custom-select-menu" role="listbox">
+                      <button class="custom-select-option active" type="button" data-value="Todos" role="option" aria-selected="true">Todos</button>
+                    </div>
                   </div>
                 </label>
               </div>
@@ -209,19 +211,20 @@
             </article>
             <article class="product-card product-card-floating reveal">
               <div class="product-card-media">
-                <img src="assets/Imagenes/bowls nuevos.png" alt="Potes y bowls personalizados NIU PACK">
+                <img src="assets/Imagenes/bowls%20nuevos.png" alt="Potes y bowls personalizados NIU PACK">
               </div>
               <h3>Potes y bowls</h3>
-              <p>Soluciones para helados, postres, alimentos preparados y líneas gastronómicas de alto consumo.</p>
+              <p>Potes para helado de 3, 5 y 8 oz; modelo de 20 oz con boca más ancha.</p>
               <div class="product-fields">
                 <label>Diseño
                   <div class="product-static-select">Pared simple</div>
                 </label>
                 <label>Tamaños
-                  <div class="custom-select" data-custom-select data-value="3 oz">
-                    <button class="custom-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">3 oz</button>
+                  <div class="custom-select" data-custom-select data-bowl-size data-value="Todos">
+                    <button class="custom-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">Todos</button>
                     <div class="custom-select-menu" role="listbox">
-                      <button class="custom-select-option active" type="button" data-value="3 oz" role="option" aria-selected="true">3 oz</button>
+                      <button class="custom-select-option active" type="button" data-value="Todos" role="option" aria-selected="true">Todos</button>
+                      <button class="custom-select-option" type="button" data-value="3 oz" role="option">3 oz</button>
                       <button class="custom-select-option" type="button" data-value="5 oz" role="option">5 oz</button>
                       <button class="custom-select-option" type="button" data-value="8 oz" role="option">8 oz</button>
                       <button class="custom-select-option" type="button" data-value="20 oz" role="option">20 oz</button>
@@ -576,7 +579,7 @@
       </div>
     </footer>
 
-    <script src="js/showroom.js?v=3"></script>
-    <script src="js/main.js"></script>
+    <script src="js/showroom.js?v=8"></script>
+    <script src="js/main.js?v=3"></script>
   </body>
 </html>
