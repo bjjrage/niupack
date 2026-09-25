@@ -21,19 +21,6 @@ jobs:
         with:
           node-version: 20
 
-      - name: Diagnóstico xAI (no expone la clave)
-        env:
-          XAI_API_KEY: ${{ secrets.XAI_API_KEY_2 }}
-        run: |
-          if [ -z "$XAI_API_KEY" ]; then echo "Sin XAI_API_KEY_2"; exit 0; fi
-          echo "Longitud de la clave: ${#XAI_API_KEY} caracteres"
-          echo "-- GET /v1/api-key --"
-          curl -sS -o /tmp/key.json -w "HTTP %{http_code}\n" https://api.x.ai/v1/api-key -H "Authorization: Bearer $XAI_API_KEY"
-          cat /tmp/key.json; echo
-          echo "-- GET /v1/models --"
-          curl -sS -o /tmp/models.json -w "HTTP %{http_code}\n" https://api.x.ai/v1/models -H "Authorization: Bearer $XAI_API_KEY"
-          cat /tmp/models.json; echo
-
       - name: Generar fotos por API
         env:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY_2 }}
