@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { DollarSign, ShieldAlert, Sparkles, Plus, RefreshCw, Mail } from 'lucide-react';
+import { DollarSign, ShieldAlert, Sparkles, Plus, RefreshCw, Mail, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
 export const Topbar: React.FC = () => {
@@ -69,6 +69,16 @@ export const Topbar: React.FC = () => {
             <Plus className="h-3.5 w-3.5 mr-1" />
             Generar Consultas
           </Button>
+        </Link>
+
+        {/* Ajustes Button */}
+        <Link
+          href="/settings"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 text-xs transition-colors"
+          title="Ajustes del Sistema (OpenAI & Correo Flexibles)"
+        >
+          <Settings className="h-3.5 w-3.5 text-slate-400" />
+          <span className="font-medium text-xs">Ajustes</span>
         </Link>
 
         {/* User Avatar */}

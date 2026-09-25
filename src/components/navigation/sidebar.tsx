@@ -91,7 +91,7 @@ export const Sidebar: React.FC = () => {
       title: 'SISTEMA & REPORTES',
       items: [
         { name: 'Reportes Ejecutivos', href: '/reports', icon: FileText },
-        { name: 'Configuración & Auditoría', href: '/settings', icon: Settings },
+        { name: 'Ajustes del Sistema (Bots & SMTP)', href: '/settings', icon: Settings, badge: 'BOTS' },
       ],
     },
   ];
