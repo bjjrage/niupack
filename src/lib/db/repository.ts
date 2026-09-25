@@ -53,6 +53,17 @@ import {
 } from './seed-data';
 import { supabase, isSupabaseConfigured } from './supabase';
 
+function normalizeDomain(input?: string | null): string {
+  if (!input) return '';
+  let cleaned = input.trim().toLowerCase();
+  cleaned = cleaned.replace(/^https?:\/\//i, '');
+  cleaned = cleaned.replace(/^www\./i, '');
+  cleaned = cleaned.split('/')[0];
+  cleaned = cleaned.split('?')[0];
+  cleaned = cleaned.split(':')[0];
+  return cleaned;
+}
+
 // Persistent in-process store for zero-friction local dev, tests, and CI
 class Store {
   organizations: Organization[] = [{ ...INITIAL_ORG }];
@@ -167,6 +178,46 @@ export const repository = {
     store.batteries.push(newBattery);
     return newBattery;
   },
+  async duplicateBattery(id: string, newName?: string): Promise<QueryBattery> {
+    const source = store.batteries.find((b) => b.id === id);
+    if (!source) throw new Error(`Battery with id ${id} not found`);
+
+    const sourceQueries = store.queries.filter((q) => q.battery_id === id);
+    const newVersion = source.version + 1;
+    const newBatteryId = crypto.randomUUID();
+
+    const newBattery: QueryBattery = {
+      ...source,
+      id: newBatteryId,
+      name: newName || `${source.name} (Copia V${newVersion})`,
+      code: `${source.code}_V${newVersion}_COPY`,
+      version: newVersion,
+      is_frozen: false,
+      frozen_at: undefined,
+      frozen_by: undefined,
+      battery_type: 'DYNAMIC_DISCOVERY',
+      status: 'DRAFT',
+      query_count: sourceQueries.length,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    store.batteries.push(newBattery);
+
+    // Duplicate all queries under the new battery ID
+    const duplicatedQueries: QueryItem[] = sourceQueries.map((q) => ({
+      ...q,
+      id: crypto.randomUUID(),
+      battery_id: newBatteryId,
+      is_fixed: false,
+      version: newVersion,
+      status: 'PROPOSED',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }));
+    store.queries.push(...duplicatedQueries);
+
+    return newBattery;
+  },
   async freezeBattery(id: string, frozenBy: string = 'analyst'): Promise<QueryBattery> {
     const battery = store.batteries.find((b) => b.id === id);
     if (!battery) throw new Error(`Battery with id ${id} not found`);
@@ -174,6 +225,7 @@ export const repository = {
 
     battery.is_frozen = true;
     battery.status = 'FROZEN';
+    battery.battery_type = 'FROZEN_MEASUREMENT';
     battery.frozen_at = new Date().toISOString();
     battery.frozen_by = frozenBy;
     battery.updated_at = new Date().toISOString();
@@ -247,6 +299,9 @@ export const repository = {
   async getRuns(): Promise<QueryRun[]> {
     return [...store.queryRuns];
   },
+  async getRunsByBattery(batteryId: string): Promise<QueryRun[]> {
+    return store.queryRuns.filter((r) => r.battery_id === batteryId);
+  },
   async getRun(id: string): Promise<QueryRun | undefined> {
     return store.queryRuns.find((r) => r.id === id);
   },
@@ -288,10 +343,29 @@ export const repository = {
   async getMentions(): Promise<QueryMentionAnalysis[]> {
     return [...store.mentions];
   },
+  async getMentionsByRun(runId: string): Promise<QueryMentionAnalysis[]> {
+    const runResultIds = new Set(
+      store.queryResults.filter((r) => r.run_id === runId).map((r) => r.id)
+    );
+    return store.mentions.filter(
+      (m) => (m.run_id && m.run_id === runId) || (m.result_id && runResultIds.has(m.result_id))
+    );
+  },
+
+  // Brand Domain Helper
+  async getConfiguredDomain(): Promise<string | null> {
+    const brand = store.brands[0];
+    if (!brand || !brand.website_url) return null;
+    const normalized = normalizeDomain(brand.website_url);
+    return normalized.length > 0 ? normalized : null;
+  },
 
   // Visibility Snapshots
   async getSnapshots(): Promise<VisibilitySnapshot[]> {
     return [...store.snapshots];
+  },
+  async getSnapshotsByBattery(batteryId: string): Promise<VisibilitySnapshot[]> {
+    return store.snapshots.filter((s) => s.battery_id === batteryId);
   },
   async addSnapshot(snapshot: Omit<VisibilitySnapshot, 'id'>): Promise<VisibilitySnapshot> {
     const newSnapshot: VisibilitySnapshot = {

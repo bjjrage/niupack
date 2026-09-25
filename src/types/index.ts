@@ -116,6 +116,7 @@ export interface QueryBattery {
   frozen_by?: string;
   query_count: number;
   market_codes: MarketCode[];
+  battery_type?: 'FROZEN_MEASUREMENT' | 'DYNAMIC_DISCOVERY';
   status: 'DRAFT' | 'APPROVED' | 'FROZEN' | 'ARCHIVED';
   created_at: string;
   updated_at: string;
@@ -136,6 +137,7 @@ export interface QueryItem {
   buyer_persona: string;
   commercial_priority: 'HIGH' | 'MEDIUM' | 'LOW';
   generated_by: 'AI' | 'MANUAL';
+  generation_source?: 'AI_DYNAMIC' | 'TEMPLATE_FALLBACK';
   is_fixed: boolean;
   version: number;
   status: QueryStatus;
@@ -148,13 +150,20 @@ export interface QueryRun {
   organization_id: string;
   battery_id: string;
   name: string;
+  execution_label?: 'DAY_1' | 'DAY_15' | 'DAY_30' | 'CUSTOM' | 'D1 BASELINE' | 'D15' | 'D30' | string;
   market_codes: MarketCode[];
   model: string;
   status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'PAUSED';
+  is_simulated?: boolean;
+  generation_source?: 'AI_DYNAMIC' | 'TEMPLATE_FALLBACK';
   total_queries: number;
   executed_queries: number;
   successful_queries: number;
   failed_queries: number;
+  visibility_score?: number;
+  mention_rate?: number;
+  link_rate?: number;
+  source_rate?: number;
   estimated_cost_usd: number;
   actual_cost_usd: number;
   max_spend_limit_usd: number;
@@ -171,6 +180,7 @@ export interface QueryResult {
   organization_id: string;
   country_code: MarketCode;
   model: string;
+  model_used?: string;
   raw_prompt: string;
   raw_response: string;
   sources_json: Array<{ url: string; title: string; snippet?: string }>;
@@ -180,25 +190,31 @@ export interface QueryResult {
   total_tokens: number;
   cost_usd: number;
   latency_ms: number;
+  status?: string;
   error_message?: string;
   created_at: string;
 }
 
 export interface QueryMentionAnalysis {
   id: string;
+  run_id?: string;
   result_id: string;
   query_id: string;
   organization_id: string;
   niupack_mentioned: boolean;
   niupack_linked: boolean;
-  niupack_as_source: boolean;
+  niupack_as_source?: boolean;
+  niupack_sourced?: boolean;
   mention_count: number;
-  position: 'FIRST' | 'EARLY' | 'MIDDLE' | 'LATE' | 'NONE';
-  sentiment_accuracy: 'CORRECT' | 'PARTIAL' | 'INCORRECT' | 'NONE';
-  confidence_score: number;
+  position: 'FIRST' | 'EARLY' | 'MIDDLE' | 'LATE' | 'NONE' | number | string;
+  sentiment_accuracy?: 'CORRECT' | 'PARTIAL' | 'INCORRECT' | 'NONE';
+  sentiment?: 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE';
+  confidence_score?: number;
   analysis_notes?: string;
-  competitors: Array<{ name: string; domain?: string; order: number }>;
-  sources: Array<{ url: string; domain: string; is_niupack: boolean }>;
+  competitors?: Array<{ name: string; domain?: string; order: number }>;
+  competitors_mentioned?: string[];
+  sources?: Array<{ url: string; domain: string; is_niupack: boolean }>;
+  sources_cited?: string[];
 }
 
 export interface VisibilitySnapshot {
@@ -206,18 +222,23 @@ export interface VisibilitySnapshot {
   organization_id: string;
   battery_id: string;
   run_id?: string;
-  snapshot_day: 'DAY_1' | 'DAY_15' | 'DAY_30' | 'AD_HOC';
+  snapshot_day: 'DAY_1' | 'DAY_15' | 'DAY_30' | 'CUSTOM' | 'AD_HOC';
+  execution_label?: 'DAY_1' | 'DAY_15' | 'DAY_30' | 'CUSTOM' | 'D1 BASELINE' | 'D15' | 'D30' | string;
   market_code: MarketCode | 'TOTAL';
   overall_score: number;
+  visibility_score?: number;
   mention_rate: number;
   link_rate: number;
   source_rate: number;
-  won_queries_count: number;
-  lost_queries_count: number;
   total_queries: number;
+  won_queries?: number;
+  won_queries_count?: number;
+  lost_queries?: number;
+  lost_queries_count?: number;
   competitor_share_json: Record<string, number>;
   top_sources_json: Array<{ domain: string; count: number }>;
-  captured_at: string;
+  captured_at?: string;
+  created_at?: string;
 }
 
 export interface DiagnosticCluster {

@@ -54,7 +54,7 @@ export const Sidebar: React.FC = () => {
       items: [
         { name: 'Generador de Consultas', href: '/visibility/generator', icon: Sparkles },
         { name: 'Baterías & Congelado', href: '/visibility/batteries', icon: Layers },
-        { name: 'Ejecución de Runs', href: '/visibility/runs', icon: Target },
+        { name: 'Historial de Ejecuciones', href: '/visibility/runs', icon: Target },
         { name: 'Competidores', href: '/visibility/competitors', icon: Eye },
         { name: 'Fuentes & Dominios', href: '/visibility/sources', icon: Database },
         { name: 'OpenAI Discovery Status', href: '/visibility/discovery', icon: ShieldCheck },

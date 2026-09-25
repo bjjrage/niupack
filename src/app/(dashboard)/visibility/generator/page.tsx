@@ -1,40 +1,42 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Sparkles,
   Layers,
   Filter,
   CheckCircle2,
-  XCircle,
   Lock,
   Trash2,
-  RefreshCw,
-  Plus,
-  AlertCircle,
-  FileSpreadsheet,
+  Play,
+  ArrowRight,
+  ShieldCheck,
+  AlertTriangle,
+  Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { DataTable, Column } from '@/components/ui/DataTable';
 import { Modal } from '@/components/ui/Modal';
-import { QueryItem, QueryCategory, MarketCode, QueryBattery } from '@/types';
-import { OpenAIService } from '@/lib/openai/openai-service';
+import { QueryItem, QueryCategory, MarketCode } from '@/types';
+import { VisibilityStepper } from '@/components/visibility/VisibilityStepper';
 
 export default function QueryGeneratorPage() {
+  const router = useRouter();
   const [selectedCount, setSelectedCount] = useState<number>(100);
   const [customCount, setCustomCount] = useState<number>(250);
   const [isCustom, setIsCustom] = useState(false);
   const [selectedMarkets, setSelectedMarkets] = useState<MarketCode[]>(['BR', 'AR', 'BO', 'PY']);
   const [isGenerating, setIsGenerating] = useState(false);
   const [queries, setQueries] = useState<QueryItem[]>([]);
-  const [selectedBattery, setSelectedBattery] = useState<string>('default');
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('ALL');
-  const [activeMarketFilter, setActiveMarketFilter] = useState<string>('ALL');
   const [freezeModalOpen, setFreezeModalOpen] = useState(false);
   const [batteryName, setBatteryName] = useState('Batería Regional V2');
   const [batteryCode, setBatteryCode] = useState('BRAND_VISIBILITY_BR_AR_BO_V2');
-  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const [batteryType, setBatteryType] = useState<'FROZEN_MEASUREMENT' | 'DYNAMIC_DISCOVERY'>('FROZEN_MEASUREMENT');
+  const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   // Load existing queries from API/repository
   useEffect(() => {
@@ -54,6 +56,11 @@ export default function QueryGeneratorPage() {
   };
 
   const handleGenerate = async () => {
+    if (selectedMarkets.length === 0) {
+      setFeedbackMessage({ type: 'error', text: 'Debe seleccionar al menos un mercado objetivo.' });
+      return;
+    }
+
     setIsGenerating(true);
     setFeedbackMessage(null);
     const count = isCustom ? customCount : selectedCount;
@@ -72,13 +79,22 @@ export default function QueryGeneratorPage() {
       if (res.ok) {
         const data = await res.json();
         setQueries((prev) => [...data.generated, ...prev]);
-        setFeedbackMessage(`Se generaron exitosamente ${data.generated.length} consultas en 15 categorías.`);
+        setFeedbackMessage({
+          type: 'success',
+          text: `Se generaron exitosamente ${data.generated.length} consultas en 15 categorías para ${selectedMarkets.join(', ')}.`,
+        });
       } else {
         const err = await res.json();
-        setFeedbackMessage(`Error: ${err.error || 'No se pudieron generar consultas'}`);
+        setFeedbackMessage({
+          type: 'error',
+          text: `Error: ${err.error || 'No se pudieron generar consultas'}`,
+        });
       }
     } catch (err) {
-      setFeedbackMessage(`Error de conexión al generar consultas.`);
+      setFeedbackMessage({
+        type: 'error',
+        text: 'Error de conexión al generar consultas.',
+      });
     } finally {
       setIsGenerating(false);
     }
@@ -93,7 +109,10 @@ export default function QueryGeneratorPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'APPROVE_ALL' }),
     });
-    setFeedbackMessage('Todas las consultas propuestas fueron aprobadas.');
+    setFeedbackMessage({
+      type: 'success',
+      text: 'Todas las consultas propuestas fueron aprobadas para la batería.',
+    });
   };
 
   const handleDeduplicate = () => {
@@ -106,24 +125,43 @@ export default function QueryGeneratorPage() {
     });
     const removedCount = queries.length - unique.length;
     setQueries(unique);
-    setFeedbackMessage(`Deduplicación completa: se eliminaron ${removedCount} consultas duplicadas.`);
+    setFeedbackMessage({
+      type: 'info',
+      text: `Deduplicación completa: se eliminaron ${removedCount} consultas duplicadas. Total restante: ${unique.length}.`,
+    });
   };
 
   const handleFreezeBattery = async () => {
     try {
+      const approvedIds = queries
+        .filter((q) => q.status === 'APPROVED' || q.status === 'ACTIVE')
+        .map((q) => q.id);
+
+      if (approvedIds.length === 0) {
+        setFeedbackMessage({
+          type: 'error',
+          text: 'No hay consultas aprobadas para congelar. Apruebe las consultas antes de congelar.',
+        });
+        return;
+      }
+
       const res = await fetch('/api/visibility/batteries/freeze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: batteryName,
           code: batteryCode,
-          queryIds: queries.filter((q) => q.status === 'APPROVED' || q.status === 'ACTIVE').map((q) => q.id),
+          battery_type: batteryType,
+          queryIds: approvedIds,
         }),
       });
 
       if (res.ok) {
         setFreezeModalOpen(false);
-        setFeedbackMessage(`Batería congelada exitosamente como ${batteryCode}. La batería es inmutable para mediciones comparativas.`);
+        setFeedbackMessage({
+          type: 'success',
+          text: `Batería guardada exitosamente como ${batteryCode} (${approvedIds.length} queries). Inmutable para mediciones D1/D15/D30.`,
+        });
         fetchQueries();
       }
     } catch (e) {
@@ -131,9 +169,10 @@ export default function QueryGeneratorPage() {
     }
   };
 
+  // Filter queries based on selectedMarkets (dual role) and category filter
   const filteredQueries = queries.filter((q) => {
     if (activeCategoryFilter !== 'ALL' && q.category !== activeCategoryFilter) return false;
-    if (activeMarketFilter !== 'ALL' && q.country_code !== activeMarketFilter) return false;
+    if (selectedMarkets.length > 0 && !selectedMarkets.includes(q.country_code as MarketCode)) return false;
     return true;
   });
 
@@ -160,25 +199,25 @@ export default function QueryGeneratorPage() {
       key: 'country_code',
       header: 'País',
       render: (q) => (
-        <span className="font-mono text-xs font-semibold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-200">
+        <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-200">
           {q.country_code}
         </span>
       ),
-      className: 'w-16',
+      className: 'w-16 text-center',
     },
     {
       key: 'category',
-      header: 'Categoría',
+      header: 'Categoría (15)',
       render: (q) => (
         <Badge variant="neutral" size="sm">
           {q.category}
         </Badge>
       ),
-      className: 'w-32',
+      className: 'w-36',
     },
     {
       key: 'text',
-      header: 'Consulta (Query Prompt para OpenAI)',
+      header: 'Consulta (Query Prompt para LLM + Web Search)',
       render: (q) => <span className="font-medium text-slate-100">{q.text}</span>,
     },
     {
@@ -215,19 +254,22 @@ export default function QueryGeneratorPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
+      {/* 7-Step Navigation Stepper */}
+      <VisibilityStepper currentStep={1} />
+
       {/* Page Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-mono text-brand-400 font-semibold uppercase">Módulo 1</span>
+            <span className="text-[11px] font-mono text-brand-400 font-semibold uppercase">Paso 1 & 2</span>
             <span className="text-slate-600 text-xs">/</span>
             <span className="text-xs text-slate-400">AI Visibility Engine</span>
           </div>
           <h1 className="text-xl font-bold text-white tracking-tight mt-1">
-            Query Strategy Engine (Generador de Baterías)
+            Generador & Estrategia de Consultas
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Generación algorítmica de consultas para medir visibilidad en ChatGPT con búsqueda web activa.
+            Generación algorítmica de consultas para medir visibilidad en ChatGPT Search y LLMs con navegación activa.
           </p>
         </div>
 
@@ -241,32 +283,80 @@ export default function QueryGeneratorPage() {
           </Button>
           <Button variant="primary" size="sm" onClick={() => setFreezeModalOpen(true)}>
             <Lock className="h-3.5 w-3.5 mr-1" />
-            Congelar Batería (Freeze)
+            Congelar Batería
           </Button>
+          <Link href="/visibility/batteries">
+            <Button variant="primary" size="sm">
+              <ArrowRight className="h-3.5 w-3.5 mr-1" />
+              Ver Baterías & Ejecutar
+            </Button>
+          </Link>
         </div>
       </div>
 
       {feedbackMessage && (
-        <div className="p-3 bg-brand-950/40 border border-brand-800/60 rounded text-xs text-brand-200 flex items-center justify-between">
-          <span>{feedbackMessage}</span>
-          <button onClick={() => setFeedbackMessage(null)} className="text-slate-400 hover:text-white">
+        <div
+          className={`p-3 rounded text-xs flex items-center justify-between border ${
+            feedbackMessage.type === 'success'
+              ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-200'
+              : feedbackMessage.type === 'error'
+              ? 'bg-red-950/40 border-red-800/60 text-red-200'
+              : 'bg-blue-950/40 border-blue-800/60 text-blue-200'
+          }`}
+        >
+          <span>{feedbackMessage.text}</span>
+          <button onClick={() => setFeedbackMessage(null)} className="text-slate-400 hover:text-white ml-4">
             ✕
           </button>
         </div>
       )}
 
+      {/* Metric Counters Ribbon */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 font-mono">
+        <div className="bg-[#11161d] border border-slate-800 p-3 rounded">
+          <div className="text-[11px] text-slate-400">MERCADOS FILTRADOS</div>
+          <div className="text-lg font-bold text-white mt-1">
+            {selectedMarkets.length} / 4 <span className="text-xs text-brand-400 font-sans">({selectedMarkets.join(', ')})</span>
+          </div>
+        </div>
+        <div className="bg-[#11161d] border border-slate-800 p-3 rounded">
+          <div className="text-[11px] text-slate-400">QUERIES VISIBLES</div>
+          <div className="text-lg font-bold text-emerald-400 mt-1">
+            {filteredQueries.length} <span className="text-xs text-slate-500 font-sans">en tabla</span>
+          </div>
+        </div>
+        <div className="bg-[#11161d] border border-slate-800 p-3 rounded">
+          <div className="text-[11px] text-slate-400">TOTAL EN BATERÍA</div>
+          <div className="text-lg font-bold text-white mt-1">
+            {queries.length} <span className="text-xs text-slate-500 font-sans">cargadas</span>
+          </div>
+        </div>
+        <div className="bg-[#11161d] border border-slate-800 p-3 rounded">
+          <div className="text-[11px] text-slate-400">NUEVAS A GENERAR (N)</div>
+          <div className="text-lg font-bold text-amber-400 mt-1">
+            +{isCustom ? customCount : selectedCount} <span className="text-xs text-slate-500 font-sans">queries</span>
+          </div>
+        </div>
+      </div>
+
       {/* Configuration & Generator Controls */}
       <div className="bg-[#141820] border border-slate-800 rounded p-4 space-y-4">
-        <div className="text-xs font-semibold text-white tracking-tight flex items-center gap-1.5">
-          <Sparkles className="h-4 w-4 text-brand-500" />
-          <span>Parámetros de Generación de Consultas</span>
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-semibold text-white tracking-tight flex items-center gap-1.5">
+            <Sparkles className="h-4 w-4 text-brand-500" />
+            <span>Parámetros de Generación & Filtrado Unificado</span>
+          </div>
+          <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
+            <Info className="h-3 w-3 text-slate-500" />
+            La selección de mercados filtra la tabla y dirige la generación
+          </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
           {/* Selector de Cantidad N */}
           <div>
             <label className="block text-[11px] font-medium text-slate-400 mb-1.5">
-              Cantidad de Consultas (N)
+              Cantidad a Generar (N)
             </label>
             <div className="flex items-center gap-1.5">
               {[100, 500, 1000, 2000].map((num) => (
@@ -304,15 +394,15 @@ export default function QueryGeneratorPage() {
                 value={customCount}
                 onChange={(e) => setCustomCount(Math.max(10, parseInt(e.target.value) || 10))}
                 className="mt-2 w-32 bg-[#0c0f14] border border-slate-700 rounded px-2.5 py-1 text-xs text-white font-mono"
-                placeholder="Ej. 3500"
+                placeholder="Ej. 250"
               />
             )}
           </div>
 
-          {/* Mercados Objetivo */}
+          {/* Mercados Objetivo (Filtro Unificado) */}
           <div>
             <label className="block text-[11px] font-medium text-slate-400 mb-1.5">
-              Mercados Objetivo
+              Mercados Objetivo / Filtro Activo
             </label>
             <div className="flex items-center gap-1.5">
               {(['BR', 'AR', 'BO', 'PY'] as MarketCode[]).map((m) => {
@@ -323,6 +413,7 @@ export default function QueryGeneratorPage() {
                     type="button"
                     onClick={() => {
                       if (isSelected) {
+                        // Keep at least 1 market or allow unselect
                         setSelectedMarkets(selectedMarkets.filter((x) => x !== m));
                       } else {
                         setSelectedMarkets([...selectedMarkets, m]);
@@ -330,7 +421,7 @@ export default function QueryGeneratorPage() {
                     }}
                     className={`px-2.5 py-1.5 rounded text-xs font-mono border transition-colors ${
                       isSelected
-                        ? 'bg-slate-800 text-white border-slate-600 font-semibold'
+                        ? 'bg-brand-600/30 text-white border-brand-500 font-semibold shadow-sm'
                         : 'bg-[#10141b] text-slate-500 border-slate-800 hover:text-slate-300'
                     }`}
                   >
@@ -338,6 +429,13 @@ export default function QueryGeneratorPage() {
                   </button>
                 );
               })}
+              <button
+                type="button"
+                onClick={() => setSelectedMarkets(['BR', 'AR', 'BO', 'PY'])}
+                className="text-[10px] text-slate-400 hover:text-white underline ml-1"
+              >
+                Todos
+              </button>
             </div>
           </div>
 
@@ -346,7 +444,7 @@ export default function QueryGeneratorPage() {
             <Button
               variant="primary"
               size="md"
-              className="w-full"
+              className="w-full font-semibold"
               isLoading={isGenerating}
               onClick={handleGenerate}
             >
@@ -367,25 +465,12 @@ export default function QueryGeneratorPage() {
             onChange={(e) => setActiveCategoryFilter(e.target.value)}
             className="bg-[#141820] border border-slate-700 rounded px-2.5 py-1 text-xs text-white"
           >
-            <option value="ALL">Todas las 15 categorías ({queries.length})</option>
+            <option value="ALL">Todas las 15 categorías</option>
             {categories.map((cat) => (
               <option key={cat} value={cat}>
                 {cat}
               </option>
             ))}
-          </select>
-
-          <span className="text-slate-400 font-medium ml-2">Mercado:</span>
-          <select
-            value={activeMarketFilter}
-            onChange={(e) => setActiveMarketFilter(e.target.value)}
-            className="bg-[#141820] border border-slate-700 rounded px-2.5 py-1 text-xs text-white"
-          >
-            <option value="ALL">Todos los países</option>
-            <option value="BR">Brasil</option>
-            <option value="AR">Argentina</option>
-            <option value="BO">Bolivia</option>
-            <option value="PY">Paraguay (Control)</option>
           </select>
         </div>
 
@@ -400,10 +485,10 @@ export default function QueryGeneratorPage() {
         columns={columns}
         data={filteredQueries}
         searchKey="text"
-        searchPlaceholder="Filtrar por texto de consulta, SKU o buyer persona..."
+        searchPlaceholder="Buscar por texto de consulta, SKU o buyer persona..."
         exportFilename="queries_battery.csv"
         pageSize={15}
-        emptyMessage="No hay consultas cargadas. Usa el generador superior para crear N consultas en 15 categorías."
+        emptyMessage="No hay consultas cargadas para los filtros seleccionados. Usa el generador superior."
         actions={(row) => (
           <div className="flex items-center justify-end gap-1">
             {row.status === 'PROPOSED' && (
@@ -435,7 +520,7 @@ export default function QueryGeneratorPage() {
         isOpen={freezeModalOpen}
         onClose={() => setFreezeModalOpen(false)}
         title="Congelar Batería de Consultas (Inmutable)"
-        description="Una batería congelada no puede ser modificada. Se utilizará como patrón de referencia estricto para Día 1, Día 15 y Día 30."
+        description="Una batería congelada queda fija para mediciones comparativas estrictas (Día 1, Día 15, Día 30)."
         footer={
           <>
             <Button variant="outline" size="sm" onClick={() => setFreezeModalOpen(false)}>
@@ -448,7 +533,43 @@ export default function QueryGeneratorPage() {
           </>
         }
       >
-        <div className="space-y-3">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-[11px] font-medium text-slate-400 mb-1">Tipo de Batería</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setBatteryType('FROZEN_MEASUREMENT')}
+                className={`p-2.5 rounded border text-left text-xs ${
+                  batteryType === 'FROZEN_MEASUREMENT'
+                    ? 'bg-amber-950/40 border-amber-500 text-amber-200'
+                    : 'bg-[#10141b] border-slate-800 text-slate-400'
+                }`}
+              >
+                <div className="font-semibold text-white flex items-center gap-1.5">
+                  <Lock className="h-3.5 w-3.5 text-amber-400" />
+                  Medición Congelada
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1">Inmutable para comparar D1 vs D15</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBatteryType('DYNAMIC_DISCOVERY')}
+                className={`p-2.5 rounded border text-left text-xs ${
+                  batteryType === 'DYNAMIC_DISCOVERY'
+                    ? 'bg-brand-950/40 border-brand-500 text-brand-200'
+                    : 'bg-[#10141b] border-slate-800 text-slate-400'
+                }`}
+              >
+                <div className="font-semibold text-white flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-brand-400" />
+                  Descubrimiento Dinámico
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1">Exploración abierta y editable</div>
+              </button>
+            </div>
+          </div>
+
           <div>
             <label className="block text-[11px] font-medium text-slate-400 mb-1">Nombre Descriptivo</label>
             <input
@@ -468,7 +589,8 @@ export default function QueryGeneratorPage() {
             />
           </div>
           <div className="p-3 bg-amber-950/30 border border-amber-800/60 rounded text-xs text-amber-300">
-            <strong>Principio No Negociable #4:</strong> Se congelarán {queries.filter((q) => q.status === 'APPROVED' || q.status === 'ACTIVE').length} consultas aprobadas. Ningún cambio silencioso podrá realizarse posteriormente sobre esta versión.
+            <strong>Principio de Congelamiento:</strong> Se congelarán{' '}
+            {queries.filter((q) => q.status === 'APPROVED' || q.status === 'ACTIVE').length} consultas aprobadas para los mercados {selectedMarkets.join(', ')}.
           </div>
         </div>
       </Modal>

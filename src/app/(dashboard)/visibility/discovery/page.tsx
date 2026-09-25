@@ -7,7 +7,7 @@ import { SearchDiscoveryService } from '@/lib/discovery/search-discovery';
 export const revalidate = 0;
 
 export default async function DiscoveryPage() {
-  const check = await SearchDiscoveryService.checkDomain('https://niupack.com.py');
+  const check = await SearchDiscoveryService.checkDomain();
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">

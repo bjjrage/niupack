@@ -102,7 +102,14 @@ export class JobRunner {
         }
 
         case 'execute_visibility_run': {
-          const { runId, batteryId, queryIds, concurrencyLimit = 5 } = job.payload;
+          const {
+            runId,
+            batteryId,
+            queryIds,
+            concurrencyLimit = 5,
+            executionLabel = 'DAY_1',
+            model = 'gpt-4o',
+          } = job.payload;
           const queries = await repository.getQueries(batteryId);
           const targetQueries = queryIds ? queries.filter((q) => queryIds.includes(q.id)) : queries;
 
@@ -113,7 +120,7 @@ export class JobRunner {
           let totalCost = 0;
 
           // Check budget before proceeding
-          const costEst = OpenAIService.estimateVisibilityRunCost(total);
+          const costEst = OpenAIService.estimateVisibilityRunCost(total, model);
           const budgetCheck = await OpenAIService.checkBudget(costEst.estimatedCostUSD);
           if (!budgetCheck.allowed) {
             throw new Error(`Budget constraint violated: ${budgetCheck.reason}`);
@@ -134,6 +141,7 @@ export class JobRunner {
                   query: query.text,
                   country_code: query.country_code,
                   city: query.city_context,
+                  model,
                 });
 
                 // Analyze result
@@ -150,7 +158,7 @@ export class JobRunner {
                   query_id: query.id,
                   organization_id: job.organization_id,
                   country_code: query.country_code,
-                  model: 'gpt-4o',
+                  model,
                   raw_prompt: query.text,
                   raw_response: execResult.raw_response,
                   sources_json: execResult.sources,
@@ -164,6 +172,7 @@ export class JobRunner {
 
                 // Save mention analysis
                 await repository.addMentionAnalysis({
+                  run_id: runId,
                   result_id: savedResult.id,
                   query_id: query.id,
                   organization_id: job.organization_id,
@@ -179,7 +188,7 @@ export class JobRunner {
                   sources: analysis.sources,
                 });
 
-                return { success: true, cost: execResult.cost_usd };
+                return { success: true, cost: execResult.cost_usd, is_simulated: execResult.is_simulated };
               } catch (err) {
                 return { success: false, cost: 0, error: (err as Error).message };
               }
@@ -210,20 +219,31 @@ export class JobRunner {
             });
           }
 
-          // Complete Run
+          // Calculate metrics strictly for this run
+          const runMentions = await repository.getMentionsByRun(runId);
+          const metrics = VisibilityEngine.calculateScore(runMentions);
+
+          // Complete Run with metrics
           await repository.updateRun(runId, {
             status: 'COMPLETED',
             completed_at: new Date().toISOString(),
+            visibility_score: metrics.overallScore,
+            mention_rate: metrics.mentionRate,
+            link_rate: metrics.linkRate,
+            source_rate: metrics.sourceRate,
           });
 
-          // Create visibility snapshot
-          const mentions = await repository.getMentions();
-          const metrics = VisibilityEngine.calculateScore(mentions);
+          // Create visibility snapshot for TOTAL
+          const snapDay = (['DAY_1', 'DAY_15', 'DAY_30', 'CUSTOM'].includes(executionLabel)
+            ? executionLabel
+            : 'DAY_1') as 'DAY_1' | 'DAY_15' | 'DAY_30' | 'CUSTOM';
+
           await repository.addSnapshot({
             organization_id: job.organization_id,
             battery_id: batteryId,
             run_id: runId,
-            snapshot_day: 'DAY_1',
+            snapshot_day: snapDay,
+            execution_label: snapDay,
             market_code: 'TOTAL',
             overall_score: metrics.overallScore,
             mention_rate: metrics.mentionRate,
@@ -236,6 +256,69 @@ export class JobRunner {
             top_sources_json: metrics.topSources,
             captured_at: new Date().toISOString(),
           });
+
+          // Create snapshots for each individual market in the run
+          const marketsInRun = Array.from(new Set(targetQueries.map((q) => q.country_code)));
+          for (const mCode of marketsInRun) {
+            const marketQueryIds = new Set(targetQueries.filter((q) => q.country_code === mCode).map((q) => q.id));
+            const marketMentions = runMentions.filter((m) => marketQueryIds.has(m.query_id));
+            const marketMetrics = VisibilityEngine.calculateScore(marketMentions);
+            await repository.addSnapshot({
+              organization_id: job.organization_id,
+              battery_id: batteryId,
+              run_id: runId,
+              snapshot_day: snapDay,
+              execution_label: snapDay,
+              market_code: mCode,
+              overall_score: marketMetrics.overallScore,
+              mention_rate: marketMetrics.mentionRate,
+              link_rate: marketMetrics.linkRate,
+              source_rate: marketMetrics.sourceRate,
+              won_queries_count: marketMetrics.wonCount,
+              lost_queries_count: marketMetrics.lostCount,
+              total_queries: marketMetrics.totalQueries,
+              competitor_share_json: marketMetrics.competitorShare,
+              top_sources_json: marketMetrics.topSources,
+              captured_at: new Date().toISOString(),
+            });
+          }
+
+          // Generate real diagnostics and feed Action Center
+          const lostMentions = runMentions.filter((m) => !m.niupack_mentioned);
+          const lostQueryIds = new Set(lostMentions.map((m) => m.query_id));
+          const lostQueries = targetQueries.filter((q) => lostQueryIds.has(q.id));
+
+          for (const mCode of marketsInRun) {
+            const marketLost = lostQueries.filter((q) => q.country_code === mCode);
+            if (marketLost.length > 0) {
+              const clusters = await OpenAIService.diagnoseVisibility({
+                market_code: mCode,
+                failedQueries: marketLost.map((q) => ({
+                  text: q.text,
+                  category: q.category as string,
+                  sku: q.sku,
+                  buyer_persona: q.buyer_persona,
+                })),
+                totalQueriesInRun: targetQueries.filter((q) => q.country_code === mCode).length,
+                mentions: runMentions,
+              });
+
+              for (const cl of clusters) {
+                await repository.addAction({
+                  organization_id: job.organization_id,
+                  action_type: 'visibility_check',
+                  title: `[Visibilidad ${mCode}] ${cl.product_or_category}: optimizar indexación y presencia`,
+                  priority: cl.failed_query_count > 3 ? 'HIGH' : 'MEDIUM',
+                  evidence: cl.evidence,
+                  recommended_action: cl.suggested_action,
+                  owner: 'Equipo Comercial & Marketing',
+                  status: 'PENDING',
+                  market_code: mCode,
+                  related_object_id: runId,
+                });
+              }
+            }
+          }
 
           result = { executed, successful, failed, totalCost };
           break;

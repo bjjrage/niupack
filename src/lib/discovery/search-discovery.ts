@@ -1,24 +1,63 @@
 import { SearchDiscoveryCheck } from '@/types';
+import { repository } from '@/lib/db/repository';
 
 export class SearchDiscoveryService {
   /**
    * Run real accessibility, robots.txt and sitemap audit for NIUPACK official domain
    */
-  public static async checkDomain(targetUrl: string = 'https://niupack.com.py'): Promise<SearchDiscoveryCheck> {
+  public static async checkDomain(targetUrl?: string | null): Promise<SearchDiscoveryCheck> {
+    if (targetUrl === '') {
+      return {
+        url: 'No configurado',
+        accessible: false,
+        http_status: 0,
+        robots_txt_exists: false,
+        oai_searchbot_allowed: false,
+        sitemap_exists: false,
+        canonical_url: undefined,
+        last_checked: new Date().toISOString(),
+        overall_status: 'YELLOW',
+        warnings: ['No hay dominio configurado para la marca en Configuración > Marca.'],
+      };
+    }
+
+    let resolvedUrl = targetUrl;
+    if (!resolvedUrl) {
+      const configured = await repository.getConfiguredDomain();
+      if (configured) {
+        resolvedUrl = configured.startsWith('http') ? configured : `https://${configured}`;
+      }
+    }
+
+    if (!resolvedUrl) {
+      return {
+        url: 'No configurado',
+        accessible: false,
+        http_status: 0,
+        robots_txt_exists: false,
+        oai_searchbot_allowed: false,
+        sitemap_exists: false,
+        canonical_url: undefined,
+        last_checked: new Date().toISOString(),
+        overall_status: 'YELLOW',
+        warnings: ['No hay dominio configurado para la marca en Configuración > Marca.'],
+      };
+    }
+
     const warnings: string[] = [];
     let accessible = false;
     let httpStatus = 0;
     let robotsTxtExists = false;
     let oaiSearchbotAllowed = false;
     let sitemapExists = false;
-    let canonicalUrl: string | undefined = targetUrl;
+    let canonicalUrl: string | undefined = resolvedUrl;
 
     try {
       // 1. Check primary website accessibility
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-      const res = await fetch(targetUrl, {
+      const res = await fetch(resolvedUrl, {
         method: 'GET',
         headers: {
           'User-Agent': 'Mozilla/5.0 (compatible; NIU-Intelligence-OS/1.0; +https://niupack.com.py)',
@@ -36,7 +75,7 @@ export class SearchDiscoveryService {
       }
 
       // 2. Check robots.txt
-      const robotsUrl = new URL('/robots.txt', targetUrl).toString();
+      const robotsUrl = new URL('/robots.txt', resolvedUrl).toString();
       const robotsRes = await fetch(robotsUrl, { method: 'GET' }).catch(() => null);
 
       if (robotsRes && robotsRes.ok) {
@@ -59,7 +98,7 @@ export class SearchDiscoveryService {
       }
 
       // 3. Check sitemap.xml
-      const sitemapUrl = new URL('/sitemap.xml', targetUrl).toString();
+      const sitemapUrl = new URL('/sitemap.xml', resolvedUrl).toString();
       const sitemapRes = await fetch(sitemapUrl, { method: 'GET' }).catch(() => null);
       if (sitemapRes && sitemapRes.ok) {
         sitemapExists = true;
@@ -79,7 +118,7 @@ export class SearchDiscoveryService {
     }
 
     return {
-      url: targetUrl,
+      url: resolvedUrl,
       accessible,
       http_status: httpStatus,
       robots_txt_exists: robotsTxtExists,

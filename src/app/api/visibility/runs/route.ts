@@ -14,17 +14,29 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { batteryId, markets = ['BR', 'AR', 'BO'], model = 'gpt-4o', maxSpendLimitUSD = 25.0 } = body;
+    const {
+      batteryId,
+      markets,
+      model = 'gpt-4o',
+      maxSpendLimitUSD = 25.0,
+      executionLabel = 'CUSTOM',
+    } = body;
 
     const org = await repository.getOrganization();
     const battery = await repository.getBattery(batteryId);
+    if (!battery) {
+      return NextResponse.json({ error: 'Batería no encontrada' }, { status: 404 });
+    }
+
+    const resolvedMarkets = markets && markets.length > 0 ? markets : battery.market_codes;
     const queries = await repository.getQueries(batteryId);
 
     const run = await repository.createRun({
       organization_id: org.id,
       battery_id: batteryId,
-      name: `Run ${battery?.name || 'Visibilidad'} (${new Date().toLocaleDateString('es')})`,
-      market_codes: markets,
+      name: `Run ${battery.name} (${executionLabel})`,
+      execution_label: executionLabel,
+      market_codes: resolvedMarkets,
       model,
       status: 'PENDING',
       total_queries: queries.length,
@@ -42,6 +54,8 @@ export async function POST(req: Request) {
       {
         runId: run.id,
         batteryId,
+        model,
+        executionLabel,
         concurrencyLimit: 4,
       },
       `run_${run.id}`
