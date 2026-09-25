@@ -681,7 +681,10 @@ export interface SystemSettings {
 
 export interface IndustrialPaperFormula {
   cif_price_ton_usd: number;          // USD por tonelada CIF
-  customs_dispatch_ton_usd: number;   // USD por tonelada despacho / aduana
+  customs_dispatch_percent?: number;  // % Despacho / Gastos de importación (default 13%)
+  customs_dispatch_ton_usd?: number;  // USD por tonelada despacho / aduana (calculado como CIF * 13%)
+  financial_cost_percent?: number;    // % Costo del dinero (default 6%)
+  financial_cost_ton_usd?: number;    // USD por tonelada costo del dinero (calculado como CIF * 6%)
   printing_method: 'OFFSET' | 'FLEXO';
   // Offset specific
   sheet_width_mm?: number;            // Ancho pliego mm (ej. 700)
@@ -722,6 +725,10 @@ export interface IndustrialCostBreakdown {
   batch_total_cost_usd: number;
   // Detail calculations
   total_paper_ton_cost_usd: number;
+  customs_dispatch_ton_usd: number;
+  financial_cost_ton_usd: number;
+  cost_financial_usd?: number;
+  cost_dispatch_usd?: number;
   price_per_sheet_usd?: number;
   price_per_linear_meter_usd?: number;
   // Share percentages

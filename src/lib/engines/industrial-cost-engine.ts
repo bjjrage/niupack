@@ -23,9 +23,16 @@ export class IndustrialCostEngine {
       batch_size,
     } = input;
 
-    // 1. Total Costo por Tonelada de Papel = CIF + Despacho
+    // 1. Total Costo por Tonelada de Papel = CIF + Despacho (13% del CIF) + Costo del Dinero (6% del CIF)
+    const cifPrice = Number(pf.cif_price_ton_usd || 0);
+    const customsPercent = pf.customs_dispatch_percent !== undefined ? pf.customs_dispatch_percent : 13;
+    const financialPercent = pf.financial_cost_percent !== undefined ? pf.financial_cost_percent : 6;
+
+    const customs_dispatch_ton_usd = Number((cifPrice * (customsPercent / 100)).toFixed(2));
+    const financial_cost_ton_usd = Number((cifPrice * (financialPercent / 100)).toFixed(2));
+
     const total_paper_ton_cost_usd = Number(
-      (Number(pf.cif_price_ton_usd || 0) + Number(pf.customs_dispatch_ton_usd || 0)).toFixed(2)
+      (cifPrice + customs_dispatch_ton_usd + financial_cost_ton_usd).toFixed(2)
     );
 
     let cost_paper_cone_usd = 0;
@@ -112,6 +119,14 @@ export class IndustrialCostEngine {
     const calcShare = (itemCost: number) =>
       true_unit_cost_usd > 0 ? Number(((itemCost / true_unit_cost_usd) * 100).toFixed(1)) : 0;
 
+    const cost_dispatch_usd = total_paper_ton_cost_usd > 0
+      ? Number(((customs_dispatch_ton_usd / total_paper_ton_cost_usd) * cost_paper_cone_usd).toFixed(5))
+      : 0;
+
+    const cost_financial_usd = total_paper_ton_cost_usd > 0
+      ? Number(((financial_cost_ton_usd / total_paper_ton_cost_usd) * cost_paper_cone_usd).toFixed(5))
+      : 0;
+
     return {
       cost_paper_cone_usd: Number(cost_paper_cone_usd.toFixed(5)),
       cost_bottom_usd,
@@ -123,6 +138,10 @@ export class IndustrialCostEngine {
       true_unit_cost_usd,
       batch_total_cost_usd,
       total_paper_ton_cost_usd,
+      customs_dispatch_ton_usd,
+      financial_cost_ton_usd,
+      cost_dispatch_usd,
+      cost_financial_usd,
       price_per_sheet_usd: price_per_sheet_usd ? Number(price_per_sheet_usd.toFixed(4)) : undefined,
       price_per_linear_meter_usd: price_per_linear_meter_usd
         ? Number(price_per_linear_meter_usd.toFixed(4))
@@ -147,7 +166,7 @@ export class IndustrialCostEngine {
         id: `ic-paper-cone`,
         cost_sheet_id: sheetId,
         category: 'papel' as const,
-        name: 'Papel Cuerpo/Cono (CIF + Despacho + Rendimiento)',
+        name: 'Papel Cuerpo/Cono (CIF + Despacho 13% + Costo Dinero 6%)',
         component_type: 'VARIABLE' as const,
         basis: 'PER_UNIT' as const,
         rate_usd: breakdown.cost_paper_cone_usd,

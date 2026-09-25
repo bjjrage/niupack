@@ -15,7 +15,10 @@ export async function GET(req: NextRequest) {
         sku,
         paper_formula: {
           cif_price_ton_usd: 1250,
-          customs_dispatch_ton_usd: 150,
+          customs_dispatch_percent: 13,
+          customs_dispatch_ton_usd: 162.50,
+          financial_cost_percent: 6,
+          financial_cost_ton_usd: 75.00,
           printing_method: 'OFFSET',
           sheet_width_mm: 700,
           sheet_height_mm: 1000,

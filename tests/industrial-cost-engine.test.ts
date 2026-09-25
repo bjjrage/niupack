@@ -3,12 +3,14 @@ import { IndustrialCostEngine } from '@/lib/engines/industrial-cost-engine';
 import { IndustrialProductCostInput } from '@/types';
 
 describe('IndustrialCostEngine', () => {
-  it('calculates true cost correctly using Offset paper pliego formula', () => {
+  it('calculates true cost correctly using Offset paper pliego formula with 13% Despacho and 6% Costo Dinero', () => {
     const input: IndustrialProductCostInput = {
       sku: 'CUP-12OZ-SW',
       paper_formula: {
         cif_price_ton_usd: 1250,
-        customs_dispatch_ton_usd: 150, // Total = 1400 USD/ton
+        // customs_dispatch_percent defaults to 13% -> $162.50/ton
+        // financial_cost_percent defaults to 6% -> $75.00/ton
+        // total_paper_ton_cost_usd = 1250 + 162.5 + 75 = 1487.50 USD/ton
         printing_method: 'OFFSET',
         sheet_width_mm: 700,
         sheet_height_mm: 1000,
@@ -30,7 +32,11 @@ describe('IndustrialCostEngine', () => {
 
     const breakdown = IndustrialCostEngine.calculateCost(input);
 
-    expect(breakdown.total_paper_ton_cost_usd).toBe(1400);
+    expect(breakdown.customs_dispatch_ton_usd).toBe(162.5);
+    expect(breakdown.financial_cost_ton_usd).toBe(75);
+    expect(breakdown.total_paper_ton_cost_usd).toBe(1487.5);
+    expect(breakdown.cost_dispatch_usd).toBeGreaterThan(0);
+    expect(breakdown.cost_financial_usd).toBeGreaterThan(0);
     expect(breakdown.price_per_sheet_usd).toBeGreaterThan(0.25);
     expect(breakdown.cost_paper_cone_usd).toBeGreaterThan(0.02);
     expect(breakdown.cost_bottom_usd).toBeCloseTo(0.00386, 4);
@@ -43,15 +49,17 @@ describe('IndustrialCostEngine', () => {
     expect(breakdown.batch_total_cost_usd).toBe(Number((breakdown.true_unit_cost_usd * 300000).toFixed(2)));
   });
 
-  it('calculates true cost correctly using direct paper yield', () => {
+  it('calculates true cost correctly using direct paper yield with explicit percentages', () => {
     const input: IndustrialProductCostInput = {
       sku: 'CUP-8OZ-SW',
       paper_formula: {
         cif_price_ton_usd: 1200,
-        customs_dispatch_ton_usd: 120, // Total = 1320 USD/ton
+        customs_dispatch_percent: 13, // 156 USD/ton
+        financial_cost_percent: 6,    // 72 USD/ton
+        // Total = 1200 + 156 + 72 = 1428 USD/ton
         printing_method: 'FLEXO',
         gsm: 240,
-        paper_yield_units_per_ton: 75000, // 75k conos x ton => 1320 / 75000 = 0.01760
+        paper_yield_units_per_ton: 75000, // 1428 / 75000 = 0.01904 USD/u
       },
       bottom_paper_cost_ton_usd: 1300,
       bottom_yield_units_per_ton: 450000, // 0.00289
@@ -66,7 +74,10 @@ describe('IndustrialCostEngine', () => {
 
     const breakdown = IndustrialCostEngine.calculateCost(input);
 
-    expect(breakdown.cost_paper_cone_usd).toBe(0.0176);
+    expect(breakdown.customs_dispatch_ton_usd).toBe(156);
+    expect(breakdown.financial_cost_ton_usd).toBe(72);
+    expect(breakdown.total_paper_ton_cost_usd).toBe(1428);
+    expect(breakdown.cost_paper_cone_usd).toBeCloseTo(0.01904, 4);
     expect(breakdown.cost_bottom_usd).toBeCloseTo(0.00289, 4);
     expect(breakdown.cost_printing_diecut_usd).toBe(0.0038);
     expect(breakdown.true_unit_cost_usd).toBeGreaterThan(0.03);

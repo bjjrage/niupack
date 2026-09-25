@@ -44,7 +44,8 @@ export function IndustrialCostCalculator({
 
   // Form State
   const [cifPriceTon, setCifPriceTon] = useState<number>(1250);
-  const [customsDispatchTon, setCustomsDispatchTon] = useState<number>(150);
+  const [customsDispatchPercent, setCustomsDispatchPercent] = useState<number>(13);
+  const [financialCostPercent, setFinancialCostPercent] = useState<number>(6);
   const [printingMethod, setPrintingMethod] = useState<'OFFSET' | 'FLEXO'>('OFFSET');
   
   // Offset fields
@@ -93,7 +94,8 @@ export function IndustrialCostCalculator({
         if (data.input) {
           const inp: IndustrialProductCostInput = data.input;
           setCifPriceTon(inp.paper_formula.cif_price_ton_usd || 1250);
-          setCustomsDispatchTon(inp.paper_formula.customs_dispatch_ton_usd || 150);
+          setCustomsDispatchPercent(inp.paper_formula.customs_dispatch_percent !== undefined ? inp.paper_formula.customs_dispatch_percent : 13);
+          setFinancialCostPercent(inp.paper_formula.financial_cost_percent !== undefined ? inp.paper_formula.financial_cost_percent : 6);
           setPrintingMethod(inp.paper_formula.printing_method || 'OFFSET');
           setSheetWidthMM(inp.paper_formula.sheet_width_mm || 700);
           setSheetHeightMM(inp.paper_formula.sheet_height_mm || 1000);
@@ -121,12 +123,21 @@ export function IndustrialCostCalculator({
     }
   };
 
+  // Automatic calculations from CIF
+  const numCif = Number(cifPriceTon) || 0;
+  const customsDispatchTon = Number((numCif * (customsDispatchPercent / 100)).toFixed(2));
+  const financialCostTon = Number((numCif * (financialCostPercent / 100)).toFixed(2));
+  const totalPaperTonEstimated = Number((numCif + customsDispatchTon + financialCostTon).toFixed(2));
+
   // Build current input object for real-time calculation
   const currentInput: IndustrialProductCostInput = {
     sku,
     paper_formula: {
-      cif_price_ton_usd: Number(cifPriceTon) || 0,
-      customs_dispatch_ton_usd: Number(customsDispatchTon) || 0,
+      cif_price_ton_usd: numCif,
+      customs_dispatch_percent: customsDispatchPercent,
+      customs_dispatch_ton_usd: customsDispatchTon,
+      financial_cost_percent: financialCostPercent,
+      financial_cost_ton_usd: financialCostTon,
       printing_method: printingMethod,
       sheet_width_mm: Number(sheetWidthMM) || 0,
       sheet_height_mm: Number(sheetHeightMM) || 0,
@@ -309,52 +320,103 @@ export function IndustrialCostCalculator({
                       1. Papel del Cono / Cuerpo (Materia Prima Principal)
                     </h3>
                     <p className="text-[11px] text-slate-400">
-                      Precio CIF Tonelada + Despacho &gt; Conversión Pliego/Metro &gt; Rendimiento x SKU
+                      Precio CIF Tonelada + Despacho (13%) + Costo del Dinero (6%) &gt; Conversión Pliego/Metro &gt; Rendimiento x SKU
                     </p>
                   </div>
                 </div>
 
                 <div className="text-right">
-                  <span className="text-[10px] text-slate-500 block">Total Tonelada:</span>
-                  <span className="font-mono text-xs font-bold text-emerald-400">
+                  <span className="text-[10px] text-slate-500 block">Total Tonelada Papel:</span>
+                  <span className="font-mono text-sm font-bold text-emerald-400">
                     ${breakdown.total_paper_ton_cost_usd} USD/ton
                   </span>
                 </div>
               </div>
 
-              {/* CIF + Despacho inputs */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                    Precio CIF por Tonelada (USD/ton)
-                  </label>
+              {/* CIF (Manual) + Despacho 13% (Auto) + Costo del Dinero 6% (Auto) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* 1. CIF Input */}
+                <div className="bg-[#0c0f14] p-3 rounded-lg border border-slate-700/80">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[11px] font-semibold text-slate-200">
+                      Precio CIF Tonelada
+                    </label>
+                    <span className="text-[9px] bg-sky-950 text-sky-400 px-1.5 py-0.5 rounded border border-sky-800 font-semibold uppercase">
+                      Carga Manual
+                    </span>
+                  </div>
                   <div className="relative">
-                    <span className="absolute left-3 top-2 text-xs text-slate-500">$</span>
+                    <span className="absolute left-3 top-2 text-xs text-slate-500 font-mono">$</span>
                     <input
                       type="number"
                       step="any"
                       value={cifPriceTon}
                       onChange={(e) => setCifPriceTon(parseFloat(e.target.value) || 0)}
-                      className="w-full bg-[#0c0f14] border border-slate-700 rounded pl-7 pr-3 py-1.5 text-xs text-white font-mono"
+                      className="w-full bg-[#141820] border border-slate-600 rounded pl-7 pr-12 py-1.5 text-xs text-white font-mono font-bold focus:border-brand-500 focus:outline-none"
                     />
+                    <span className="absolute right-2.5 top-2 text-[10px] text-slate-400">USD/t</span>
                   </div>
+                  <span className="text-[10px] text-slate-400 block mt-1.5">
+                    Costo factura marítima CIF
+                  </span>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                    Despacho / Gastos de Importación / Aduana (USD/ton)
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2 text-xs text-slate-500">$</span>
-                    <input
-                      type="number"
-                      step="any"
-                      value={customsDispatchTon}
-                      onChange={(e) => setCustomsDispatchTon(parseFloat(e.target.value) || 0)}
-                      className="w-full bg-[#0c0f14] border border-slate-700 rounded pl-7 pr-3 py-1.5 text-xs text-white font-mono"
-                    />
+                {/* 2. Despacho (13% CIF Auto) */}
+                <div className="bg-[#0c0f14] p-3 rounded-lg border border-slate-800">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[11px] font-semibold text-slate-200">
+                      Despacho & Importación
+                    </label>
+                    <span className="text-[9px] bg-emerald-950 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-800 font-mono font-semibold">
+                      13% CIF (Auto)
+                    </span>
                   </div>
+                  <div className="px-3 py-1.5 bg-[#141820] rounded border border-slate-800 flex items-center justify-between">
+                    <span className="text-xs text-slate-500 font-mono">$</span>
+                    <span className="text-xs font-bold font-mono text-emerald-400">
+                      {customsDispatchTon.toFixed(2)}
+                    </span>
+                    <span className="text-[10px] text-slate-400">USD/t</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 block mt-1.5">
+                    Aduana, puerto y nacionalización
+                  </span>
                 </div>
+
+                {/* 3. Costo del Dinero (6% CIF Auto) */}
+                <div className="bg-[#0c0f14] p-3 rounded-lg border border-slate-800">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[11px] font-semibold text-slate-200">
+                      Costo del Dinero
+                    </label>
+                    <span className="text-[9px] bg-amber-950 text-amber-400 px-1.5 py-0.5 rounded border border-amber-800 font-mono font-semibold">
+                      6% CIF (Auto)
+                    </span>
+                  </div>
+                  <div className="px-3 py-1.5 bg-[#141820] rounded border border-slate-800 flex items-center justify-between">
+                    <span className="text-xs text-slate-500 font-mono">$</span>
+                    <span className="text-xs font-bold font-mono text-amber-400">
+                      {financialCostTon.toFixed(2)}
+                    </span>
+                    <span className="text-[10px] text-slate-400">USD/t</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 block mt-1.5">
+                    Inmovilización y financiamiento
+                  </span>
+                </div>
+              </div>
+
+              {/* Total Tonelada Formula Bar */}
+              <div className="flex flex-wrap items-center justify-between px-3 py-2 bg-gradient-to-r from-slate-900/90 to-[#0e1726] rounded-lg border border-slate-800 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-300 font-medium">Costo Total Tonelada Puesta en Planta:</span>
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    (${numCif} CIF + ${customsDispatchTon.toFixed(2)} Despacho + ${financialCostTon.toFixed(2)} Financiero)
+                  </span>
+                </div>
+                <span className="font-mono text-xs font-bold text-emerald-400">
+                  = ${breakdown.total_paper_ton_cost_usd} USD/ton
+                </span>
               </div>
 
               {/* Offset vs Flexo Switch */}
@@ -704,11 +766,27 @@ export function IndustrialCostCalculator({
               </h4>
 
               <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Papel Cono:</span>
-                  <div className="text-right">
-                    <span className="font-mono text-white">${breakdown.cost_paper_cone_usd.toFixed(5)}</span>
-                    <span className="text-[10px] text-slate-500 block">({breakdown.share_paper_cone_percent}%)</span>
+                <div className="bg-[#0c0f14] p-2.5 rounded border border-slate-800/80 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-300 font-medium">Papel Cono:</span>
+                    <div className="text-right">
+                      <span className="font-mono text-white font-bold">${breakdown.cost_paper_cone_usd.toFixed(5)}</span>
+                      <span className="text-[10px] text-slate-500 block">({breakdown.share_paper_cone_percent}%)</span>
+                    </div>
+                  </div>
+                  <div className="pt-1 border-t border-slate-800/60 space-y-0.5 text-[10px] font-mono text-slate-400">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">• Base CIF:</span>
+                      <span>${Math.max(0, breakdown.cost_paper_cone_usd - (breakdown.cost_dispatch_usd || 0) - (breakdown.cost_financial_usd || 0)).toFixed(5)}</span>
+                    </div>
+                    <div className="flex justify-between text-emerald-400/90">
+                      <span>• Despacho (13%):</span>
+                      <span>+${(breakdown.cost_dispatch_usd || 0).toFixed(5)}</span>
+                    </div>
+                    <div className="flex justify-between text-amber-400/90">
+                      <span>• Costo Dinero (6%):</span>
+                      <span>+${(breakdown.cost_financial_usd || 0).toFixed(5)}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -876,8 +954,8 @@ export function IndustrialCostCalculator({
                 onChange={(e) => setCifPriceTon(parseFloat(e.target.value) || 0)}
                 className="w-full bg-[#0c0f14] border border-slate-700 rounded px-3 py-2 text-sm text-white font-mono"
               />
-              <span className="text-[10px] text-slate-500 block mt-1">
-                + Despacho: ${customsDispatchTon} USD/ton
+              <span className="text-[10px] text-slate-400 block mt-1 font-mono">
+                + Despacho (13%): ${customsDispatchTon} | + Costo Dinero (6%): ${financialCostTon} = ${breakdown.total_paper_ton_cost_usd} USD/t
               </span>
             </div>
           </div>
