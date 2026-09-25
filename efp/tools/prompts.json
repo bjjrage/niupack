@@ -35,12 +35,6 @@
       "file": "plasticas.jpg",
       "aspect_ratio": "4:3",
       "prompt": "Clear transparent PET plastic hinged clamshell food containers, one open with a fresh salad inside and one closed with divided compartments, on a warm cream seamless background (#ece5d8)"
-    },
-    {
-      "file": "logo.png",
-      "aspect_ratio": "1:1",
-      "style": "Flat vector emblem, 2D graphic design, minimal geometric shapes, solid flat colors only, no gradients, no shadows, no photorealism, no mockup, no perspective, centered on a plain solid background, crisp clean edges, works small as an app icon",
-      "prompt": "A minimalist abstract logo mark for a flexible-packaging company: a single geometric emblem that reads as a folded paper bag merging into a cup silhouette, drawn in one flat terracotta/rust color (#b3502c) on a solid deep charcoal background (#17140f), no text, no letters, no words, no watermark, simple bold silhouette, generous padding around the shape"
     }
   ]
 }

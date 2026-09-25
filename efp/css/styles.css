@@ -102,16 +102,9 @@ em { font-style: normal; color: var(--rust); }
 }
 .header__inner { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: nowrap; }
 
-.brand { display: inline-flex; align-items: center; gap: 12px; }
-.brand__mark {
-  position: relative; display: grid; place-items: center; width: 46px; height: 46px; overflow: hidden;
-  background: var(--ink); border: 1.5px solid var(--rust); color: var(--paper);
-  font-family: var(--serif); font-weight: 500; font-size: 1.05rem; letter-spacing: .03em;
-}
-.brand__logo { display: none; position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.brand__mark.has-photo .brand__logo { display: block; }
-.brand__mark.has-photo { color: transparent; }
-.brand__text { font-family: var(--sans); font-size: .74rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; line-height: 1.4; }
+.brand { display: inline-flex; align-items: center; }
+.brand__logotype { height: 32px; width: auto; display: block; }
+.brand__logotype--full { height: 46px; }
 
 .nav { display: flex; align-items: center; gap: 30px; font-family: var(--mono); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
 .nav a:not(.btn) { position: relative; opacity: .82; transition: opacity .25s, color .25s; }
