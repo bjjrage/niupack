@@ -268,24 +268,33 @@ if (whatsappForm) {
   whatsappForm.addEventListener('submit', (event) => {
     event.preventDefault();
     const data = new FormData(whatsappForm);
-    const isEnglish = document.documentElement.lang === 'en';
-    const lines = isEnglish
+    const language = document.documentElement.lang;
+    const lines = language === 'pt-BR'
       ? [
-          'Hello, I would like to request a quote for NIU PACK products.',
-          `Name: ${data.get('nombre') || '-'}`,
-          `Company: ${data.get('empresa') || '-'}`,
-          `Phone: ${data.get('telefono') || '-'}`,
-          `Product: ${data.get('producto') || '-'}`,
-          `Message: ${data.get('mensaje') || '-'}`,
-        ]
-      : [
-          'Hola, quiero solicitar una cotización de productos NIU PACK.',
-          `Nombre: ${data.get('nombre') || '-'}`,
+          'Olá, gostaria de solicitar um orçamento dos produtos NIU PACK.',
+          `Nome: ${data.get('nombre') || '-'}`,
           `Empresa: ${data.get('empresa') || '-'}`,
-          `Teléfono: ${data.get('telefono') || '-'}`,
-          `Producto: ${data.get('producto') || '-'}`,
-          `Mensaje: ${data.get('mensaje') || '-'}`,
-        ];
+          `Telefone: ${data.get('telefono') || '-'}`,
+          `Produto: ${data.get('producto') || '-'}`,
+          `Mensagem: ${data.get('mensaje') || '-'}`,
+        ]
+      : language === 'en'
+        ? [
+            'Hello, I would like to request a quote for NIU PACK products.',
+            `Name: ${data.get('nombre') || '-'}`,
+            `Company: ${data.get('empresa') || '-'}`,
+            `Phone: ${data.get('telefono') || '-'}`,
+            `Product: ${data.get('producto') || '-'}`,
+            `Message: ${data.get('mensaje') || '-'}`,
+          ]
+        : [
+            'Hola, quiero solicitar una cotización de productos NIU PACK.',
+            `Nombre: ${data.get('nombre') || '-'}`,
+            `Empresa: ${data.get('empresa') || '-'}`,
+            `Teléfono: ${data.get('telefono') || '-'}`,
+            `Producto: ${data.get('producto') || '-'}`,
+            `Mensaje: ${data.get('mensaje') || '-'}`,
+          ];
 
     window.open(`https://wa.me/595971350619?text=${encodeURIComponent(lines.join('\n'))}`, '_blank', 'noopener');
   });

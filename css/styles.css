@@ -156,6 +156,30 @@ a { color: inherit; text-decoration: none; }
   background: #3c3b6e;
 }
 
+.flag-br {
+  position: relative;
+  background: #009b3a;
+}
+
+.flag-br::before {
+  content: "";
+  position: absolute;
+  inset: 2px 5px;
+  background: #ffdf00;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+
+.flag-br::after {
+  content: "";
+  position: absolute;
+  top: 4.5px;
+  left: 8.5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #002776;
+}
+
 .language-switch a:hover,
 .language-switch .is-active {
   background: transparent;
