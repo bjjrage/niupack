@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>NIU Intelligence OS — Directorio</title>
+<style>
+:root{
+  --brand:#c8102e;--brand2:#9e1026;--ink:#181818;--muted:#666;--line:#e8e8e8;
+  --soft:#f7f7f7;--white:#fff;--green:#147a4a;--amber:#a56700;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:Inter,Geist,Segoe UI,Arial,sans-serif;background:#fff;color:#252525}
+.top{
+  position:sticky;top:0;z-index:30;display:flex;justify-content:space-between;align-items:center;
+  padding:12px 5vw;background:rgba(255,255,255,.96);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)
+}
+.brand{font-weight:900;letter-spacing:.07em;color:var(--brand)}
+nav{display:flex;gap:18px;flex-wrap:wrap;font-size:13px}
+nav a{text-decoration:none;color:#444;font-weight:700}
+nav a:hover{color:var(--brand)}
+.hero{padding:82px 7vw 58px;display:grid;grid-template-columns:1.15fr .85fr;gap:44px;align-items:center;background:linear-gradient(180deg,#fff,#fafafa)}
+.kicker{font-size:12px;text-transform:uppercase;letter-spacing:.15em;font-weight:900;color:var(--brand)}
+h1{font-size:clamp(46px,7vw,84px);line-height:.93;letter-spacing:-.045em;margin:12px 0 20px;color:var(--ink)}
+.hero p{font-size:20px;line-height:1.55;color:#444;max-width:880px}
+.hero strong{color:var(--ink)}
+.hero-card{background:#111;color:#fff;border-radius:22px;padding:24px;box-shadow:0 18px 45px rgba(0,0,0,.12)}
+.hero-card h3{margin:0 0 14px;font-size:17px;color:#fff}
+.hero-flow{display:grid;gap:9px}
+.hero-flow div{padding:13px 14px;background:#1d1d1d;border:1px solid #2c2c2c;border-radius:12px;font-weight:750}
+.hero-flow .main{background:var(--brand);border-color:var(--brand)}
+.section{padding:72px 7vw;border-top:1px solid var(--line)}
+.section.alt{background:#fbfbfb}
+h2{font-size:38px;line-height:1.05;letter-spacing:-.03em;margin:0 0 12px;color:var(--ink)}
+h3{font-size:21px;margin:0 0 9px}
+.lead{font-size:18px;line-height:1.6;color:#555;max-width:980px;margin:0 0 30px}
+.statement{font-size:28px;line-height:1.25;font-weight:850;letter-spacing:-.02em;max-width:1000px;margin:0 0 28px}
+.red{color:var(--brand)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:15px}
+.card{border:1px solid var(--line);border-radius:17px;padding:20px;background:#fff}
+.card strong.num{display:block;font-size:12px;color:var(--brand);letter-spacing:.12em;margin-bottom:8px}
+.card p{color:#555;line-height:1.5;font-size:14px}
+.card.big{padding:24px}
+.pill{display:inline-block;padding:6px 9px;border-radius:999px;background:#fff1f3;color:var(--brand2);font-weight:800;font-size:12px}
+.pipeline{display:grid;grid-template-columns:repeat(11,1fr);align-items:center;gap:8px;margin-top:26px}
+.pbox{min-height:88px;border:1px solid var(--line);border-radius:14px;padding:14px 10px;display:grid;place-items:center;text-align:center;font-weight:800;background:#fff;font-size:13px}
+.pbox.brand{background:var(--brand);color:#fff;border-color:var(--brand);letter-spacing:0}
+.arr{text-align:center;font-weight:900;color:var(--brand);font-size:22px}
+.step{display:grid;grid-template-columns:74px 1fr;gap:18px;padding:22px 0;border-bottom:1px solid var(--line)}
+.step:last-child{border-bottom:0}
+.stepnum{width:54px;height:54px;border-radius:50%;background:var(--brand);color:#fff;display:grid;place-items:center;font-size:19px;font-weight:900}
+.step h3{margin-top:2px}
+.step p{margin:7px 0 0;color:#555;line-height:1.6}
+.tags{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.tag{border:1px solid #ddd;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:700;background:#fff}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:22px 0}
+.kpi{background:#111;color:#fff;padding:18px;border-radius:14px}
+.kpi small{color:#aaa}.kpi b{display:block;font-size:27px;margin-top:5px}
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:16px;background:#fff}
+table{width:100%;border-collapse:collapse;min-width:780px}
+th,td{padding:13px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--brand);background:#fafafa}
+td{font-size:14px;color:#444}
+.highlight{background:#fff7f8;border-left:4px solid var(--brand);padding:18px 20px;border-radius:9px;margin:22px 0}
+.highlight strong{color:var(--brand2)}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:22px 0 18px}
+.tab{border:1px solid var(--line);background:#fff;border-radius:999px;padding:10px 14px;font-weight:800;cursor:pointer}
+.tab.active{background:var(--brand);border-color:var(--brand);color:#fff}
+.tabc{display:none}.tabc.active{display:block}
+.arch{display:grid;grid-template-columns:1fr .12fr 1fr .12fr 1fr .12fr 1fr;gap:10px;align-items:center}
+.arch .node{border:1px solid var(--line);border-radius:15px;padding:18px;text-align:center;font-weight:850;background:#fff}
+.arch .node.red{background:var(--brand);color:#fff;border-color:var(--brand)}
+.timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.week{border:1px solid var(--line);border-radius:16px;padding:18px;background:#fff}
+.week b{color:var(--brand)}
+.footer{padding:42px 7vw;background:#111;color:#ddd}
+.footer strong{color:#fff}
+@media(max-width:1050px){
+  .hero,.grid2{grid-template-columns:1fr}
+  .grid3,.grid4,.timeline{grid-template-columns:1fr 1fr}
+  .pipeline{grid-template-columns:1fr}.arr{transform:rotate(90deg)}
+  .arch{grid-template-columns:1fr}.arch .arr{transform:rotate(90deg)}
+}
+@media(max-width:680px){
+  nav{display:none}.grid3,.grid4,.timeline,.kpis{grid-template-columns:1fr}
+  .hero,.section{padding-left:22px;padding-right:22px}
+  .step{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">NIUPACK · NIU INTELLIGENCE OS</div>
+  <nav>
+    <a href="#thesis">Visión</a>
+    <a href="#visibility">AI Visibility</a>
+    <a href="#loop">Ciclo de Posicionamiento</a>
+    <a href="#traffic">Después del tráfico</a>
+    <a href="#architecture">OS</a>
+    <a href="#roadmap">30 días</a>
+    <a href="#costos">Costos</a>
+  </nav>
+</header>
+
+<section class="hero" id="thesis">
+  <div>
+    <div class="kicker">Proyecto estratégico para Directorio</div>
+    <h1>Conquistar visibilidad.<br><span class="red">Convertirla en negocio.</span></h1>
+    <p><strong>NIU Intelligence OS nace con un objetivo principal:</strong> aumentar y medir la presencia de NIUPACK en las búsquedas que compradores de Brasil, Argentina y Bolivia realizan en ChatGPT y otros flujos de búsqueda asistidos por IA.</p>
+    <p>Una vez creada esa visibilidad, el mismo sistema desarrolla la inteligencia necesaria para transformar la demanda en una oportunidad comercial competitiva: precios de mercado, costos propios, brecha, escenarios y estrategia de ingreso.</p>
+  </div>
+  <div class="hero-card">
+    <h3>La lógica completa del proyecto</h3>
+    <div class="hero-flow">
+      <div class="main">1. Crear visibilidad en ChatGPT</div>
+      <div>2. Medir qué búsquedas estamos conquistando</div>
+      <div>3. Detectar qué demanda comercial puede llegar</div>
+      <div>4. Conocer el precio real del mercado</div>
+      <div>5. Compararlo contra nuestro costo</div>
+      <div>6. Ajustar eficiencia, pricing y estrategia</div>
+      <div class="main">7. Convertir visibilidad en mercado</div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="statement">La prioridad es una sola: <span class="red">cuando un comprador pregunte por vasos, packaging, personalización o proveedores regionales, queremos que NIUPACK tenga cada vez más oportunidades de aparecer como una alternativa relevante.</span></div>
+  <div class="grid3">
+    <div class="card"><strong class="num">OBJETIVO A</strong><h3>Ser encontrables</h3><p>Preparar la presencia digital actual de NIUPACK para que los sistemas de búsqueda de OpenAI puedan descubrir, leer e interpretar correctamente quiénes somos, qué fabricamos y qué mercados podemos atender.</p></div>
+    <div class="card"><strong class="num">OBJETIVO B</strong><h3>Conquistar consultas</h3><p>Definir miles de preguntas comerciales reales y medir progresivamente en cuáles NIUPACK comienza a aparecer, por país, producto, comprador e intención.</p></div>
+    <div class="card"><strong class="num">OBJETIVO C</strong><h3>Convertir datos en acción</h3><p>Cada búsqueda donde todavía exista espacio de crecimiento se convierte en una acción tecnológica concreta, medible y priorizada por el OS.</p></div>
+  </div>
+</section>
+
+<section class="section alt" id="visibility">
+  <div class="kicker">PARTE 1 · EL CORAZÓN DEL PROYECTO</div>
+  <h2>AI Visibility: cómo vamos a posicionar NIUPACK</h2>
+  <p class="lead">El posicionamiento se construye como un ciclo de ingeniería y medición. El OS define qué búsquedas comerciales importan, comprueba cómo responde ChatGPT hoy, prepara la presencia digital de NIUPACK para esas búsquedas, vuelve a medir y concentra el trabajo en las oportunidades con mayor valor comercial.</p>
+
+  <div class="step">
+    <div class="stepnum">1</div>
+    <div>
+      <h3>Construimos el mapa de demanda que queremos conquistar</h3>
+      <p>El OS comienza entendiendo el negocio: productos, aplicaciones, tipos de compradores, mercados objetivo y forma en que una empresa realmente buscaría un proveedor. A partir de ese contexto, el Query Strategy Engine propone automáticamente las consultas que deberíamos trabajar.</p>
+      <div class="tags">
+        <span class="tag">Fabricante</span><span class="tag">Proveedor</span><span class="tag">Producto</span>
+        <span class="tag">Mayorista</span><span class="tag">Personalización</span><span class="tag">Food Service</span>
+        <span class="tag">Grandes volúmenes</span><span class="tag">Mercosur</span><span class="tag">Brasil / Argentina / Bolivia</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">2</div>
+    <div>
+      <h3>Generamos una batería configurable de consultas</h3>
+      <p>El Directorio puede decidir la profundidad del estudio: 100, 500, 1.000, 2.000, 5.000 o cualquier cantidad de consultas. El OS distribuye esa batería entre países, categorías e intenciones y propone una mezcla equilibrada entre búsquedas genéricas, de producto, de aplicación y de proveedor.</p>
+      <p>Después de revisión, la batería principal queda congelada como versión de medición. Así podemos saber con precisión cuántas consultas conquistamos a lo largo del tiempo.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">3</div>
+    <div>
+      <h3>Medimos el punto de partida real</h3>
+      <p>El OS ejecuta las consultas de manera independiente mediante OpenAI con búsqueda web y contexto del mercado correspondiente. Cada respuesta se analiza automáticamente para detectar presencia de NIUPACK, links hacia nuestra web, competidores mencionados, fuentes utilizadas y posición de la marca dentro de la respuesta.</p>
+      <p>El resultado es una línea base objetiva: sabemos exactamente dónde estamos fuertes, dónde existe espacio para crecer y qué categorías comerciales merecen prioridad.</p>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><small>Visibilidad total</small><b>Medible</b></div>
+    <div class="kpi"><small>Por mercado</small><b>BR · AR · BO</b></div>
+    <div class="kpi"><small>Por intención</small><b>Proveedor · Producto · Uso</b></div>
+    <div class="kpi"><small>Por período</small><b>D1 · D15 · D30</b></div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">4</div>
+    <div>
+      <h3>Preparamos la web actual de NIUPACK para ser entendida por los motores de IA</h3>
+      <p>La web existente sigue siendo el activo central. El OS audita técnicamente su capacidad de descubrimiento: acceso para OpenAI Search, sitemap, robots, páginas públicas relevantes, canónicas, arquitectura de enlaces, estructura de productos y claridad de la información que describe a NIUPACK.</p>
+      <p>También organiza la información para que los sistemas de búsqueda puedan reconocer de forma consistente la entidad NIUPACK, sus productos, capacidades, aplicaciones y alcance regional.</p>
+      <div class="tags">
+        <span class="tag">OAI-SearchBot</span><span class="tag">Sitemap</span><span class="tag">Robots</span>
+        <span class="tag">Canonical</span><span class="tag">Structured Data</span><span class="tag">Product Taxonomy</span>
+        <span class="tag">Internal Linking</span><span class="tag">Português / Español</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">5</div>
+    <div>
+      <h3>Traducimos las brechas en acciones tecnológicas concretas</h3>
+      <p>Cada conjunto de consultas donde existe oportunidad de crecimiento genera un diagnóstico accionable. Si una categoría de búsqueda está relacionada con un producto o aplicación cuya información pública puede ser reforzada, el OS lo identifica y propone exactamente qué superficie digital conviene enriquecer dentro del ecosistema actual de NIUPACK.</p>
+      <p>Las acciones pueden incluir mejor definición de productos, datos estructurados, páginas informativas específicas, mejor conexión entre categorías, información regional, contenido en portugués para Brasil, metadatos y señales técnicas de descubrimiento.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">6</div>
+    <div>
+      <h3>Volvemos a medir con exactamente la misma batería</h3>
+      <p>El OS repite las mismas consultas en los puntos de control. Como la batería permanece estable, el Directorio obtiene una comparación directa de evolución: consultas ganadas, categorías nuevas, países con mayor crecimiento, competidores desplazados y fuentes donde NIUPACK empieza a aparecer.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">7</div>
+    <div>
+      <h3>El sistema aprende dónde concentrar el siguiente ciclo</h3>
+      <p>Además de la batería fija, el OS mantiene una batería dinámica de descubrimiento. Esa segunda capa busca nuevas formas de preguntar, nuevas aplicaciones y nuevas oportunidades comerciales. El resultado es un proceso continuo: medir, aprender, priorizar y ampliar cobertura.</p>
+    </div>
+  </div>
+</section>
+
+
+<section class="section">
+  <div class="kicker">PREPARACIÓN INSTITUCIONAL PARA AI VISIBILITY</div>
+  <h2>Antes de amplificar la búsqueda, NIUPACK debe estar preparada para recibir y sostener esa visibilidad</h2>
+  <p class="lead">El OS no se limita a medir consultas. También debe recomendar qué presencia institucional conviene construir alrededor de NIUPACK para que, cuando un comprador encuentre la marca en ChatGPT, exista un ecosistema digital consistente que refuerce confianza, autoridad y capacidad comercial.</p>
+
+  <div class="statement">La web oficial sigue siendo el centro. Alrededor de ella construimos una <span class="red">presencia institucional coherente, verificable y regional</span>.</div>
+
+  <div class="grid3">
+    <div class="card">
+      <strong class="num">01 · LINKEDIN</strong>
+      <h3>Perfil corporativo fuerte</h3>
+      <p>Actualizar y profesionalizar la presencia institucional de NIUPACK: quiénes somos, qué fabricamos, capacidad industrial, productos, mercados atendidos, fábrica, casos reales y novedades comerciales.</p>
+    </div>
+
+    <div class="card">
+      <strong class="num">02 · YOUTUBE</strong>
+      <h3>Evidencia visual de fábrica y producto</h3>
+      <p>Crear una presencia oficial con videos cortos y claros sobre fábrica, producción, impresión, personalización, aplicaciones y productos. El objetivo es convertir capacidades industriales en evidencia pública.</p>
+    </div>
+
+    <div class="card">
+      <strong class="num">03 · INSTAGRAM</strong>
+      <h3>Catálogo visual y prueba de actividad</h3>
+      <p>Mantener una presencia visual consistente que muestre productos reales, aplicaciones, clientes, producción, personalización y uso final, siempre conectada con la web oficial.</p>
+    </div>
+
+    <div class="card">
+      <strong class="num">04 · IDENTIDAD DIGITAL</strong>
+      <h3>Información consistente en todos los canales</h3>
+      <p>La descripción de NIUPACK, productos, ubicación, sitio oficial, contacto y capacidades debe mantenerse alineada en cada canal corporativo para reforzar una única identidad de marca.</p>
+    </div>
+
+    <div class="card">
+      <strong class="num">05 · BRASIL</strong>
+      <h3>Presencia institucional en portugués</h3>
+      <p>Preparar contenido corporativo y de producto en portugués para acompañar el mercado brasileño: empresa, productos, fabricación, personalización, aplicaciones y formas de contacto.</p>
+    </div>
+
+    <div class="card">
+      <strong class="num">06 · CONTACTO</strong>
+      <h3>Canales comerciales preparados</h3>
+      <p>Web, email corporativo y WhatsApp deben quedar claramente conectados para que un comprador que descubre NIUPACK pueda verificar la empresa y avanzar rápidamente hacia una consulta comercial.</p>
+    </div>
+  </div>
+
+  <div class="highlight">
+    <strong>Qué hace el OS:</strong> revisa el estado de estos activos, identifica cuáles están completos o requieren fortalecimiento y genera una lista de acciones recomendadas para preparar la presencia institucional antes y durante la campaña de AI Visibility.
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Activo institucional</th>
+        <th>Qué debería mostrar</th>
+        <th>Objetivo dentro del proyecto</th>
+      </tr>
+      <tr>
+        <td>Web oficial</td>
+        <td>Empresa, productos, capacidades, aplicaciones, contacto y alcance regional</td>
+        <td>Ser la fuente central hacia la que converge la presencia digital</td>
+      </tr>
+      <tr>
+        <td>LinkedIn</td>
+        <td>Perfil corporativo, fábrica, productos, capacidad, casos y novedades</td>
+        <td>Reforzar identidad B2B e institucional</td>
+      </tr>
+      <tr>
+        <td>YouTube</td>
+        <td>Fábrica, procesos, impresión, personalización, productos y aplicaciones</td>
+        <td>Aportar evidencia visual y técnica</td>
+      </tr>
+      <tr>
+        <td>Instagram</td>
+        <td>Productos reales, aplicaciones, clientes, producción y branding</td>
+        <td>Reforzar presencia visual y actividad de marca</td>
+      </tr>
+      <tr>
+        <td>Portugués para Brasil</td>
+        <td>Información institucional y de producto adaptada al comprador brasileño</td>
+        <td>Acompañar búsquedas y tráfico del principal mercado objetivo</td>
+      </tr>
+      <tr>
+        <td>Email + WhatsApp</td>
+        <td>Canales corporativos visibles y consistentes</td>
+        <td>Convertir descubrimiento en contacto comercial</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="highlight">
+    <strong>La secuencia queda así:</strong><br><br>
+    Preparación institucional → AI Visibility → Batería de consultas → Medición → Recomendaciones → Nuevas acciones → Mayor cobertura.
+  </div>
+</section>
+
+<section class="section" id="loop">
+  <h2>El ciclo de posicionamiento</h2>
+  <p class="lead">La visibilidad se gestiona como un activo medible. Cada ciclo produce una nueva fotografía del mercado y un conjunto de acciones con prioridad comercial.</p>
+  <div class="pipeline">
+    <div class="pbox brand">Mapa de búsquedas</div><div class="arr">→</div>
+    <div class="pbox">Batería N consultas</div><div class="arr">→</div>
+    <div class="pbox">Baseline</div><div class="arr">→</div>
+    <div class="pbox">Acciones técnicas</div><div class="arr">→</div>
+    <div class="pbox brand">Nueva medición</div>
+  </div>
+
+  <div class="highlight">
+    <strong>Qué ve el Directorio:</strong> un indicador de visibilidad que evoluciona por país, producto e intención comercial, acompañado de evidencia, competidores, fuentes y acciones priorizadas.
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <tr><th>Pregunta de gestión</th><th>Respuesta del OS</th></tr>
+      <tr><td>¿En cuántas búsquedas relevantes aparece NIUPACK?</td><td>Visibility Score total y por mercado.</td></tr>
+      <tr><td>¿En qué productos estamos ganando presencia?</td><td>Resultados por SKU, categoría y aplicación.</td></tr>
+      <tr><td>¿Qué búsquedas tienen mayor potencial comercial?</td><td>Prioridad de consultas según intención y tipo de comprador.</td></tr>
+      <tr><td>¿Qué marcas aparecen junto a nosotros?</td><td>Competitor frequency y evolución.</td></tr>
+      <tr><td>¿Qué acciones pueden ampliar nuestra cobertura?</td><td>Plan técnico derivado de los gaps encontrados.</td></tr>
+      <tr><td>¿El trabajo está produciendo crecimiento?</td><td>Comparación D1 / D15 / D30 y evolución por cohorte.</td></tr>
+    </table>
+  </div>
+</section>
+
+<section class="section alt" id="traffic">
+  <div class="kicker">PARTE 2 · QUÉ HACEMOS CON LA DEMANDA CREADA</div>
+  <h2>Visibilidad primero. Competitividad inmediatamente después.</h2>
+  <p class="lead">El crecimiento de AI Visibility abre la puerta a nuevos compradores. El segundo bloque del OS prepara a NIUPACK para capturar esa oportunidad con inteligencia de precios y rentabilidad.</p>
+
+  <div class="statement">La pregunta cambia de <span class="red">“¿nos encuentran?”</span> a <span class="red">“¿podemos ganar el negocio cuando nos encuentren?”</span></div>
+
+  <div class="grid4">
+    <div class="card"><strong class="num">ETAPA 01</strong><h3>Captar precio externo</h3><p>El OS identifica fabricantes y proveedores, prepara RFQs comparables, utiliza el email corporativo de la empresa de flexibles y estructura las cotizaciones recibidas.</p></div>
+    <div class="card"><strong class="num">ETAPA 02</strong><h3>Construir benchmark</h3><p>Normaliza moneda, unidad, volumen, especificación y condiciones para conocer el verdadero rango de mercado por país y SKU.</p></div>
+    <div class="card"><strong class="num">ETAPA 03</strong><h3>Conocer nuestro costo</h3><p>Integra materia prima, procesos, máquina, mano de obra, energía, merma, empaque, logística y financieros en un true cost por SKU.</p></div>
+    <div class="card"><strong class="num">ETAPA 04</strong><h3>Diseñar la entrada</h3><p>Compara benchmark vs costo, modela escenarios y propone la combinación de eficiencia, volumen, margen y pricing más atractiva para cada mercado.</p></div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="kicker">PARTE 3 · MARKET INTELLIGENCE ACQUISITION</div>
+  <h2>Convertimos cotizaciones reales en inteligencia</h2>
+  <p class="lead">La empresa de flexibles funciona como vehículo legítimo para obtener señales comerciales directas. La landing, el dominio, el email y el WhatsApp pertenecen a una operación real y pueden evolucionar posteriormente hacia actividad comercial plena.</p>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('a1',this)">Descubrir proveedores</button>
+    <button class="tab" onclick="showTab('a2',this)">Generar RFQ</button>
+    <button class="tab" onclick="showTab('a3',this)">Leer respuestas</button>
+    <button class="tab" onclick="showTab('a4',this)">Crear benchmark</button>
+  </div>
+
+  <div id="a1" class="tabc active card big">
+    <h3>1. Descubrimiento de fabricantes</h3>
+    <p>El OS localiza fabricantes relevantes por país, producto y capacidad. Registra web, email comercial, productos fabricados, mercado y evidencia pública. El resultado es una base estructurada de proveedores potenciales para consulta.</p>
+  </div>
+  <div id="a2" class="tabc card big">
+    <h3>2. Solicitudes comparables</h3>
+    <p>El RFQ Engine genera solicitudes con la misma especificación técnica y comercial: tamaño, material, impresión, cantidad, cantidades alternativas, packaging, destino, Incoterm, lead time y condiciones. La homogeneidad permite comparar respuestas con rigor.</p>
+  </div>
+  <div id="a3" class="tabc card big">
+    <h3>3. Email conectado al OS</h3>
+    <p>El agente monitorea los threads correspondientes a RFQs, reconoce respuestas, lee cotizaciones y extrae automáticamente precio unitario, MOQ, moneda, plazo, impresión, tooling, condiciones de pago y logística.</p>
+  </div>
+  <div id="a4" class="tabc card big">
+    <h3>4. Precio atacable por mercado</h3>
+    <p>Cada dato recibe un nivel de confianza. Las cotizaciones formales y respuestas directas alimentan el benchmark con mayor peso. El Directorio obtiene un rango de precio respaldado por observaciones reales y comparables.</p>
+  </div>
+</section>
+
+<section class="section alt">
+  <div class="kicker">PARTE 4 · COST & PRICING INTELLIGENCE</div>
+  <h2>Del costo industrial a una estrategia de entrada</h2>
+  <p class="lead">Con el benchmark externo ya construido, el OS calcula la posición real de NIUPACK y modela qué combinación de volumen, eficiencia y pricing permite competir de forma atractiva.</p>
+
+  <div class="pipeline">
+    <div class="pbox">Benchmark externo</div><div class="arr">→</div>
+    <div class="pbox">True Cost NIUPACK</div><div class="arr">→</div>
+    <div class="pbox">Competitive Gap</div><div class="arr">→</div>
+    <div class="pbox">Escenarios</div><div class="arr">→</div>
+    <div class="pbox brand">Estrategia de entrada</div>
+  </div>
+
+  <div class="grid3" style="margin-top:24px">
+    <div class="card"><h3>Cost Engine</h3><p>Materia prima, impresión, formado, mano de obra, máquina, energía, merma, setup, empaque, almacenamiento, logística, financieros, comerciales e indirectos.</p></div>
+    <div class="card"><h3>Scenario Engine</h3><p>Simula lote, volumen, costo de materia prima, merma, eficiencia, flete, tipo de cambio, plazo de pago y margen.</p></div>
+    <div class="card"><h3>Strategy Engine</h3><p>Propone precio objetivo, precio de penetración, precio por volumen, contrato, mínimo defendible y acciones internas para cerrar la brecha.</p></div>
+  </div>
+</section>
+
+<section class="section" id="architecture">
+  <h2>Un solo OS, un solo circuito de inteligencia</h2>
+  <p class="lead">El valor está en la conexión entre los módulos. La información de visibilidad crea el mapa de demanda; la inteligencia de mercado define el precio a atacar; el sistema de costos determina nuestra posición; y el Strategy Engine convierte todo en decisiones.</p>
+
+  <div class="arch">
+    <div class="node red">AI Visibility</div><div class="arr">→</div>
+    <div class="node">Market & RFQ Intelligence</div><div class="arr">→</div>
+    <div class="node">Cost & Scenario Engine</div><div class="arr">→</div>
+    <div class="node red">Strategy & Action Center</div>
+  </div>
+
+  <div class="highlight">
+    <strong>Resultado:</strong> NIUPACK pasa a operar con una lectura continua de tres variables esenciales: qué demanda estamos generando, qué precio exige el mercado y qué debemos hacer internamente para capturarla con rentabilidad.
+  </div>
+</section>
+
+
+<section class="section">
+  <div class="kicker">PRESUPUESTO DEL PROGRAMA</div>
+  <h2>¿Cuánto cuesta operar el piloto de 30 días?</h2>
+  <p class="lead">El costo variable está directamente relacionado con la cantidad de consultas que decidamos ejecutar. Para el piloto inicial proponemos una batería de referencia de 1.000 consultas, repetida en tres momentos: Día 1, Día 15 y Día 30.</p>
+
+  <div class="grid3">
+    <div class="card">
+      <strong class="num">DÍA 1</strong>
+      <h3>1.000 consultas</h3>
+      <p>Costo estimado de ejecución: <strong>USD 12</strong>.</p>
+    </div>
+    <div class="card">
+      <strong class="num">DÍA 15</strong>
+      <h3>1.000 consultas</h3>
+      <p>Costo estimado de ejecución: <strong>USD 12</strong>.</p>
+    </div>
+    <div class="card">
+      <strong class="num">DÍA 30</strong>
+      <h3>1.000 consultas</h3>
+      <p>Costo estimado de ejecución: <strong>USD 12</strong>.</p>
+    </div>
+  </div>
+
+  <div class="highlight">
+    <strong>Costo operativo estimado del ciclo de 30 días:</strong><br><br>
+    3.000 consultas totales × USD 0,012 ≈ <strong>USD 36</strong>.
+  </div>
+
+  <p class="lead" style="margin-top:18px">Este valor corresponde al motor de AI Visibility. El OS registrará el costo real de cada run y permitirá ampliar o reducir la batería según la profundidad de análisis que el Directorio quiera alcanzar.</p>
+</section>
+
+<section class="section alt" id="roadmap">
+  <h2>Programa inicial de 30 días</h2>
+  <p class="lead">La primera etapa construye el sistema y genera la primera fotografía completa de visibilidad, mercado y competitividad.</p>
+  <div class="timeline">
+    <div class="week"><b>SEMANA 1</b><h3>AI Visibility Foundation</h3><p>Query Strategy Engine, batería configurable, OpenAI Search, baseline, discovery audit y dashboard inicial.</p></div>
+    <div class="week"><b>SEMANA 2</b><h3>Posicionamiento y seguimiento</h3><p>Acciones tecnológicas priorizadas, nueva medición, competitor/source intelligence y ampliación de queries dinámicas.</p></div>
+    <div class="week"><b>SEMANA 3</b><h3>Market Acquisition</h3><p>Supplier discovery, email corporativo, RFQs, parsing de respuestas, normalización y primer benchmark regional.</p></div>
+    <div class="week"><b>SEMANA 4</b><h3>Cost & Strategy</h3><p>Cost sheets, procesos, escenarios, competitive gap, pricing y plan de entrada por país/SKU.</p></div>
+  </div>
+</section>
+
+<section class="section">
+  <h2>Qué obtiene el Directorio</h2>
+  <div class="grid2">
+    <div class="card big">
+      <h3>Panel de crecimiento de visibilidad</h3>
+      <p>Cuántas consultas estamos conquistando, dónde crecemos, qué productos generan mayor cobertura, qué competidores aparecen y qué acciones deben priorizarse.</p>
+    </div>
+    <div class="card big">
+      <h3>Panel de competitividad comercial</h3>
+      <p>Precio de mercado, evidencia disponible, costo NIUPACK, brecha, escenarios, margen y estrategia recomendada para cada combinación país × SKU.</p>
+    </div>
+  </div>
+  <div class="highlight">
+    <strong>Visión final:</strong> desarrollar demanda internacional a través de AI Visibility y acompañarla con la inteligencia necesaria para convertir esa demanda en negocio rentable.
+  </div>
+</section>
+
+
+<section class="section alt" id="costos">
+  <div class="kicker">COSTO DE DESARROLLO Y OPERACIÓN</div>
+  <h2>El costo variable del OS se puede calcular por consulta</h2>
+  <p class="lead">El desarrollo del sistema se realiza internamente. El costo operativo principal del módulo de AI Visibility proviene de las llamadas a la API de OpenAI y, especialmente, de la búsqueda web que acompaña a cada consulta de la batería.</p>
+
+  <div class="statement">Para planificación presupuestaria utilizamos un costo unitario de referencia de <span class="red">USD 0,012 por consulta completa</span>.</div>
+
+  <div class="grid3">
+    <div class="card">
+      <strong class="num">1 · WEB SEARCH</strong>
+      <h3>USD 0,010</h3>
+      <p>OpenAI publica actualmente un precio de USD 10 por cada 1.000 llamadas de búsqueda web. Eso equivale a aproximadamente un centavo de dólar por búsqueda.</p>
+    </div>
+    <div class="card">
+      <strong class="num">2 · MODELO</strong>
+      <h3>≈ USD 0,002</h3>
+      <p>Presupuestamos aproximadamente dos décimas de centavo adicionales por consulta para tokens de entrada, contenido recuperado, respuesta y análisis estructurado utilizando un modelo de alto volumen y bajo costo.</p>
+    </div>
+    <div class="card">
+      <strong class="num">3 · COSTO PRESUPUESTADO</strong>
+      <h3>≈ USD 0,012</h3>
+      <p>Este valor simplifica la planificación. El OS registrará el consumo real de cada ejecución para reemplazar progresivamente la estimación por un costo histórico propio.</p>
+    </div>
+  </div>
+
+  <div class="highlight">
+    <strong>Fórmula presupuestaria:</strong><br><br>
+    Cantidad de consultas × USD 0,012 = costo estimado de una batería completa.
+  </div>
+
+  <h3 style="margin-top:34px">Costo estimado por tamaño de batería</h3>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Consultas</th>
+        <th>Costo unitario presupuestado</th>
+        <th>Una ejecución</th>
+        <th>Ciclo D1 + D15 + D30</th>
+      </tr>
+      <tr><td>100</td><td>USD 0,012</td><td>USD 1,20</td><td>USD 3,60</td></tr>
+      <tr><td>500</td><td>USD 0,012</td><td>USD 6,00</td><td>USD 18,00</td></tr>
+      <tr><td>1.000</td><td>USD 0,012</td><td><strong>USD 12,00</strong></td><td><strong>USD 36,00</strong></td></tr>
+      <tr><td>2.000</td><td>USD 0,012</td><td>USD 24,00</td><td>USD 72,00</td></tr>
+      <tr><td>5.000</td><td>USD 0,012</td><td>USD 60,00</td><td>USD 180,00</td></tr>
+      <tr><td>10.000</td><td>USD 0,012</td><td>USD 120,00</td><td>USD 360,00</td></tr>
+      <tr><td>100.000</td><td>USD 0,012</td><td>USD 1.200,00</td><td>USD 3.600,00</td></tr>
+      <tr><td>1.000.000</td><td>USD 0,012</td><td><strong>USD 12.000,00</strong></td><td><strong>USD 36.000,00</strong></td></tr>
+    </table>
+  </div>
+
+  <div class="highlight">
+    <strong>Ejemplo del piloto:</strong> una batería de 1.000 consultas ejecutada en Día 1, Día 15 y Día 30 representa aproximadamente 3.000 consultas y un presupuesto operativo cercano a <strong>USD 36</strong>.
+  </div>
+
+  <h3 style="margin-top:34px">Cómo controla el OS este gasto</h3>
+  <div class="grid2">
+    <div class="card big">
+      <h3>Estimación antes de ejecutar</h3>
+      <p>Antes de iniciar una batería, el sistema muestra cantidad de consultas, llamadas estimadas, costo unitario y presupuesto total esperado.</p>
+    </div>
+    <div class="card big">
+      <h3>Registro real por run</h3>
+      <p>Cada ejecución guarda consumo de tokens, llamadas de búsqueda, modelo utilizado y costo efectivo. Con el tiempo tendremos nuestro propio costo medio real por consulta.</p>
+    </div>
+    <div class="card big">
+      <h3>Límite por ejecución</h3>
+      <p>El Directorio puede fijar un máximo de gasto por run y un presupuesto mensual para evitar sobreconsumo y escalar la batería de manera controlada.</p>
+    </div>
+    <div class="card big">
+      <h3>Escala bajo demanda</h3>
+      <p>El costo crece de manera prácticamente lineal con la cantidad de consultas, lo que permite comenzar con 1.000–2.000 y ampliar la cobertura a medida que el sistema demuestra valor.</p>
+    </div>
+  </div>
+
+  <div class="highlight">
+    <strong>Nota presupuestaria:</strong> el valor de USD 0,012 por consulta es una referencia de planificación basada en una búsqueda web por consulta y un volumen razonable de tokens. El OS medirá el costo efectivo de cada run y actualizará automáticamente el costo unitario real.
+  </div>
+</section>
+
+<footer class="footer">
+  <strong>NIU Intelligence OS</strong><br/>
+  AI Visibility · Market Intelligence · RFQ Intelligence · Cost Intelligence · Scenario Engine · Strategy & Action Center
+</footer>
+
+<script>
+function showTab(id,el){
+  document.querySelectorAll('.tabc').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.getElementById(id).classList.add('active'); el.classList.add('active');
+}
+</script>
+</body>
+</html>
