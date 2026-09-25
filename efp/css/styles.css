@@ -102,9 +102,12 @@ em { font-style: normal; color: var(--rust); }
 }
 .header__inner { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: nowrap; }
 
-.brand { display: inline-flex; align-items: center; }
-.brand__logotype { height: 32px; width: auto; display: block; }
-.brand__logotype--full { height: 46px; }
+.brand {
+  display: inline-flex; align-items: center;
+  background: var(--paper); border: 1px solid var(--line-2); padding: 9px 16px;
+}
+.brand__logotype { height: 30px; width: auto; display: block; }
+.brand__logotype--full { height: 42px; }
 
 .nav { display: flex; align-items: center; gap: 30px; font-family: var(--mono); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
 .nav a:not(.btn) { position: relative; opacity: .82; transition: opacity .25s, color .25s; }
