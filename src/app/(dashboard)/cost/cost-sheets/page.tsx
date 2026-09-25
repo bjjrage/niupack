@@ -18,10 +18,14 @@ import { DataTable, Column } from '@/components/ui/DataTable';
 import { Modal } from '@/components/ui/Modal';
 import { CostSheetVersion, CostComponent, CostCategory } from '@/types';
 import { TrueCostEngine } from '@/lib/engines/true-cost-engine';
+import { IndustrialCostCalculator } from '@/components/cost/IndustrialCostCalculator';
+import { useCopilot } from '@/components/copilot/CopilotContext';
 
 export default function CostSheetsPage() {
+  const { updateScreenContext } = useCopilot();
   const [sheet, setSheet] = useState<CostSheetVersion | null>(null);
   const [selectedSKU, setSelectedSKU] = useState('CUP-12OZ-SW');
+  const [viewMode, setViewMode] = useState<'INDUSTRIAL' | 'ACCOUNTING'>('INDUSTRIAL');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Form fields
@@ -34,7 +38,13 @@ export default function CostSheetsPage() {
 
   useEffect(() => {
     fetchSheet(selectedSKU);
-  }, [selectedSKU]);
+    updateScreenContext({
+      route: '/cost/cost-sheets',
+      module: 'cost',
+      sku: selectedSKU,
+      unitCostUSD: sheet?.true_unit_cost_usd || 0.0468,
+    });
+  }, [selectedSKU, sheet?.true_unit_cost_usd, updateScreenContext]);
 
   const fetchSheet = async (sku: string) => {
     try {
@@ -185,15 +195,48 @@ export default function CostSheetsPage() {
         </div>
       )}
 
-      {/* SKU Selector & Header Card */}
-      <div className="bg-[#141820] border border-slate-800 rounded p-4 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-medium text-slate-400">SKU Seleccionado:</span>
-          <select
-            value={selectedSKU}
-            onChange={(e) => setSelectedSKU(e.target.value)}
-            className="bg-[#0c0f14] border border-slate-700 rounded px-3 py-1.5 text-xs text-white font-mono font-semibold"
-          >
+      {/* View Mode Switcher */}
+      <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+        <button
+          type="button"
+          onClick={() => setViewMode('INDUSTRIAL')}
+          className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+            viewMode === 'INDUSTRIAL'
+              ? 'bg-brand-500 text-white'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+          }`}
+        >
+          1. Formulación Industrial en Planta (Costo Real CIF + Despacho + Rendimiento)
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode('ACCOUNTING')}
+          className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+            viewMode === 'ACCOUNTING'
+              ? 'bg-brand-500 text-white'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+          }`}
+        >
+          2. Matriz Contable de 22+ Categorías
+        </button>
+      </div>
+
+      {viewMode === 'INDUSTRIAL' ? (
+        <IndustrialCostCalculator
+          initialSku={selectedSKU}
+          onCostUpdated={() => fetchSheet(selectedSKU)}
+        />
+      ) : (
+        <>
+          {/* SKU Selector & Header Card */}
+          <div className="bg-[#141820] border border-slate-800 rounded p-4 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-medium text-slate-400">SKU Seleccionado:</span>
+              <select
+                value={selectedSKU}
+                onChange={(e) => setSelectedSKU(e.target.value)}
+                className="bg-[#0c0f14] border border-slate-700 rounded px-3 py-1.5 text-xs text-white font-mono font-semibold"
+              >
             <option value="CUP-12OZ-SW">CUP-12OZ-SW (Vaso 12 oz Pared Simple)</option>
             <option value="CUP-8OZ-SW">CUP-8OZ-SW (Vaso 8 oz Pared Simple)</option>
             <option value="CUP-16OZ-SW">CUP-16OZ-SW (Vaso 16 oz Pared Simple)</option>
@@ -267,20 +310,22 @@ export default function CostSheetsPage() {
         </div>
       )}
 
-      {/* Cost Components Table */}
-      <div className="space-y-2">
-        <h3 className="text-xs font-semibold text-white tracking-tight">
-          Desglose de Componentes de Costo ({sheet?.components?.length || 0} componentes)
-        </h3>
-        <DataTable
-          columns={columns}
-          data={sheet?.components || []}
-          searchKey="name"
-          searchPlaceholder="Buscar componente..."
-          exportFilename={`cost_sheet_${selectedSKU}.csv`}
-          emptyMessage="No hay componentes cargados en esta hoja de costo."
-        />
-      </div>
+          {/* Cost Components Table */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold text-white tracking-tight">
+              Desglose de Componentes de Costo ({sheet?.components?.length || 0} componentes)
+            </h3>
+            <DataTable
+              columns={columns}
+              data={sheet?.components || []}
+              searchKey="name"
+              searchPlaceholder="Buscar componente..."
+              exportFilename={`cost_sheet_${selectedSKU}.csv`}
+              emptyMessage="No hay componentes cargados en esta hoja de costo."
+            />
+          </div>
+        </>
+      )}
 
       {/* Modal: Agregar Componente */}
       <Modal

@@ -4,8 +4,11 @@ import React from 'react';
 import Link from 'next/link';
 import { DollarSign, ShieldAlert, Sparkles, Plus, RefreshCw, Mail, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { useCopilot } from '@/components/copilot/CopilotContext';
 
 export const Topbar: React.FC = () => {
+  const { toggleDrawer, isOpen } = useCopilot();
+
   return (
     <header className="h-14 bg-[#0a0d12] border-b border-slate-800 px-6 flex items-center justify-between shrink-0 select-none z-20">
       {/* Left: Organization & Market status pills */}
@@ -70,6 +73,21 @@ export const Topbar: React.FC = () => {
             Generar Consultas
           </Button>
         </Link>
+
+        {/* NIU Copilot Button */}
+        <button
+          type="button"
+          onClick={toggleDrawer}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-semibold transition-colors border ${
+            isOpen
+              ? 'bg-brand-500 text-white border-brand-400 shadow-sm'
+              : 'bg-[#141820] hover:bg-[#1a202c] text-white border-slate-700/80 hover:border-slate-600'
+          }`}
+          title="Abrir NIU Copilot contextual (Análisis de costos y pricing)"
+        >
+          <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>NIU Copilot</span>
+        </button>
 
         {/* Ajustes Button */}
         <Link

@@ -591,7 +591,7 @@ export function IndustrialCostCalculator({
                   </div>
                   <div>
                     <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                      2. Costo de Fondo ("Culito")
+                      2. Costo de Fondo (&quot;Culito&quot;)
                     </h3>
                     <p className="text-[11px] text-slate-400">
                       Bobina angosta de fondo &gt; Gramaje y Rendimiento unitario de discos
@@ -641,7 +641,7 @@ export function IndustrialCostCalculator({
                       3. Impresión y Troquelado (Carga Variable por Cotización)
                     </h3>
                     <p className="text-[11px] text-slate-400">
-                      "Costo de impresión siempre variable, así que se carga la cotización siempre cuando se cotiza"
+                      &quot;Costo de impresión siempre variable, así que se carga la cotización siempre cuando se cotiza&quot;
                     </p>
                   </div>
                 </div>
@@ -791,7 +791,7 @@ export function IndustrialCostCalculator({
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Fondo ("Culito"):</span>
+                  <span className="text-slate-400">Fondo (&quot;Culito&quot;):</span>
                   <div className="text-right">
                     <span className="font-mono text-white">${breakdown.cost_bottom_usd.toFixed(5)}</span>
                     <span className="text-[10px] text-slate-500 block">({breakdown.share_bottom_percent}%)</span>

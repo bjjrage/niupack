@@ -79,7 +79,7 @@ export default function QuotesPage() {
       <div className="p-3.5 bg-slate-900 border border-slate-800 rounded flex items-start gap-3 text-xs text-slate-300">
         <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
         <div>
-          <strong className="text-white">Protocolo de Incorporación a Market Intelligence:</strong> Cada propuesta comercial extraída por AI debe ser validada por un analista. Al presionar <em>"Aceptar en Market Intelligence"</em>, se genera automáticamente un registro con nivel de confianza de 95% (Cotización Formal), impactando el benchmark del país y SKU correspondiente.
+          <strong className="text-white">Protocolo de Incorporación a Market Intelligence:</strong> Cada propuesta comercial extraída por AI debe ser validada por un analista. Al presionar <em>&quot;Aceptar en Market Intelligence&quot;</em>, se genera automáticamente un registro con nivel de confianza de 95% (Cotización Formal), impactando el benchmark del país y SKU correspondiente.
         </div>
       </div>
 

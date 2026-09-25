@@ -68,18 +68,23 @@ export const Sidebar: React.FC = () => {
       ],
     },
     {
-      title: '3. COST & PRICING',
+      title: '3. COST INTELLIGENCE',
       items: [
         { name: 'Productos & SKUs', href: '/cost/skus', icon: Database },
         { name: 'Hojas de Costo Real', href: '/cost/cost-sheets', icon: Calculator },
         { name: 'Procesos Industriales', href: '/cost/processes', icon: Cpu },
         { name: 'Simulador de Escenarios', href: '/cost/scenarios', icon: Compass },
         { name: 'Oportunidades de Eficiencia', href: '/cost/efficiency', icon: TrendingUp },
-        { name: 'Estrategias de Precio', href: '/cost/pricing', icon: DollarSign },
       ],
     },
     {
-      title: '4. RFQ INTELLIGENCE',
+      title: '4. PRICING STRATEGY',
+      items: [
+        { name: 'Estrategias de Precio', href: '/pricing/strategy', icon: DollarSign, badge: 'CORE' },
+      ],
+    },
+    {
+      title: '5. RFQ INTELLIGENCE',
       items: [
         { name: 'Descubrimiento AI', href: '/rfq/discovery', icon: Search },
         { name: 'Especificaciones RFQ', href: '/rfq/rfqs', icon: FileText },

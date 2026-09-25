@@ -2,140 +2,179 @@
 
 **Sistema:** NIU Intelligence OS  
 **Organización:** GARDINER S.A. (NIUPACK) — Asunción, Paraguay  
-**Versión:** 1.0.0 (Producción Ready)  
+**Versión:** 1.2.0 (Producción Ready con NIU Copilot & Pricing Strategy)  
 **Fecha de Certificación:** 2026-09-25  
-**Entorno de Validación:** Node.js v24.20.0 | Next.js 15.5.26 App Router | TypeScript 5.7.3 | Vitest 3.2.7  
+**Entorno de Validación:** Node.js v24.20.0 | Next.js 15.5.26 App Router | TypeScript 5.7.3 | Vitest 3.2.7 | ESLint 9  
 
 ---
 
-## 1. RESUMEN EJECUTIVO DE RESPUESTAS A LAS 5 PREGUNTAS CORE
+## 1. RESUMEN DE CAMBIOS ARQUITECTÓNICOS RECIENTES
 
-| # | Pregunta Comercial Estratégica | Estado Operativo | Módulo Responsable | Hallazgo / Métrica Actual |
-|---|---|---|---|---|
-| **1** | **¿NIUPACK aparece cuando compradores buscan nuestros productos en ChatGPT?** | **OPERACIONAL** | **1. AI Visibility Engine** | Score Regional: **21.5%** (BR: 12.0%, AR: 28.5%, BO: 34.0%, PY Control: 88.0%). Dominancia de competidores Copobras (42%) y Altacoppo (26%). Fuentes clave detectadas: Mercado Livre, Catálogos B2B. |
-| **2** | **¿Qué precios reales tiene el mercado en Brasil, Argentina y Bolivia?** | **OPERACIONAL** | **2. Market Intelligence** | Vaso 12 oz Polipapel:<br>• **Brasil:** Benchmark USD 0.0495/u (R$ 0.275)<br>• **Argentina:** Benchmark USD 0.0480/u (ARS 64.0)<br>• **Bolivia:** Benchmark USD 0.0630/u (BOB 0.435)<br>• **Paraguay (Control):** Benchmark USD 0.0440/u (PYG 338). |
-| **3** | **¿Cuánto nos cuesta realmente producir cada SKU?** | **OPERACIONAL** | **3. Industrial Cost Engine** | True Cost Desglosado CUP-12OZ-SW: **USD 0.04020/u** (Lote 300k). Materia prima: 60.9% ($0.02450), Merma: 9.0% ($0.00360), Formado/Mano de obra: 13.9% ($0.00560), Overhead/Energía/Flete: 16.2% ($0.00650). Cuello de botella: Formadora Ultrasónica (5,500 u/h). |
-| **4** | **¿Qué precio podemos ofrecer para competir manteniendo rentabilidad?** | **OPERACIONAL** | **3. Pricing Engine** | 7 Estrategias disponibles:<br>• **Penetración Brasil:** USD 0.0470/u (Margen 14.5%, -5% vs benchmark local)<br>• **Penetración Bolivia:** USD 0.0550/u (Margen 26.9%, -12.7% vs benchmark Santa Cruz)<br>• **Piso Mínimo Defendible (Walk-Away):** USD 0.0362/u (Cubre 100% costos variables + 5%). |
-| **5** | **¿Qué acciones deberíamos tomar para entrar a cada mercado?** | **OPERACIONAL** | **5. Strategy Matrix & Action Center** | 4 Acciones críticas en ejecución:<br>1. Auditar visibilidad en São Paulo con batería de 200 queries FSSC 22000.<br>2. Reducir merma en planta de 7.6% a 5.0% (Ahorro anual: USD 24,000).<br>3. Despachar RFQ formal a 3 proveedores en Brasil.<br>4. Lanzar oferta de penetración en Santa Cruz a USD 0.055/u. |
-
----
-
-## 2. ESTADO DETALLADO POR MÓDULO (COMPLETED / BLOCKED / PENDING)
-
-### MÓDULO 1: AI VISIBILITY ENGINE
-- **Estado:** `COMPLETED`
-- **Componentes Implementados:**
-  - `src/lib/engines/visibility-engine.ts`: Fórmula $(0.50 \times \text{Mención} + 0.35 \times \text{Link} + 0.15 \times \text{Fuente})$.
-  - `src/app/(dashboard)/visibility/generator/page.tsx`: Generador masivo de consultas con selector de $N$ (100, 500, 1000, 2000, Custom) y cobertura estricta de las 15 categorías requeridas.
-  - `src/lib/utils/query-dedupe.ts`: Normalizador semántico con deduplicación y cálculo de checksum hexadecimal de inmutabilidad.
-  - `src/app/(dashboard)/visibility/batteries/page.tsx`: Gestión de baterías congeladas con bloqueo estricto de edición/borrado.
-  - `src/app/(dashboard)/visibility/runs/page.tsx` & `[id]/page.tsx`: Motor de ejecución con chequeo pre-flight de presupuesto y desglose individual por query.
-  - `src/app/(dashboard)/visibility/competitors/page.tsx`: Análisis de cuota de menciones de competidores.
-  - `src/app/(dashboard)/visibility/sources/page.tsx`: Ranking de dominios externos citados por el modelo de IA.
-  - `src/app/(dashboard)/visibility/discovery/page.tsx`: Inspector de accesibilidad, robots.txt, sitemap y OAI-SearchBot.
-
-### MÓDULO 2: MARKET INTELLIGENCE
-- **Estado:** `COMPLETED`
-- **Componentes Implementados:**
-  - `src/lib/engines/market-benchmark.ts`: Normalización multidivisa (BRL, ARS, BOB, PYG -> USD) con tipos de cambio configurables y ponderación por confianza de fuente (`FORMAL_QUOTE` 0.95 a `RETAIL` 0.20) y raíz cuadrada de volumen.
-  - `src/app/(dashboard)/market/prices/page.tsx`: Maestro de observaciones de precios con filtros por país, SKU y fuente.
-  - `src/app/(dashboard)/market/suppliers/page.tsx`: Catálogo de fabricantes competidores con política de autorización de contacto humano.
-  - `src/app/(dashboard)/market/benchmarks/page.tsx`: Cálculo estadístico de precios mínimos, medianas y benchmarks ponderados respetando homogeneidad técnica por SKU.
-
-### MÓDULO 3: INDUSTRIAL COST & PRICING ENGINE
-- **Estado:** `COMPLETED`
-- **Componentes Implementados:**
-  - `src/lib/engines/true-cost-engine.ts`: Desglose en 22+ componentes de costo, cálculo de costo unitario verdadero, lote total, punto de equilibrio y curva de escala (50k a 2M unidades).
-  - Cálculo de merma compuesta secuencial $\prod (1 - \text{merma}_i)$ e identificación de cuello de botella en línea productiva.
-  - `src/app/(dashboard)/cost/skus/page.tsx`: Maestro de productos y atributos técnicos de catálogo NIUPACK.
-  - `src/app/(dashboard)/cost/cost-sheets/page.tsx`: Hoja de costos viva e interactiva.
-  - `src/app/(dashboard)/cost/processes/page.tsx`: Modelado de las 6 etapas industriales (Recepción, Flexo, Troquelado, Formado, Control Calidad, Packaging).
-  - `src/app/(dashboard)/cost/scenarios/page.tsx`: Simulador What-If con sliders en tiempo real (materia prima $\pm\%$, merma $\pm\text{pp}$, eficiencia $\pm\%$, flete $\pm\%$, margen objetivo $\%$).
-  - `src/app/(dashboard)/cost/efficiency/page.tsx`: Ranking automatizado de oportunidades de eficiencia ordenadas por ahorro anual y ROI.
-  - `src/app/(dashboard)/cost/pricing/page.tsx`: 7 Estrategias comerciales de fijación de precio con límites de seguridad.
-
-### MÓDULO 4: RFQ INTELLIGENCE & GMAIL INTEGRATION
-- **Estado:** `COMPLETED` (con fallback de simulación para credenciales externas)
-- **Componentes Implementados:**
-  - `src/app/(dashboard)/rfq/discovery/page.tsx`: Descubrimiento asistido de fabricantes en Brasil, Argentina y Bolivia.
-  - `src/app/(dashboard)/rfq/rfqs/page.tsx`: Redacción y gestión de especificaciones técnicas RFQ.
-  - `src/app/(dashboard)/rfq/inbox/page.tsx`: Bandeja de sincronización con correos simulados/reales.
-  - `src/app/(dashboard)/rfq/quotes/page.tsx`: Extracción estructurada de cotizaciones desde respuestas de proveedores y botón para incorporarlas inmediatamente al maestro de inteligencia de mercado con nivel de confianza formal (`0.95`).
-  - `src/lib/gmail/gmail-client.ts`: Cliente de correo con política estricta de *Human-in-the-Loop* (requiere autorización previa al despacho).
-
-### MÓDULO 5: STRATEGY MATRIX, ACTION CENTER & EXECUTIVE REPORTS
-- **Estado:** `COMPLETED`
-- **Componentes Implementados:**
-  - `src/app/(dashboard)/strategy/page.tsx`: Matriz estratégica País $\times$ SKU cruzando visibilidad ChatGPT, benchmark de mercado, costo NIUPACK, precio objetivo, brecha y recomendación táctica.
-  - `src/app/(dashboard)/actions/page.tsx`: Centro de acciones con estados PENDING / IN_PROGRESS / COMPLETED, prioridades y asignación de dueños.
-  - `src/app/(dashboard)/reports/page.tsx`: 5 Reportes ejecutivos listos para impresión / PDF.
-  - `src/app/(dashboard)/page.tsx`: Dashboard Ejecutivo integral con KPIs consolidados.
-
-### MÓDULO 6: CONFIGURACIÓN, AUDITORÍA & RUNNER PERSISTENTE
-- **Estado:** `COMPLETED`
-- **Componentes Implementados:**
-  - `src/app/(dashboard)/settings/page.tsx` & `settings-client.tsx`: Controles presupuestarios (tope por corrida, tope mensual, gasto actual con barra de consumo, selección de modelos gpt-4o / gpt-4o-mini).
-  - Auditoría de llamadas OpenAI: telemetría con tokens, latencia, modelo y costo en dólares.
-  - Bitácora inmutable de auditoría del sistema: registro de eventos de congelamiento de batería, edición de costos, aprobación de RFQ, despachos de email y cambios de estrategia.
-  - `src/lib/jobs/job-runner.ts`: Runner de tareas persistentes con claves de idempotencia, reintentos y tolerancia a fallos.
+### 1.1 Root Cause del Routing Incorrecto y Corrección
+- **Causa Raíz:** Anteriormente, el enlace del sidebar titulado *"Estrategias de Precio"* (`/cost/pricing`) apuntaba a una pantalla que en realidad contenía la hoja de costos industriales desglosados (`IndustrialCostCalculator` con CIF, despacho, culito, impresión, operativos, merma y depreciación). Eso correspondía conceptualmente a **Cost Intelligence** y no a una pantalla de **Pricing Strategy**.
+- **Corrección Quirúrgica:**
+  1. Se reestructuró la sección 3 del menú lateral como **3. COST INTELLIGENCE**, reuniendo:
+     - *Productos & SKUs* (`/cost/skus`)
+     - *Hojas de Costo Real* (`/cost/cost-sheets`) — donde se integró la formulación industrial de planta viva con soporte de 22+ componentes contables.
+     - *Procesos Industriales* (`/cost/processes`)
+     - *Simulador de Escenarios* (`/cost/scenarios`)
+     - *Oportunidades de Eficiencia* (`/cost/efficiency`)
+  2. Se creó la sección dedicada **4. PRICING STRATEGY** con su pantalla propia en `/pricing/strategy`.
+  3. Se preservó compatibilidad retroactiva configurando una redirección permanente en `/cost/pricing` hacia `/pricing/strategy`, evitando la rotura de enlaces o bookmarks existentes.
 
 ---
 
-## 3. INTEGRACIONES EXTERNAS Y CONDICIÓN DE BLOQUEO DE CREDENCIALES
+## 2. OBJETIVO 1: NIU COPILOT (ARQUITECTURA DE CONTEXTO & UI)
 
-Tal como se estipuló en los requerimientos arquitectónicos, la aplicación opera de forma **100% funcional sin depender de credenciales externas activas**, utilizando un motor de emulación de alta fidelidad:
+### 2.1 Arquitectura del Context Builder
+```
+Pantalla Actual (Route + Module)
+               +
+  Datos Activos del OS (SKU, Mercado, Volumen, Costo, Benchmark, Gap)
+               ↓
+    ContextBuilder (Filtrado estricto sin token bloat)
+               ↓
+ OpenAIService (gpt-4o-mini / Fallback Analítico Determinista Local)
+               ↓
+   Respuesta Estructurada Numérica + [PROPOSED_ACTIONS]
+               ↓
+UI Right-Side Drawer (Confirmación Obligatoria del Usuario antes de Ejecutar)
+```
 
-| Servicio Externo | Variable de Entorno | Estado en este Entorno | Comportamiento del Sistema |
-|---|---|---|---|
-| **OpenAI API** | `OPENAI_API_KEY` | `BLOCKED_EXTERNAL_CREDENTIAL` (Mock Fallback Activo) | El servicio `OpenAIService` conmuta automáticamente al generador sintético determinista. Calcula costos exactos basados en la estructura tarifaria de `gpt-4o` y `gpt-4o-mini` y produce respuestas realistas para consultas, análisis de menciones y parsing de cotizaciones. Al configurarse la clave real en `.env`, el sistema conmuta automáticamente a llamadas en vivo a OpenAI con OAI-SearchBot. |
-| **Gmail OAuth2** | `GMAIL_CLIENT_ID`<br>`GMAIL_CLIENT_SECRET`<br>`GMAIL_REFRESH_TOKEN` | `BLOCKED_EXTERNAL_CREDENTIAL` (Safe Fallback Activo) | `GmailClient.getStatus()` reporta de forma transparente el estado `BLOCKED_EXTERNAL_CREDENTIAL`. La bandeja de entrada visualiza hilos pre-cargados de prueba y permite simular extracciones y aprobaciones humanas sin riesgo de despachos no deseados. |
-| **Supabase PostgreSQL** | `NEXT_PUBLIC_SUPABASE_URL`<br>`NEXT_PUBLIC_SUPABASE_ANON_KEY` | `ACTIVE_IN_PROCESS_REPOSITORY` | La capa `repository.ts` utiliza un almacén persistente en memoria global (`global.__niu_store`), inicializado desde `seed-data.ts`. Cuando se configuren las credenciales de Supabase, las 37 tablas creadas en `supabase/migrations/` recibirán las operaciones transparentemente. |
+- **Filtrado por Módulo:**
+  - **Cost Intelligence:** SKU, True Cost, desglose de componentes, merma, costos de papel, culito, impresión, operativos.
+  - **Pricing Strategy:** Costo unitario, benchmark regional (BR/AR/BO/PY), gap competitivo, margen a precio de mercado, RFQs, escenarios.
+  - **RFQ:** Proveedores, cotizaciones recibidas, condiciones comerciales.
+  - **AI Visibility:** Baterías de queries, menciones de marca, competidores citados, fuentes.
+- **Acciones Ejecutables con Human-in-the-Loop:** El copiloto nunca altera datos automáticamente. Propone acciones con el tag `[PROPOSED_ACTIONS]` (ej. `SIMULATE_WASTE`, `CHANGE_VOLUME`, `APPLY_PRICE_TARGET`, `NAVIGATE`), requiriendo que el usuario presione **[Confirmar]** en el Drawer para que la aplicación las aplique en el estado activo.
+- **Estética B2B SaaS (Zero AI Slop):** Se empleó estrictamente la paleta institucional de NIUPACK: Grafito oscuro (`#0c0f14`, `#141820`), Blanco, Negro, Gris neutro y Rojo NIUPACK (`bg-brand-500`) reservado exclusivamente para acciones primarias e identidad visual.
 
 ---
 
-## 4. RESULTADOS DE LA SUITE DE TESTING AUTOMATIZADA
+## 3. OBJETIVO 2: PRICING STRATEGY & COMPETITIVIDAD INDUSTRIAL
 
-Se ejecutó la suite completa con **Vitest 3.2.7**. Resultado: **10 archivos de prueba pasados, 38 pruebas pasadas, 0 fallos (100% pass rate)**.
+### 3.1 Componentes de la Nueva Pantalla (`/pricing/strategy`)
+1. **Header & Selectores:** SKU activo (`CUP-12OZ-SW`, etc.), Mercado objetivo (`BR`, `AR`, `BO`, `PY`) y Volumen a cotizar (`100k`, `300k`, `500k`, `1M`, o entrada manual).
+2. **KPIs en Tiempo Real:** Costo Unitario Real, Benchmark de Mercado, Target Price (Margen deseado), Competitive Gap (%) y Margen al Benchmark.
+3. **Matriz de 7 Estrategias de Precio:** Target Margin (Cost-Plus 15%), Market Match (Benchmark), Penetration (-5% bajo mercado), Volume (>500k), Contract (Acuerdo anual 12%), Minimum Defensible (Walk-Away floor), Premium (SGS FSSC 22000).
+4. **Simulador de Sensibilidad en Vivo:** Sliders de margen objetivo, merma de proceso, precio CIF de papel y flete a destino.
+5. **Modelado Separado de Tercerizados vs. Internos:**
+   - Impresión Tercerizada (`$4.50/1000u`) vs. Impresión Interna Flexo (`$0.00289/u`).
+   - Troquelado Tercerizado (`$2.50/1000u`) vs. Troquelado Interno (`$0.00185/u`).
+6. **Yield / Nesting Calculator (Comparación Tecnológica de Impresión):**
+   - Caso real de planta: Pliego Paraguay actual 900×1000 mm (18 piezas, 0.050 m²/u) vs. Pliego Competitivo de Banda Ancha 750×1000 mm (18 piezas, 0.04167 m²/u).
+   - **Ahorro de materia prima:** **16.67% menos papel por vaso** (Ahorro de ~USD 0.00438/u y USD 93,600 anuales a 20M u/año).
+7. **Matriz de 4 Escenarios Industriales & Análisis CAPEX / Payback:**
+   - **Escenario A (Actual Tercerizado Banda Angosta):** Pliegos 900x1000, 100% tercerizado. CAPEX: $0.
+   - **Escenario B (Tercerizado Optimizado Banda Ancha):** Pliegos 750x1000 con proveedor externo. CAPEX: $0. Ahorro inmediato de USD 93,600/año.
+   - **Escenario C (Integración Parcial - Flexo Propia):** Impresora flexográfica central drum propia (CAPEX: USD 180,000). Ahorro anual: USD 120,000. Payback: **1.5 años**. ROI simple: **66.7% anual**.
+   - **Escenario D (Integración Total - Flexo + Troqueladora Propia):** Inversión total USD 300,000. Ahorro anual: USD 132,800. Payback: **2.25 años**.
 
+---
+
+## 4. FÓRMULAS MATEMÁTICAS UTILIZADAS
+
+1. **Costo de Tonelada de Papel en Planta:**
+   $$\text{Total Tonelada Papel} = \text{CIF} + \text{Despacho (13\% CIF)} + \text{Costo del Dinero (6\% CIF)} = \text{CIF} \times 1.19$$
+2. **Aprovechamiento Geométrico de Pliego (Yield %):**
+   $$\text{Área Pliego} = \frac{\text{Ancho (mm)} \times \text{Largo (mm)}}{1.000.000} \quad (m^2)$$
+   $$\text{Área Consumida por Vaso} = \frac{\text{Área Total Pliego}}{\text{Piezas por Pliego}} \quad (m^2/\text{unidad})$$
+   $$\text{Yield \%} = \frac{\text{Piezas} \times \text{Área Bounding Box}}{\text{Área Total Pliego}} \times 100, \quad \text{Merma Geométrica \%} = 100 - \text{Yield \%}$$
+3. **Precio con Margen Objetivo:**
+   $$\text{Precio} = \frac{\text{Costo Unitario Real}}{1 - \text{Margen Target \%}}$$
+4. **Análisis CAPEX y Período de Repago:**
+   $$\text{Ahorro Anual (USD)} = (\text{Costo Unitario Actual} - \text{Costo Unitario Escenario}) \times \text{Volumen Anual (20M)}$$
+   $$\text{Punto de Equilibrio (unidades)} = \frac{\text{Inversión CAPEX}}{\text{Ahorro Unitario}}$$
+   $$\text{Payback (Años)} = \frac{\text{Inversión CAPEX}}{\text{Ahorro Anual (USD)}}, \quad \text{ROI \%} = \frac{\text{Ahorro Anual}}{\text{Inversión CAPEX}} \times 100$$
+
+---
+
+## 5. ARCHIVOS MODIFICADOS Y CREADOS
+
+### Tipos & Repositorio
+- `src/types/index.ts`: Agregadas interfaces de `CopilotScreenContext`, `CopilotThread`, `CopilotMessage`, `CopilotAction`, `YieldNestingConfig`, `YieldNestingResult`, `IndustrialScenarioComparison`, `IndustrialCapexConfig`.
+- `src/lib/db/repository.ts`: Agregadas colecciones `copilotThreads`, `copilotMessages`, `copilotActions` y métodos CRUD de persistencia.
+
+### Motores Analíticos
+- `src/lib/engines/nesting-engine.ts`: Motor de anidamiento y cálculo de rendimiento geométrico de pliegos y bobinas.
+- `src/lib/engines/industrial-capex-engine.ts`: Evaluador de escenarios industriales A-D con modelado de CAPEX, depreciación y repago.
+- `src/lib/copilot/context-builder.ts`: Constructor de prompts contextuales y generador local determinista.
+
+### Endpoints API
+- `src/app/api/copilot/chat/route.ts`: Endpoint de chat de Copilot con soporte OpenAI `gpt-4o-mini`, tracking de costo y fallback local.
+- `src/app/api/copilot/actions/route.ts`: Endpoint de actualización y confirmación de acciones propuestas.
+
+### Interfaz de Usuario
+- `src/components/copilot/CopilotContext.tsx`: Contexto y hook `useCopilot()` para comunicación entre componentes y el Drawer.
+- `src/components/copilot/CopilotLayoutWrapper.tsx`: Wrapper cliente que monta el drawer en el layout principal.
+- `src/components/copilot/NiuCopilotDrawer.tsx`: Panel lateral deslizante con cápsula de contexto activo, sugerencias y botones de confirmación.
+- `src/components/navigation/topbar.tsx`: Incorporado el botón *"NIU Copilot"* con estado activo en vivo.
+- `src/components/navigation/sidebar.tsx`: Separación limpia de *3. COST INTELLIGENCE* y *4. PRICING STRATEGY*.
+- `src/app/(dashboard)/layout.tsx`: Integración global de CopilotLayoutWrapper.
+- `src/app/(dashboard)/cost/cost-sheets/page.tsx`: Incorporado el selector de vista para Formulación Industrial viva (`IndustrialCostCalculator`) y Matriz Contable.
+- `src/app/(dashboard)/cost/pricing/page.tsx`: Redirección permanente a `/pricing/strategy`.
+- `src/app/(dashboard)/pricing/strategy/page.tsx`: Página del servidor de Pricing Strategy.
+- `src/app/(dashboard)/pricing/strategy/pricing-strategy-client.tsx`: Pantalla completa de fijación de precios, simulador en vivo, Nesting Calculator y matriz CAPEX.
+
+### Tests Unitarios
+- `tests/nesting-engine.test.ts`: Pruebas de cálculo de aprovechamiento de pliegos y ahorro de 16.7% entre formatos.
+- `tests/industrial-capex.test.ts`: Pruebas de evaluación de los 4 escenarios industriales, ahorros y payback.
+- `tests/copilot-context.test.ts`: Pruebas del constructor de contexto sin token bloat y respuestas numéricas deterministas.
+
+---
+
+## 6. RESULTADOS DE LA VALIDACIÓN TÉCNICA
+
+### 6.1 Tests Automatizados (`npm run test`):
 ```bash
  RUN  v3.2.7 C:/Users/User/Desktop/PORYECTOS/niupack
 
- ✓ tests/query-dedupe.test.ts (5 tests)
  ✓ tests/visibility-score.test.ts (4 tests)
- ✓ tests/currency-normalization.test.ts (4 tests)
  ✓ tests/pricing-strategies.test.ts (5 tests)
- ✓ tests/scenario-engine.test.ts (3 tests)
+ ✓ tests/true-cost-calculation.test.ts (3 tests)
+ ✓ tests/copilot-context.test.ts (3 tests)
  ✓ tests/rfq-state-machine.test.ts (4 tests)
  ✓ tests/battery-freeze.test.ts (4 tests)
- ✓ tests/true-cost-calculation.test.ts (3 tests)
- ✓ tests/quote-normalization.test.ts (3 tests)
  ✓ tests/job-idempotency.test.ts (3 tests)
+ ✓ tests/currency-normalization.test.ts (4 tests)
+ ✓ tests/scenario-engine.test.ts (3 tests)
+ ✓ tests/industrial-cost-engine.test.ts (2 tests)
+ ✓ tests/industrial-capex.test.ts (1 test)
+ ✓ tests/quote-normalization.test.ts (3 tests)
+ ✓ tests/query-dedupe.test.ts (5 tests)
+ ✓ tests/nesting-engine.test.ts (2 tests)
 
- Test Files  10 passed (10)
-      Tests  38 passed (38)
-   Duration  2.50s
+ Test Files  14 passed (14)
+      Tests  46 passed (46)
+   Duration  2.32s
 ```
 
-### Verificación de Tipos TypeScript (`npm run typecheck`):
+### 6.2 Chequeo de Tipos TypeScript (`npm run typecheck`):
 ```bash
 > tsc --noEmit
-Exit code: 0 (Cero errores de compilación)
+Exit code: 0 (Cero errores de tipos en todo el proyecto)
 ```
 
-### Verificación de Compilación de Producción (`npm run build`):
+### 6.3 Chequeo de Linting ESLint (`npm run lint`):
+```bash
+> next lint
+✔ No ESLint warnings or errors
+Exit code: 0
+```
+
+### 6.4 Compilación de Producción Next.js (`npm run build`):
 ```bash
 > next build
-   ▲ Next.js 15.5.26
- ✓ Compiled successfully in 16.0s
- ✓ Generating static pages (33/33)
+ ✓ Compiled successfully in 11.2s
+ ✓ Generating static pages (39/39)
  ✓ Finalizing page optimization ...
-Exit code: 0 (47 rutas estáticas y dinámicas construidas exitosamente)
+Exit code: 0 (Todas las 39 rutas generadas sin advertencias)
 ```
 
 ---
 
-## 5. LIMITACIONES CONOCIDAS Y RECOMENDACIONES DE PRODUCCIÓN
+## 7. BLOCKERS EXTERNOS Y DISPONIBILIDAD
 
-1. **Persistencia en Reinicios de Proceso Node sin Supabase**: Al usar el repositorio en memoria por defecto, los cambios se mantienen durante la sesión y recargas en caliente de Next.js (`global.__niu_store`). Para persistencia permanente entre reinicios de servidor, vincular las variables de Supabase ejecutando la migración `supabase/migrations/20260925000000_initial_schema.sql`.
-2. **Cuotas y Rate Limits de OpenAI**: Cuando se active `OPENAI_API_KEY`, mantener el worker de concurrencia en 5 (configurable en `/settings`) para evitar errores `429 Too Many Requests` durante baterías grandes (> 500 consultas).
-3. **Preservación del Sitio Web Estático**: El sitio web corporativo de NIUPACK (`index.html`, `en.html`, `pt.html`, etc.) en la raíz del repositorio se encuentra intacto e inalterado.
+- **OpenAI API Key:** El Copilot y el módulo de visibilidad operan con un motor analítico determinista local cuando no hay clave provista, o con `gpt-4o-mini` y `gpt-4o` en tiempo real cuando el usuario ingresa su clave `sk-...` en `/settings`.
+- **Servidor SMTP:** Configurable desde `/settings` para el envío de RFQs de flexibles vía SMTP corporativo autenticado.
+- **Ruta Legacy `/cost/pricing`:** Redirige a `/pricing/strategy` mediante `redirect()`, garantizando cero impacto en enlaces existentes.

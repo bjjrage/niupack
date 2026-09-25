@@ -739,5 +739,150 @@ export interface IndustrialCostBreakdown {
   share_depreciation_percent: number;
   share_scrap_percent: number;
   share_packaging_percent: number;
+  // Separate outsourced vs internal costs
+  printing_outsourced_cost_usd?: number;
+  die_cutting_outsourced_cost_usd?: number;
+  printing_internal_cost_usd?: number;
+  die_cutting_internal_cost_usd?: number;
+}
+
+// ==========================================
+// NIU COPILOT TYPES
+// ==========================================
+
+export interface CopilotScreenContext {
+  route: string;
+  module: string;
+  sku?: string;
+  market?: MarketCode | string;
+  volume?: number;
+  unitCostUSD?: number;
+  benchmarkUSD?: number;
+  gapPercent?: number;
+  breakdownSnapshot?: Partial<IndustrialCostBreakdown>;
+  processSnapshot?: Record<string, any>;
+  rfqSnapshot?: Record<string, any>;
+  visibilitySnapshot?: Record<string, any>;
+  customParams?: Record<string, any>;
+}
+
+export interface CopilotAction {
+  id: string;
+  thread_id?: string;
+  message_id?: string;
+  action_type:
+    | 'SIMULATE_WASTE'
+    | 'CHANGE_VOLUME'
+    | 'SWITCH_MARKET'
+    | 'NAVIGATE'
+    | 'CREATE_SCENARIO'
+    | 'CALCULATE_CAPEX'
+    | 'APPLY_PRICE_TARGET';
+  label: string;
+  payload: Record<string, any>;
+  status: 'PROPOSED' | 'CONFIRMED' | 'EXECUTED' | 'DISMISSED';
+  created_at?: string;
+}
+
+export interface CopilotMessage {
+  id: string;
+  thread_id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  context_snapshot?: CopilotScreenContext;
+  tokens?: number;
+  cost_usd?: number;
+  latency_ms?: number;
+  model?: string;
+  created_at: string;
+  proposed_actions?: CopilotAction[];
+}
+
+export interface CopilotThread {
+  id: string;
+  user_id: string;
+  organization_id: string;
+  route: string;
+  module: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ==========================================
+// INDUSTRIAL COMPETITIVENESS & NESTING TYPES
+// ==========================================
+
+export interface YieldNestingConfig {
+  sheet_width_mm: number;
+  sheet_height_mm: number;
+  piece_width_mm: number;
+  piece_height_mm: number;
+  orientation: 'AUTO' | 'PORTRAIT' | 'LANDSCAPE';
+  spacing_mm: number;
+  printing_margin_mm: number;
+  registration_margin_mm: number;
+  pieces_per_sheet: number;
+  paper_cif_ton_usd: number;
+  gsm: number;
+  coating_gsm: number;
+}
+
+export interface YieldNestingResult {
+  total_area_m2: number;
+  usable_area_m2: number;
+  piece_area_m2: number;
+  pieces_per_sheet: number;
+  yield_percent: number;
+  geometric_scrap_percent: number;
+  area_consumed_per_piece_m2: number;
+  paper_cost_per_piece_usd: number;
+  sheets_per_ton: number;
+  total_paper_ton_usd: number;
+}
+
+// ==========================================
+// INDUSTRIAL SCENARIOS & CAPEX TYPES
+// ==========================================
+
+export type IndustrialScenarioId =
+  | 'SCENARIO_A_OUTSOURCED_NARROW'
+  | 'SCENARIO_B_OUTSOURCED_WIDE'
+  | 'SCENARIO_C_PARTIAL_INTEGRATION'
+  | 'SCENARIO_D_FULL_INTEGRATION';
+
+export interface IndustrialCapexConfig {
+  machine_name: string;
+  capex_investment_usd: number;
+  lifespan_years: number;
+  annual_maintenance_usd: number;
+  operator_labor_hourly_usd: number;
+  energy_kwh_cost_usd: number;
+  power_kw: number;
+  speed_units_per_hour: number;
+  plates_clises_cost_per_job_usd: number;
+  inks_cost_per_thousand_usd: number;
+  setup_waste_sheets: number;
+  annual_working_hours: number;
+}
+
+export interface IndustrialScenarioComparison {
+  id: IndustrialScenarioId;
+  title: string;
+  technology_description: string;
+  format_label: string;
+  printing_model: 'OUTSOURCED' | 'INTERNAL';
+  die_cutting_model: 'OUTSOURCED' | 'INTERNAL';
+  unit_cost_usd: number;
+  unit_saving_vs_current_usd: number;
+  cost_gap_vs_benchmark_percent: number;
+  margin_at_benchmark_percent: number;
+  capex_investment_usd: number;
+  annual_saving_at_volume_usd: number;
+  break_even_volume_annual: number;
+  payback_years: number;
+  roi_percent: number;
+  feasibility_status: 'CURRENT' | 'IMMEDIATE' | 'CAPEX_VIABLE' | 'LONG_TERM';
+  recommendation: string;
 }
 

@@ -23,6 +23,9 @@ import {
   SystemSettings,
   MarketCode,
   IndustrialProductCostInput,
+  CopilotThread,
+  CopilotMessage,
+  CopilotAction,
 } from '@/types';
 import {
   INITIAL_ORG,
@@ -68,6 +71,9 @@ class Store {
   jobs: JobRun[] = [];
   auditEvents: AuditEvent[] = [...INITIAL_AUDIT_EVENTS];
   settings: SystemSettings = { ...INITIAL_SETTINGS };
+  copilotThreads: CopilotThread[] = [];
+  copilotMessages: CopilotMessage[] = [];
+  copilotActions: CopilotAction[] = [];
 }
 
 // Global singleton across server restarts during dev
@@ -388,6 +394,9 @@ export const repository = {
     });
     return sheet;
   },
+  async getIndustrialCostInputs(): Promise<IndustrialProductCostInput[]> {
+    return [...store.industrialCostInputs];
+  },
   async getIndustrialCostInput(sku: string): Promise<IndustrialProductCostInput | undefined> {
     return store.industrialCostInputs.find((i) => i.sku === sku);
   },
@@ -491,5 +500,74 @@ export const repository = {
   },
   async getAuditEvents(): Promise<AuditEvent[]> {
     return [...store.auditEvents].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+
+  // Copilot Threads, Messages & Actions
+  async getCopilotThreads(userId?: string): Promise<CopilotThread[]> {
+    if (userId) {
+      return store.copilotThreads.filter((t) => t.user_id === userId);
+    }
+    return [...store.copilotThreads].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  },
+
+  async createCopilotThread(thread: Omit<CopilotThread, 'id' | 'created_at' | 'updated_at'>): Promise<CopilotThread> {
+    const now = new Date().toISOString();
+    const newThread: CopilotThread = {
+      ...thread,
+      id: crypto.randomUUID(),
+      created_at: now,
+      updated_at: now,
+    };
+    store.copilotThreads.push(newThread);
+    return newThread;
+  },
+
+  async getCopilotMessages(threadId: string): Promise<CopilotMessage[]> {
+    return store.copilotMessages
+      .filter((m) => m.thread_id === threadId)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  },
+
+  async addCopilotMessage(msg: Omit<CopilotMessage, 'id' | 'created_at'>): Promise<CopilotMessage> {
+    const newMsg: CopilotMessage = {
+      ...msg,
+      id: crypto.randomUUID(),
+      created_at: new Date().toISOString(),
+    };
+    store.copilotMessages.push(newMsg);
+
+    // Update parent thread timestamp
+    const threadIndex = store.copilotThreads.findIndex((t) => t.id === msg.thread_id);
+    if (threadIndex !== -1) {
+      store.copilotThreads[threadIndex].updated_at = newMsg.created_at;
+    }
+    return newMsg;
+  },
+
+  async getCopilotActions(threadId?: string): Promise<CopilotAction[]> {
+    if (threadId) {
+      return store.copilotActions.filter((a) => a.thread_id === threadId);
+    }
+    return [...store.copilotActions];
+  },
+
+  async addCopilotAction(action: Omit<CopilotAction, 'id' | 'created_at'>): Promise<CopilotAction> {
+    const newAction: CopilotAction = {
+      ...action,
+      id: crypto.randomUUID(),
+      created_at: new Date().toISOString(),
+    };
+    store.copilotActions.push(newAction);
+    return newAction;
+  },
+
+  async updateCopilotActionStatus(
+    actionId: string,
+    status: CopilotAction['status']
+  ): Promise<CopilotAction | null> {
+    const idx = store.copilotActions.findIndex((a) => a.id === actionId);
+    if (idx === -1) return null;
+    store.copilotActions[idx].status = status;
+    return store.copilotActions[idx];
   },
 };
