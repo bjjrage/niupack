@@ -291,11 +291,11 @@ window.setupProductShowroom = function (carousel) {
       }
 
       const bowlImages = {
-        all: { src: image.getAttribute('src'), scale: '1' },
-        '3 oz': { src: 'assets/showroom/bowl-icecream-3oz-v4.png', scale: '.69', measureBounds: { left: 17.4, right: 17.7, top: 15.7, bottom: 12.4 } },
-        '5 oz': { src: 'assets/showroom/bowl-icecream-5oz-v4.png', scale: '.69', widthScale: '.99', measureBounds: { left: 11.9, right: 12, top: 9.8, bottom: 7.1 } },
-        '8 oz': { src: 'assets/showroom/bowl-icecream-8oz-v4.png', scale: '.82', measureBounds: { left: 14.1, right: 14.1, top: 13.3, bottom: 11.3 } },
-        '20 oz': { src: 'assets/showroom/bowl-icecream-20oz-v5.png', scale: '.94', measureBounds: { left: 7.6, right: 7.6, top: 10.9, bottom: 7.8 } },
+        all: { src: image.getAttribute('src'), scale: '.7' },
+        '3 oz': { src: 'assets/showroom/bowl-icecream-3oz-v4.png', scale: '.483', measureBounds: { left: 17.4, right: 17.7, top: 15.7, bottom: 12.4 } },
+        '5 oz': { src: 'assets/showroom/bowl-icecream-5oz-v4.png', scale: '.483', widthScale: '.99', measureBounds: { left: 11.9, right: 12, top: 9.8, bottom: 7.1 } },
+        '8 oz': { src: 'assets/showroom/bowl-icecream-8oz-v4.png', scale: '.574', measureBounds: { left: 14.1, right: 14.1, top: 13.3, bottom: 11.3 } },
+        '20 oz': { src: 'assets/showroom/bowl-icecream-20oz-v5.png', scale: '.658', measureBounds: { left: 7.6, right: 7.6, top: 10.9, bottom: 7.8 } },
       };
       let currentImage = image;
       let requestedImage = 0;
