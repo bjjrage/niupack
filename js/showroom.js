@@ -202,13 +202,13 @@ window.setupProductShowroom = function (carousel) {
       const cupImages = {
         simple: {
           all: { src: image.getAttribute('src'), scale: '1' },
-          '4 oz': { src: 'assets/showroom/cup-single-4oz-v2.png', scale: '.62', measureBounds: { left: 14.6, right: 14.5, top: 24.9, bottom: 18.7 } },
-          '6 oz': { src: 'assets/showroom/cup-single-6oz-v2.png', scale: '.7', measureBounds: { left: 9.7, right: 9.6, top: 19.8, bottom: 13.9 } },
-          '8 oz': { src: 'assets/showroom/cup-single-8oz-v4.png', scale: '.78', widthScale: '1.07', measureBounds: { left: 5.2, right: 5, top: 15.9, bottom: 11.1 } },
-          '12 oz': { src: 'assets/showroom/cup-single-12oz-v2.png', scale: '.88', measureBounds: { left: 9.2, right: 9.2, top: 15.4, bottom: 10.5 } },
-          '16 oz': { src: 'assets/showroom/cup-single-16oz-v3.png', scale: '.96', imageAspect: 1079 / 1457, measureBounds: { left: 7.3, right: 7.4, top: 9.9, bottom: 7.6 } },
-          '21 oz': { src: 'assets/showroom/cup-single-21oz-v2.png', scale: '1', measureBounds: { left: 12.2, right: 12.1, top: 8.9, bottom: 8.1 } },
-          '24 oz': { src: 'assets/showroom/cup-single-24oz-v2.png', scale: '1.04', measureBounds: { left: 12.2, right: 12.2, top: 5.5, bottom: 7.6 } },
+          '4 oz': { src: 'assets/showroom/cup-single-4oz-v3.png', scale: '.62', measureBounds: { left: 5.8, right: 5.7, top: 14.8, bottom: 14.8 } },
+          '6 oz': { src: 'assets/showroom/cup-single-6oz-v3.png', scale: '.7', measureBounds: { left: 7.7, right: 7.4, top: 17.2, bottom: 13.4 } },
+          '8 oz': { src: 'assets/showroom/cup-single-8oz-v5.png', scale: '.78', widthScale: '1.07', measureBounds: { left: 5.3, right: 5.1, top: 15.8, bottom: 11.1 } },
+          '12 oz': { src: 'assets/showroom/cup-single-12oz-v3.png', scale: '.88', measureBounds: { left: 5.8, right: 5.7, top: 7.6, bottom: 10.2 } },
+          '16 oz': { src: 'assets/showroom/cup-single-16oz-v4.png', scale: '.96', imageAspect: 1079 / 1458, measureBounds: { left: 7.3, right: 7.4, top: 9.8, bottom: 8 } },
+          '21 oz': { src: 'assets/showroom/cup-single-21oz-v3.png', scale: '1', measureBounds: { left: 12.2, right: 12.2, top: 8.8, bottom: 8.1 } },
+          '24 oz': { src: 'assets/showroom/cup-single-24oz-v3.png', scale: '1.04', measureBounds: { left: 12.2, right: 12.2, top: 5.3, bottom: 7.6 } },
         },
         doble: {
           all: { src: 'assets/showroom/cups-double-all-v3.png', scale: '1' },
