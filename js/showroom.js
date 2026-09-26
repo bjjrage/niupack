@@ -55,7 +55,29 @@ window.setupProductShowroom = function (carousel) {
   const details = carousel.querySelector('.showroom-details');
   const tablist = carousel.querySelector('.showroom-tabs');
   let active = 0;
-  const images = [], panels = [], tabs = [], visualResetters = [];
+  const images = [], panels = [], tabs = [], visualResetters = [], measurementRefreshers = [];
+
+  function applyMeasurementLayout(figure, measures, variant, fallbackAspect) {
+    const aspect = variant.imageAspect || fallbackAspect;
+    const availableWidth = figure.clientWidth;
+    const availableHeight = figure.clientHeight;
+    if (!availableWidth || !availableHeight) return;
+    let boxWidth = availableWidth;
+    let boxHeight = boxWidth / aspect;
+    if (boxHeight > availableHeight) {
+      boxHeight = availableHeight;
+      boxWidth = boxHeight * aspect;
+    }
+    const bounds = variant.measureBounds;
+    measures.style.width = `${boxWidth}px`;
+    measures.style.height = `${boxHeight}px`;
+    measures.style.setProperty('--cup-display-scale', variant.scale);
+    measures.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+    measures.style.setProperty('--measure-object-left', `${bounds.left}%`);
+    measures.style.setProperty('--measure-object-right', `${bounds.right}%`);
+    measures.style.setProperty('--measure-object-top', `${bounds.top}%`);
+    measures.style.setProperty('--measure-object-bottom', `${bounds.bottom}%`);
+  }
 
   function setVisualSelectValue(select, value) {
     if (!select) return;
@@ -149,23 +171,19 @@ window.setupProductShowroom = function (carousel) {
         const approximateMark = dimensions.approximate ? '≈ ' : '';
         diameterValue.textContent = `${approximateMark}Ø ${dimensions.diameter} mm`;
         heightValue.textContent = `${approximateMark}${dimensions.height} mm`;
-        measures.style.setProperty('--cup-display-scale', variant.scale);
-        measures.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
-        measures.style.setProperty('--cup-measure-aspect', variant.measureAspect || '2 / 3');
-        measures.style.setProperty('--cup-measure-top', variant.measureTop || '15%');
-        measures.style.setProperty('--cup-measure-bottom', variant.measureBottom || '12%');
+        applyMeasurementLayout(figure, measures, variant, 2 / 3);
       }
 
       const cupImages = {
         simple: {
           all: { src: image.getAttribute('src'), scale: '1' },
-          '4 oz': { src: 'assets/showroom/cup-single-4oz-v2.png', scale: '.62', measureTop: '20%', measureBottom: '14%' },
-          '6 oz': { src: 'assets/showroom/cup-single-6oz-v2.png', scale: '.7', measureTop: '20%', measureBottom: '14%' },
-          '8 oz': { src: 'assets/showroom/cup-single-8oz-v4.png', scale: '.78', widthScale: '1.07', measureTop: '18%', measureBottom: '13%' },
-          '12 oz': { src: 'assets/showroom/cup-single-12oz-v2.png', scale: '.88', measureTop: '15%', measureBottom: '11%' },
-          '16 oz': { src: 'assets/showroom/cup-single-16oz-v3.png', scale: '.96', measureTop: '10%', measureBottom: '8%', measureAspect: '1079 / 1457' },
-          '21 oz': { src: 'assets/showroom/cup-single-21oz-v2.png', scale: '1', measureTop: '9%', measureBottom: '8%' },
-          '24 oz': { src: 'assets/showroom/cup-single-24oz-v2.png', scale: '1.04', measureTop: '5%', measureBottom: '8%' },
+          '4 oz': { src: 'assets/showroom/cup-single-4oz-v2.png', scale: '.62', measureBounds: { left: 14.6, right: 14.5, top: 24.9, bottom: 18.7 } },
+          '6 oz': { src: 'assets/showroom/cup-single-6oz-v2.png', scale: '.7', measureBounds: { left: 9.7, right: 9.6, top: 19.8, bottom: 13.9 } },
+          '8 oz': { src: 'assets/showroom/cup-single-8oz-v4.png', scale: '.78', widthScale: '1.07', measureBounds: { left: 5.2, right: 5, top: 15.9, bottom: 11.1 } },
+          '12 oz': { src: 'assets/showroom/cup-single-12oz-v2.png', scale: '.88', measureBounds: { left: 9.2, right: 9.2, top: 15.4, bottom: 10.5 } },
+          '16 oz': { src: 'assets/showroom/cup-single-16oz-v3.png', scale: '.96', imageAspect: 1079 / 1457, measureBounds: { left: 7.3, right: 7.4, top: 9.9, bottom: 7.6 } },
+          '21 oz': { src: 'assets/showroom/cup-single-21oz-v2.png', scale: '1', measureBounds: { left: 12.2, right: 12.1, top: 8.9, bottom: 8.1 } },
+          '24 oz': { src: 'assets/showroom/cup-single-24oz-v2.png', scale: '1.04', measureBounds: { left: 12.2, right: 12.2, top: 5.5, bottom: 7.6 } },
         },
         doble: {
           all: { src: 'assets/showroom/cups-double-all-v3.png', scale: '1' },
@@ -211,6 +229,13 @@ window.setupProductShowroom = function (carousel) {
       }
 
       panel.addEventListener('custom-select-change', () => queueMicrotask(updateCupVisual));
+      measurementRefreshers.push(() => {
+        const type = typeSelect.dataset.value === 'doble' ? 'doble' : 'simple';
+        const selectedSize = sizeSelect.dataset.value;
+        const size = selectedSize?.endsWith('oz') ? selectedSize : 'all';
+        const variant = cupImages[type][size];
+        if (type === 'simple' && cupDimensions[size] && variant) applyMeasurementLayout(figure, measures, variant, 2 / 3);
+      });
       visualResetters[index] = () => {
         const allSizesLabel = isEnglish ? 'All' : 'Todos';
         setVisualSelectValue(typeSelect, 'simple');
@@ -262,19 +287,15 @@ window.setupProductShowroom = function (carousel) {
         const approximateMark = dimensions.approximate ? '≈ ' : '';
         diameterValue.textContent = `${approximateMark}Ø ${dimensions.diameter} mm`;
         heightValue.textContent = `${approximateMark}${dimensions.height} mm`;
-        measures.style.setProperty('--cup-display-scale', variant.scale);
-        measures.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
-        measures.style.setProperty('--cup-measure-aspect', variant.measureAspect || '1.35 / 1');
-        measures.style.setProperty('--cup-measure-top', variant.measureTop || '33%');
-        measures.style.setProperty('--cup-measure-bottom', variant.measureBottom || '31%');
+        applyMeasurementLayout(figure, measures, variant, 3 / 2);
       }
 
       const bowlImages = {
         all: { src: image.getAttribute('src'), scale: '1' },
-        '3 oz': { src: 'assets/showroom/bowl-icecream-3oz-v4.png', scale: '.69', measureTop: '34%', measureBottom: '33%' },
-        '5 oz': { src: 'assets/showroom/bowl-icecream-5oz-v4.png', scale: '.69', widthScale: '.99', measureTop: '32%', measureBottom: '30%' },
-        '8 oz': { src: 'assets/showroom/bowl-icecream-8oz-v4.png', scale: '.82', measureTop: '31%', measureBottom: '28%' },
-        '20 oz': { src: 'assets/showroom/bowl-icecream-20oz-v5.png', scale: '.94', measureTop: '20%', measureBottom: '20%', measureAspect: '1.55 / 1' },
+        '3 oz': { src: 'assets/showroom/bowl-icecream-3oz-v4.png', scale: '.69', measureBounds: { left: 17.4, right: 17.7, top: 15.7, bottom: 12.4 } },
+        '5 oz': { src: 'assets/showroom/bowl-icecream-5oz-v4.png', scale: '.69', widthScale: '.99', measureBounds: { left: 11.9, right: 12, top: 9.8, bottom: 7.1 } },
+        '8 oz': { src: 'assets/showroom/bowl-icecream-8oz-v4.png', scale: '.82', measureBounds: { left: 14.1, right: 14.1, top: 13.3, bottom: 11.3 } },
+        '20 oz': { src: 'assets/showroom/bowl-icecream-20oz-v5.png', scale: '.94', measureBounds: { left: 7.6, right: 7.6, top: 10.9, bottom: 7.8 } },
       };
       let currentImage = image;
       let requestedImage = 0;
@@ -312,6 +333,12 @@ window.setupProductShowroom = function (carousel) {
       }
 
       panel.addEventListener('custom-select-change', () => queueMicrotask(updateBowlVisual));
+      measurementRefreshers.push(() => {
+        const selectedSize = sizeSelect.dataset.value;
+        const size = selectedSize === 'Todos' || selectedSize === 'All' ? 'all' : selectedSize;
+        const variant = bowlImages[size];
+        if (bowlDimensions[size] && variant) applyMeasurementLayout(figure, measures, variant, 3 / 2);
+      });
       visualResetters[index] = () => {
         setVisualSelectValue(sizeSelect, isEnglish ? 'All' : 'Todos');
         sizeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
@@ -358,6 +385,7 @@ window.setupProductShowroom = function (carousel) {
     });
     tabs.push(tab); tablist.append(tab);
   });
+  window.addEventListener('resize', () => measurementRefreshers.forEach(refresh => refresh()), { passive: true });
   function show(index) {
     const nextActive = (index + cards.length) % cards.length;
     if (nextActive !== active) visualResetters.forEach(reset => reset?.());
