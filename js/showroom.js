@@ -55,8 +55,29 @@ window.setupProductShowroom = function (carousel) {
   const details = carousel.querySelector('.showroom-details');
   const tablist = carousel.querySelector('.showroom-tabs');
   let active = 0;
-  const images = [], panels = [], tabs = [];
+  const images = [], panels = [], tabs = [], visualResetters = [];
+
+  function setVisualSelectValue(select, value) {
+    if (!select) return;
+    const options = [...select.querySelectorAll('.custom-select-option')];
+    const selectedOption = options.find(option => option.dataset.value === value);
+    if (!selectedOption) return;
+    select.dataset.value = value;
+    select.classList.remove('is-open');
+    const trigger = select.querySelector('.custom-select-trigger');
+    if (trigger) {
+      trigger.textContent = selectedOption.textContent;
+      trigger.setAttribute('aria-expanded', 'false');
+    }
+    options.forEach(option => {
+      const isSelected = option === selectedOption;
+      option.classList.toggle('active', isSelected);
+      option.setAttribute('aria-selected', String(isSelected));
+    });
+  }
+
   cards.forEach((card, index) => {
+    visualResetters[index] = null;
     const image = card.querySelector('.product-card-media img');
     const isCupCard = card.hasAttribute('data-cup-card');
     const isBowlCard = Boolean(card.querySelector('[data-bowl-size]'));
@@ -190,6 +211,13 @@ window.setupProductShowroom = function (carousel) {
       }
 
       panel.addEventListener('custom-select-change', () => queueMicrotask(updateCupVisual));
+      visualResetters[index] = () => {
+        const allSizesLabel = isEnglish ? 'All' : 'Todos';
+        setVisualSelectValue(typeSelect, 'simple');
+        typeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
+        setVisualSelectValue(sizeSelect, allSizesLabel);
+        sizeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
+      };
       image.style.setProperty('--cup-display-scale', '1');
       queueMicrotask(updateCupVisual);
     } else if (isBowlCard) {
@@ -284,6 +312,10 @@ window.setupProductShowroom = function (carousel) {
       }
 
       panel.addEventListener('custom-select-change', () => queueMicrotask(updateBowlVisual));
+      visualResetters[index] = () => {
+        setVisualSelectValue(sizeSelect, isEnglish ? 'All' : 'Todos');
+        sizeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
+      };
       image.style.setProperty('--cup-display-scale', '1');
       queueMicrotask(updateBowlVisual);
     }
@@ -327,7 +359,9 @@ window.setupProductShowroom = function (carousel) {
     tabs.push(tab); tablist.append(tab);
   });
   function show(index) {
-    active = (index + cards.length) % cards.length;
+    const nextActive = (index + cards.length) % cards.length;
+    if (nextActive !== active) visualResetters.forEach(reset => reset?.());
+    active = nextActive;
     carousel.querySelector('.showroom-counter').textContent = `${String(active + 1).padStart(2, '0')} / ${String(cards.length).padStart(2, '0')}`;
     images.forEach((image, i) => {
       let offset = (i - active + cards.length) % cards.length;
