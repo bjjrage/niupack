@@ -22,4 +22,11 @@
 - Estados de entrada, avance circular, salida y cambio de categoria revisados en codigo.
 - Comparacion visual e interaccion real: bloqueadas hasta que el usuario recargue la pagina local.
 
+**Compact orbit iteration**
+
+- Los vasos vecinos pasan de una orbita amplia a centros aproximados de 31% y 69% del escenario.
+- La profundidad baja de `-260px` a `-120px` y la rotacion de 28 a 16 grados.
+- La escala lateral sube de `.72` a `.82`, formando un grupo visual continuo alrededor del vaso central.
+- La transicion se reduce de 720 a 560 ms para que el giro corto responda con mayor agilidad.
+
 final result: blocked
