@@ -1,27 +1,21 @@
-# Design QA - familia NIU roja y blanca
+# Design QA - restauracion de categoria y drag del mini carrusel
 
-- Scope: imagen general de categoria y vasos de pared simple de 4, 6, 8, 12, 16, 21 y 24 oz.
-- Direction: todos los vasos exclusivamente rojos y blancos, con patrones distintos y stamping irregular `niu`.
-- Automated browser comparison: bloqueada porque la pagina local usa `file://`.
+- Scope: categoria Vasos y carrusel interno de tamanos.
+- Automated browser capture: bloqueada porque la pagina local usa `file://`.
 
-**Assets implemented**
+**Fixes implemented**
 
-- Categoria: composicion compacta de siete vasos NIU, sin marcas externas.
-- 4 oz: ondas organicas blancas.
-- 6 oz: diagonales con micro-sellos irregulares.
-- 8 oz: estampas tipograficas sobredimensionadas.
-- 12 oz: arcos concentricos con pequenos sellos.
-- 16 oz: lineas de contorno, acabado glossy.
-- 21 oz: tipografia recortada y trama de puntos, acabado glossy.
-- 24 oz: bandas diagonales con repeticion `niu`, acabado glossy.
+- Se restauro en los tres idiomas la imagen original `assets/Imagenes/VASOS ULTIMOS.png` como estado de categoria.
+- Los mockups rojos y blancos quedan limitados a los tamanos individuales.
+- Los vasos laterales pasan de centros aproximados 31/69 a 25/75 para evitar superposicion excesiva.
+- `pointermove` ahora interpola en tiempo real posicion horizontal, profundidad, rotacion, escala, opacidad, brillo y desenfoque.
+- El vaso destino avanza desde `translateZ(-220px)` hasta `150px` mientras el central retrocede.
+- Al soltar, la transicion se reactiva un frame antes de limpiar los estilos del drag, evitando el salto brusco.
+- La duracion del carrusel interno sube a 680 ms con la misma curva 3D del carrusel principal y un recorrido horizontal menor.
 
-**Technical validation**
+**Verification**
 
-- Los ocho activos son PNG con canal alfa real.
-- Los archivos anteriores se conservaron; las nuevas versiones usan nombres versionados.
-- Se recalcularon los contornos alfa de los siete vasos para mantener alineadas las cotas.
-- La relacion especial del vaso de 16 oz se actualizo a `1079 / 1458`.
-- Los tres idiomas apuntan a la misma nueva composicion de categoria.
-- JavaScript validado con `node --check`; formato validado con `git diff --check`.
+- Sintaxis validada con `node --check`; formato validado con `git diff --check`.
+- Comparacion visual real bloqueada hasta recargar la pagina local.
 
 final result: blocked

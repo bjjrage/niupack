@@ -293,6 +293,43 @@ window.setupProductShowroom = function (carousel) {
           const current = Math.max(0, sizes.indexOf(sizeSelect.dataset.value));
           selectCupSize(sizes[(current + step + sizes.length) % sizes.length]);
         },
+        preview(progress) {
+          const amount = Math.abs(progress);
+          const advancing = progress < 0;
+          const targetPosition = advancing ? 'next' : 'previous';
+          const oppositePosition = advancing ? 'previous' : 'next';
+          const centerX = -50 + progress * 24;
+          const centerZ = 150 - amount * 310;
+          figure.style.transform = `translate(${centerX}%, -48%) translateZ(${centerZ}px) rotateY(${progress * 16}deg) scale(${1 - amount * .14})`;
+          figure.style.opacity = String(1 - amount * .28);
+          railItems.forEach(item => {
+            const position = item.button.dataset.sizePosition;
+            if (position === targetPosition) {
+              const startX = advancing ? -8 : -92;
+              const x = startX + ((-50 - startX) * amount);
+              const startRotate = advancing ? -18 : 18;
+              item.button.style.transform = `translate(${x}%, -50%) translateZ(${-220 + amount * 370}px) rotateY(${startRotate * (1 - amount)}deg) scale(${.78 + amount * .22})`;
+              item.button.style.opacity = String(.46 + amount * .5);
+              item.button.style.filter = `saturate(${.72 + amount * .28}) brightness(${.76 + amount * .24}) blur(${1 - amount}px)`;
+              item.button.style.zIndex = '4';
+            } else if (position === oppositePosition) {
+              const startX = advancing ? -92 : -8;
+              const x = startX + (advancing ? -26 : 26) * amount;
+              item.button.style.transform = `translate(${x}%, -50%) translateZ(${-220 - amount * 180}px) rotateY(${advancing ? 18 : -18}deg) scale(${.78 - amount * .12})`;
+              item.button.style.opacity = String(.46 * (1 - amount * .72));
+            }
+          });
+        },
+        clearPreview() {
+          figure.style.removeProperty('transform');
+          figure.style.removeProperty('opacity');
+          railItems.forEach(item => {
+            item.button.style.removeProperty('transform');
+            item.button.style.removeProperty('opacity');
+            item.button.style.removeProperty('filter');
+            item.button.style.removeProperty('z-index');
+          });
+        },
       };
 
       function updateCupVisual() {
@@ -525,17 +562,23 @@ window.setupProductShowroom = function (carousel) {
     return offset;
   }
   function clearDragStyles() {
-    images.forEach(image => {
-      image.style.removeProperty('transform');
-      image.style.removeProperty('opacity');
-    });
     carousel.classList.remove('is-dragging');
+    requestAnimationFrame(() => {
+      nestedCarousel?.clearPreview?.();
+      images.forEach(image => {
+        image.style.removeProperty('transform');
+        image.style.removeProperty('opacity');
+      });
+    });
   }
   function previewDrag(dx) {
     const travel = Math.max(240, stage.getBoundingClientRect().width * .42);
     const progress = Math.max(-1, Math.min(1, dx / travel));
     const amount = Math.abs(progress);
-    if (nestedCarousel) return { progress, travel };
+    if (nestedCarousel) {
+      nestedCarousel.preview(progress);
+      return { progress, travel };
+    }
     images.forEach((image, index) => {
       const offset = relativeOffset(index);
       let x;
