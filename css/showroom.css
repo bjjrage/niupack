@@ -35,12 +35,12 @@
 .cup-measure-diameter { top: max(3%, calc(var(--cup-measure-top) - 7%)); left: 9%; right: 9%; border-top: 1.5px solid #fff; }
 .cup-measure-diameter::before { top: -5px; left: -1px; clip-path: polygon(0 50%, 100% 0, 100% 100%); }
 .cup-measure-diameter::after { top: -5px; right: -1px; clip-path: polygon(100% 50%, 0 0, 0 100%); }
-.cup-measure-height { top: var(--cup-measure-top); bottom: var(--cup-measure-bottom); right: -4%; border-right: 1.5px solid #fff; }
-.cup-measure-height::before { top: -1px; right: -5px; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
-.cup-measure-height::after { bottom: -1px; right: -5px; clip-path: polygon(50% 100%, 0 0, 100% 0); }
+.cup-measure-height { top: var(--cup-measure-top); bottom: var(--cup-measure-bottom); right: -5%; width: 0; border-right: 2px solid #fff; filter: drop-shadow(0 0 3px #171923) drop-shadow(0 0 1px #171923); z-index: 3; }
+.cup-measure-height::before { top: -1px; right: -6px; width: 11px; height: 11px; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.cup-measure-height::after { bottom: -1px; right: -6px; width: 11px; height: 11px; clip-path: polygon(50% 100%, 0 0, 100% 0); }
 .cup-measure-value { position: absolute; display: block; padding: 4px 7px; border: 1px solid #ffffff45; border-radius: 5px; background: #171923d9; color: #fff; font-size: clamp(10px, 1vw, 13px); font-weight: 800; line-height: 1; letter-spacing: .01em; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .cup-measure-diameter .cup-measure-value { left: 50%; bottom: 6px; transform: translateX(-50%); }
-.cup-measure-height .cup-measure-value { top: 50%; left: 8px; transform: translateY(-50%); }
+.cup-measure-height .cup-measure-value { top: 50%; left: 10px; transform: translateY(-50%); z-index: 4; }
 .showroom-product[data-position="active"] { transform: translate(-50%, -48%) translateZ(60px); opacity: 1; z-index: 3; }
 .showroom-product[data-position="active"] img { animation: showroom-float 4.5s ease-in-out infinite alternate; }
 .showroom-product[data-cup-visual][data-position="active"] .showroom-cup-image.is-current { animation: showroom-cup-float 4.5s ease-in-out infinite alternate; }

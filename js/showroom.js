@@ -209,6 +209,7 @@ window.setupProductShowroom = function (carousel) {
         '3 oz': { diameter: '69,5', height: '40,7' },
         '5 oz': { diameter: '69,6', height: '47,2' },
         '8 oz': { diameter: '95,2', height: '55,5' },
+        '20 oz': { diameter: '149', height: '78', approximate: true },
       };
       const diameterValue = measures.querySelector('.cup-measure-diameter .cup-measure-value');
       const heightValue = measures.querySelector('.cup-measure-height .cup-measure-value');
@@ -216,15 +217,16 @@ window.setupProductShowroom = function (carousel) {
       function showBowlDimensions(size, variant) {
         const dimensions = bowlDimensions[size];
         figure.classList.toggle('has-cup-measures', Boolean(dimensions && variant));
-        dimensionSource.hidden = size !== '20 oz';
-        if (size === '20 oz') dimensionSource.textContent = isPortuguese
-          ? 'A ficha técnica do pote de 20 oz não foi fornecida; medidas pendentes.'
+        dimensionSource.hidden = !dimensions?.approximate;
+        if (dimensions?.approximate) dimensionSource.textContent = isPortuguese
+          ? 'Medidas aproximadas do mockup; ficha técnica de 20 oz pendente.'
           : isEnglish
-            ? 'The 20 oz pot technical sheet was not provided; dimensions pending.'
-            : 'No se proporcionó la ficha técnica del pote de 20 oz; medidas pendientes.';
+            ? 'Approximate mockup dimensions; 20 oz technical sheet pending.'
+            : 'Medidas aproximadas del mockup; ficha técnica de 20 oz pendiente.';
         if (!dimensions || !variant) return;
-        diameterValue.textContent = `Ø ${dimensions.diameter} mm`;
-        heightValue.textContent = `${dimensions.height} mm`;
+        const approximateMark = dimensions.approximate ? '≈ ' : '';
+        diameterValue.textContent = `${approximateMark}Ø ${dimensions.diameter} mm`;
+        heightValue.textContent = `${approximateMark}${dimensions.height} mm`;
         measures.style.setProperty('--cup-display-scale', variant.scale);
         measures.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
         measures.style.setProperty('--cup-measure-aspect', variant.measureAspect || '1.35 / 1');
@@ -234,10 +236,10 @@ window.setupProductShowroom = function (carousel) {
 
       const bowlImages = {
         all: { src: image.getAttribute('src'), scale: '1' },
-        '3 oz': { src: 'assets/showroom/bowl-icecream-3oz-v4.png', scale: '.62', measureTop: '35%', measureBottom: '32%' },
-        '5 oz': { src: 'assets/showroom/bowl-icecream-5oz-v4.png', scale: '.72', measureTop: '33%', measureBottom: '30%' },
+        '3 oz': { src: 'assets/showroom/bowl-icecream-3oz-v4.png', scale: '.69', measureTop: '34%', measureBottom: '33%' },
+        '5 oz': { src: 'assets/showroom/bowl-icecream-5oz-v4.png', scale: '.69', widthScale: '.99', measureTop: '32%', measureBottom: '30%' },
         '8 oz': { src: 'assets/showroom/bowl-icecream-8oz-v4.png', scale: '.82', measureTop: '31%', measureBottom: '28%' },
-        '20 oz': { src: 'assets/showroom/bowl-icecream-20oz-v5.png', scale: '1' },
+        '20 oz': { src: 'assets/showroom/bowl-icecream-20oz-v5.png', scale: '.94', measureTop: '20%', measureBottom: '20%', measureAspect: '1.55 / 1' },
       };
       let currentImage = image;
       let requestedImage = 0;
