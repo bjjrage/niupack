@@ -249,7 +249,7 @@ window.setupProductShowroom = function (carousel) {
           button.append(railImage);
           button.addEventListener('click', () => selectCupSize(size));
           art.append(button);
-          return { button, size };
+          return { button, image: railImage, size };
         });
         railType = type;
       }
@@ -258,7 +258,11 @@ window.setupProductShowroom = function (carousel) {
         buildSizeRail(type);
         const sizes = availableSizes(type);
         const selectedIndex = sizes.indexOf(size);
+        const selectedScale = Number(cupImages[type][size].scale) || 1;
         railItems.forEach(item => {
+          const itemScale = Number(cupImages[type][item.size].scale) || 1;
+          const normalization = Math.pow(selectedScale / itemScale, .75);
+          item.image.style.setProperty('--cup-orbit-normalize', normalization.toFixed(4));
           let offset = sizes.indexOf(item.size) - selectedIndex;
           if (offset > sizes.length / 2) offset -= sizes.length;
           if (offset < -sizes.length / 2) offset += sizes.length;

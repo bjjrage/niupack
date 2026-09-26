@@ -29,4 +29,13 @@
 - La escala lateral sube de `.72` a `.82`, formando un grupo visual continuo alrededor del vaso central.
 - La transicion se reduce de 720 a 560 ms para que el giro corto responda con mayor agilidad.
 
+**Depth hierarchy correction**
+
+- Source screenshot: `C:\Users\User\AppData\Local\Temp\codex-clipboard-59b1ce85-5231-4b60-afed-08ff6666e302.png`.
+- Finding [P1]: el vaso lateral de 24 oz conservaba una escala tan grande que parecia estar delante del vaso central de 4 oz.
+- Los previews laterales ahora normalizan el 75% de la diferencia extrema de escala respecto del seleccionado.
+- El producto central avanza a `translateZ(150px)` y `z-index: 5`; los laterales retroceden a `translateZ(-220px)` y `z-index: 1`.
+- Los laterales bajan a 46% de opacidad, con menor brillo, saturacion y un desenfoque de 1 px.
+- El producto central recibe sombra mas definida y un leve aumento de brillo para fijar el foco frontal.
+
 final result: blocked
