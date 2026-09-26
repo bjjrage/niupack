@@ -194,13 +194,50 @@ window.setupProductShowroom = function (carousel) {
       figure.dataset.cupVisual = '';
       image.classList.add('showroom-cup-image', 'is-current');
       figure.append(nextImage);
+      const measures = document.createElement('span');
+      measures.className = 'showroom-cup-measures';
+      measures.setAttribute('aria-hidden', 'true');
+      measures.innerHTML = '<span class="cup-measure cup-measure-diameter"><span class="cup-measure-value"></span></span><span class="cup-measure cup-measure-height"><span class="cup-measure-value"></span></span>';
+      figure.append(measures);
+      const dimensionSource = document.createElement('p');
+      dimensionSource.className = 'showroom-dimension-source';
+      dimensionSource.hidden = true;
+      panel.querySelector('.product-fields').after(dimensionSource);
+
+      // Boca superior (A) y altura (B), en mm, de las fichas técnicas provistas.
+      const bowlDimensions = {
+        '3 oz': { diameter: '69,5', height: '40,7' },
+        '5 oz': { diameter: '69,6', height: '47,2' },
+        '8 oz': { diameter: '95,2', height: '55,5' },
+      };
+      const diameterValue = measures.querySelector('.cup-measure-diameter .cup-measure-value');
+      const heightValue = measures.querySelector('.cup-measure-height .cup-measure-value');
+
+      function showBowlDimensions(size, variant) {
+        const dimensions = bowlDimensions[size];
+        figure.classList.toggle('has-cup-measures', Boolean(dimensions && variant));
+        dimensionSource.hidden = size !== '20 oz';
+        if (size === '20 oz') dimensionSource.textContent = isPortuguese
+          ? 'A ficha técnica do pote de 20 oz não foi fornecida; medidas pendentes.'
+          : isEnglish
+            ? 'The 20 oz pot technical sheet was not provided; dimensions pending.'
+            : 'No se proporcionó la ficha técnica del pote de 20 oz; medidas pendientes.';
+        if (!dimensions || !variant) return;
+        diameterValue.textContent = `Ø ${dimensions.diameter} mm`;
+        heightValue.textContent = `${dimensions.height} mm`;
+        measures.style.setProperty('--cup-display-scale', variant.scale);
+        measures.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+        measures.style.setProperty('--cup-measure-aspect', variant.measureAspect || '1.35 / 1');
+        measures.style.setProperty('--cup-measure-top', variant.measureTop || '33%');
+        measures.style.setProperty('--cup-measure-bottom', variant.measureBottom || '31%');
+      }
 
       const bowlImages = {
         all: { src: image.getAttribute('src'), scale: '1' },
-        '3 oz': { src: 'assets/showroom/bowl-icecream-3oz-v3.png', scale: '.62' },
-        '5 oz': { src: 'assets/showroom/bowl-icecream-5oz-v3.png', scale: '.72' },
-        '8 oz': { src: 'assets/showroom/bowl-icecream-8oz-v3.png', scale: '.82' },
-        '20 oz': { src: 'assets/showroom/bowl-icecream-20oz-v4.png', scale: '1' },
+        '3 oz': { src: 'assets/showroom/bowl-icecream-3oz-v4.png', scale: '.62', measureTop: '35%', measureBottom: '32%' },
+        '5 oz': { src: 'assets/showroom/bowl-icecream-5oz-v4.png', scale: '.72', measureTop: '33%', measureBottom: '30%' },
+        '8 oz': { src: 'assets/showroom/bowl-icecream-8oz-v4.png', scale: '.82', measureTop: '31%', measureBottom: '28%' },
+        '20 oz': { src: 'assets/showroom/bowl-icecream-20oz-v5.png', scale: '1' },
       };
       let currentImage = image;
       let requestedImage = 0;
@@ -210,10 +247,13 @@ window.setupProductShowroom = function (carousel) {
         const size = selectedSize === 'Todos' || selectedSize === 'All' ? 'all' : selectedSize;
         const variant = bowlImages[size];
         const selection = sizeSelect.querySelector('.custom-select-trigger').textContent;
-        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}`);
+        const dimensions = bowlDimensions[size];
+        const dimensionLabel = dimensions ? `, Ø ${dimensions.diameter} mm, ${dimensions.height} mm` : '';
+        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}${dimensionLabel}`);
         const request = ++requestedImage;
-        if (!variant) return;
-        if (currentImage.getAttribute('src') === variant.src) return;
+        if (!variant) { showBowlDimensions(size, null); return; }
+        if (currentImage.getAttribute('src') === variant.src) { showBowlDimensions(size, variant); return; }
+        showBowlDimensions(size, null);
 
         const preload = new Image();
         preload.onload = () => {
@@ -229,6 +269,7 @@ window.setupProductShowroom = function (carousel) {
           currentImage.classList.add('is-exiting');
           incoming.classList.add('is-current');
           currentImage = incoming;
+          showBowlDimensions(size, variant);
         };
         preload.src = variant.src;
       }
