@@ -1,22 +1,25 @@
-# Design QA - escala de Potes y bowls
+# Design QA - carrusel interno de vasos
 
-- Visual target: seccion existente del showroom `Potes y bowls`.
-- Requested change: reducir proporcionalmente 30% todos los productos de la seccion.
-- States covered: categoria, 3 oz, 5 oz, 8 oz y 20 oz.
-- Implementation screenshot: no disponible despues del cambio; la automatizacion del navegador no admite la pagina local `file://`.
+- Visual target: showroom existente de NIU PACK y comportamiento solicitado por el usuario.
+- Primary state: categoria Vasos, seleccion de tipo y tamano.
+- Automated browser capture: bloqueada porque la politica del navegador no admite la pagina local `file://`.
 
-**Fix implemented**
+**Interaction implemented**
 
-- Se aplico un factor unico `0.70` a los cinco estados visuales.
-- Las escalas pasaron de `1 / .69 / .69 / .82 / .94` a `.70 / .483 / .483 / .574 / .658`.
-- Las cotas conservan su posicion proporcional porque comparten la misma transformacion que el producto.
-- Vasos, navegacion, panel de detalles, textos y activos originales permanecen sin cambios.
-- Se incremento la version del script para evitar que el navegador conserve la escala anterior en cache.
+- La imagen general de la categoria permanece como estado inicial.
+- Elegir un tamano con mock disponible activa un carrusel interno.
+- El vaso elegido permanece centrado y los tamanos anterior y siguiente aparecen en perspectiva.
+- Las categorias vecinas desaparecen mientras el carrusel interno esta activo.
+- Flechas y gesto horizontal recorren los tamanos y mantienen sincronizado el selector.
+- El contador cambia de categorias a progreso dentro de la familia.
+- Elegir `Todos` o cambiar de categoria restaura el carrusel principal.
+- Funciona con los siete vasos de pared simple y los dos mocks disponibles de pared doble.
 
 **Verification**
 
-- Sintaxis JavaScript: comprobada con `node --check`.
-- Diferencia matematica: 30% exacto en cada estado.
-- Comparacion visual posterior: bloqueada hasta recargar la pagina local y obtener una captura nueva.
+- JavaScript validado con `node --check`.
+- Diff validado con `git diff --check`.
+- Estados de entrada, avance circular, salida y cambio de categoria revisados en codigo.
+- Comparacion visual e interaccion real: bloqueadas hasta que el usuario recargue la pagina local.
 
 final result: blocked

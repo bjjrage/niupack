@@ -54,8 +54,33 @@ window.setupProductShowroom = function (carousel) {
   const art = carousel.querySelector('.showroom-art');
   const details = carousel.querySelector('.showroom-details');
   const tablist = carousel.querySelector('.showroom-tabs');
+  const counter = carousel.querySelector('.showroom-counter');
+  const stageHint = carousel.querySelector('.showroom-stage-controls span');
+  const dragSizesCopy = isPortuguese ? 'ARRASTE ENTRE TAMANHOS' : isEnglish ? 'DRAG THROUGH SIZES' : 'ARRASTR\u00c1 ENTRE TAMA\u00d1OS';
   let active = 0;
+  let nestedCarousel = null;
   const images = [], panels = [], tabs = [], visualResetters = [], measurementRefreshers = [];
+
+  function leaveNestedCarousel() {
+    if (!nestedCarousel) return;
+    nestedCarousel.deactivate();
+    nestedCarousel = null;
+    carousel.classList.remove('is-size-carousel');
+    stageHint.textContent = copy.drag;
+  }
+
+  function enterNestedCarousel(controller) {
+    if (nestedCarousel && nestedCarousel !== controller) nestedCarousel.deactivate();
+    nestedCarousel = controller;
+    carousel.classList.add('is-size-carousel');
+    stageHint.textContent = dragSizesCopy;
+    controller.activate();
+  }
+
+  function navigateStage(step) {
+    if (nestedCarousel) nestedCarousel.step(step);
+    else show(active + step);
+  }
 
   function applyMeasurementLayout(figure, measures, variant, fallbackAspect) {
     const aspect = variant.imageAspect || fallbackAspect;
@@ -193,6 +218,78 @@ window.setupProductShowroom = function (carousel) {
       };
       let currentImage = image;
       let requestedImage = 0;
+      let railType = '';
+      let railItems = [];
+
+      function availableSizes(type) {
+        return Object.keys(cupImages[type]).filter(size => size !== 'all');
+      }
+
+      function selectCupSize(size) {
+        setVisualSelectValue(sizeSelect, size);
+        sizeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
+      }
+
+      function buildSizeRail(type) {
+        if (railType === type && railItems.length) return;
+        railItems.forEach(item => item.button.remove());
+        railItems = availableSizes(type).map(size => {
+          const variant = cupImages[type][size];
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'showroom-size-product';
+          button.dataset.size = size;
+          button.setAttribute('aria-label', `${copy.explore} ${names[index]} ${size}`);
+          const railImage = document.createElement('img');
+          railImage.src = variant.src;
+          railImage.alt = '';
+          railImage.draggable = false;
+          railImage.style.setProperty('--cup-display-scale', variant.scale);
+          railImage.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+          button.append(railImage);
+          button.addEventListener('click', () => selectCupSize(size));
+          art.append(button);
+          return { button, size };
+        });
+        railType = type;
+      }
+
+      function positionSizeRail(type, size) {
+        buildSizeRail(type);
+        const sizes = availableSizes(type);
+        const selectedIndex = sizes.indexOf(size);
+        railItems.forEach(item => {
+          let offset = sizes.indexOf(item.size) - selectedIndex;
+          if (offset > sizes.length / 2) offset -= sizes.length;
+          if (offset < -sizes.length / 2) offset += sizes.length;
+          const position = offset === 0 ? 'selected' : offset === -1 ? 'previous' : offset === 1 ? 'next' : 'hidden';
+          item.button.dataset.sizePosition = position;
+          item.button.tabIndex = Math.abs(offset) === 1 ? 0 : -1;
+          item.button.setAttribute('aria-hidden', String(Math.abs(offset) > 1 || offset === 0));
+        });
+        counter.textContent = `${String(selectedIndex + 1).padStart(2, '0')} / ${String(sizes.length).padStart(2, '0')}`;
+      }
+
+      const sizeCarouselController = {
+        activate() {
+          const type = typeSelect.dataset.value === 'doble' ? 'doble' : 'simple';
+          const size = sizeSelect.dataset.value;
+          if (availableSizes(type).includes(size)) positionSizeRail(type, size);
+        },
+        deactivate() {
+          railItems.forEach(item => {
+            item.button.dataset.sizePosition = 'hidden';
+            item.button.tabIndex = -1;
+            item.button.setAttribute('aria-hidden', 'true');
+          });
+        },
+        step(step) {
+          const type = typeSelect.dataset.value === 'doble' ? 'doble' : 'simple';
+          const sizes = availableSizes(type);
+          const current = Math.max(0, sizes.indexOf(sizeSelect.dataset.value));
+          selectCupSize(sizes[(current + step + sizes.length) % sizes.length]);
+        },
+      };
 
       function updateCupVisual() {
         const type = typeSelect.dataset.value === 'doble' ? 'doble' : 'simple';
@@ -204,6 +301,13 @@ window.setupProductShowroom = function (carousel) {
         const dimensionLabel = dimensions ? `, Ø ${dimensions.diameter} mm, ${dimensions.height} mm` : '';
         figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}${dimensionLabel}`);
         const request = ++requestedImage;
+        if (size !== 'all' && variant && active === index) {
+          enterNestedCarousel(sizeCarouselController);
+          positionSizeRail(type, size);
+        } else if (nestedCarousel === sizeCarouselController) {
+          leaveNestedCarousel();
+          counter.textContent = `${String(active + 1).padStart(2, '0')} / ${String(cards.length).padStart(2, '0')}`;
+        }
         // Unmocked sizes remain selectable without swapping the displayed product.
         if (!variant) { showCupDimensions(type, size, null); return; }
         if (currentImage.getAttribute('src') === variant.src) { showCupDimensions(type, size, variant); return; }
@@ -388,9 +492,12 @@ window.setupProductShowroom = function (carousel) {
   window.addEventListener('resize', () => measurementRefreshers.forEach(refresh => refresh()), { passive: true });
   function show(index) {
     const nextActive = (index + cards.length) % cards.length;
-    if (nextActive !== active) visualResetters.forEach(reset => reset?.());
+    if (nextActive !== active) {
+      leaveNestedCarousel();
+      visualResetters.forEach(reset => reset?.());
+    }
     active = nextActive;
-    carousel.querySelector('.showroom-counter').textContent = `${String(active + 1).padStart(2, '0')} / ${String(cards.length).padStart(2, '0')}`;
+    counter.textContent = `${String(active + 1).padStart(2, '0')} / ${String(cards.length).padStart(2, '0')}`;
     images.forEach((image, i) => {
       let offset = (i - active + cards.length) % cards.length;
       if (offset > cards.length / 2) offset -= cards.length;
@@ -406,7 +513,7 @@ window.setupProductShowroom = function (carousel) {
       select.querySelector('button').setAttribute('aria-expanded', 'false');
     });
   }
-  carousel.querySelectorAll('[data-step]').forEach(button => button.addEventListener('click', () => show(active + Number(button.dataset.step))));
+  carousel.querySelectorAll('[data-step]').forEach(button => button.addEventListener('click', () => navigateStage(Number(button.dataset.step))));
   let start = null;
   function relativeOffset(index) {
     let offset = (index - active + cards.length) % cards.length;
@@ -424,6 +531,7 @@ window.setupProductShowroom = function (carousel) {
     const travel = Math.max(240, stage.getBoundingClientRect().width * .42);
     const progress = Math.max(-1, Math.min(1, dx / travel));
     const amount = Math.abs(progress);
+    if (nestedCarousel) return { progress, travel };
     images.forEach((image, index) => {
       const offset = relativeOffset(index);
       let x;
@@ -475,7 +583,7 @@ window.setupProductShowroom = function (carousel) {
     start = null;
     const horizontal = Math.abs(dx) > Math.abs(dy);
     const { travel } = previewDrag(horizontal ? dx : 0);
-    if (horizontal && Math.abs(dx) > Math.max(45, travel * .18)) show(active + (dx < 0 ? 1 : -1));
+    if (horizontal && Math.abs(dx) > Math.max(45, travel * .18)) navigateStage(dx < 0 ? 1 : -1);
     else if (Math.abs(dx) < 8 && Math.abs(dy) < 8 && clicked >= 0) show(clicked);
     requestAnimationFrame(resetDrag);
     if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId);
