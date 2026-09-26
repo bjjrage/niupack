@@ -161,7 +161,7 @@ window.setupProductShowroom = function (carousel) {
           all: { src: image.getAttribute('src'), scale: '1' },
           '4 oz': { src: 'assets/showroom/cup-single-4oz-v2.png', scale: '.62', measureTop: '20%', measureBottom: '14%' },
           '6 oz': { src: 'assets/showroom/cup-single-6oz-v2.png', scale: '.7', measureTop: '20%', measureBottom: '14%' },
-          '8 oz': { src: 'assets/showroom/cup-single-8oz-v3.png', scale: '.78', widthScale: '1.07', measureTop: '18%', measureBottom: '13%' },
+          '8 oz': { src: 'assets/showroom/cup-single-8oz-v4.png', scale: '.78', widthScale: '1.07', measureTop: '18%', measureBottom: '13%' },
           '12 oz': { src: 'assets/showroom/cup-single-12oz-v2.png', scale: '.88', measureTop: '15%', measureBottom: '11%' },
           '16 oz': { src: 'assets/showroom/cup-single-16oz-v3.png', scale: '.96', measureTop: '10%', measureBottom: '8%', measureAspect: '1079 / 1457' },
           '21 oz': { src: 'assets/showroom/cup-single-21oz-v2.png', scale: '1', measureTop: '9%', measureBottom: '8%' },
