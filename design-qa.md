@@ -1,21 +1,21 @@
-# Design QA - restauracion de categoria y drag del mini carrusel
+# Design QA - mini carrusel de potes y bowls
 
-- Scope: categoria Vasos y carrusel interno de tamanos.
+- Scope: categoria Potes y bowls y sus tamanos 3, 5, 8 y 20 oz.
 - Automated browser capture: bloqueada porque la pagina local usa `file://`.
 
-**Fixes implemented**
+**Cambios implementados**
 
-- Se restauro en los tres idiomas la imagen original `assets/Imagenes/VASOS ULTIMOS.png` como estado de categoria.
-- Los mockups rojos y blancos quedan limitados a los tamanos individuales.
-- Los vasos laterales pasan de centros aproximados 31/69 a 25/75 para evitar superposicion excesiva.
-- `pointermove` ahora interpola en tiempo real posicion horizontal, profundidad, rotacion, escala, opacidad, brillo y desenfoque.
-- El vaso destino avanza desde `translateZ(-220px)` hasta `150px` mientras el central retrocede.
-- Al soltar, la transicion se reactiva un frame antes de limpiar los estilos del drag, evitando el salto brusco.
-- La duracion del carrusel interno sube a 680 ms con la misma curva 3D del carrusel principal y un recorrido horizontal menor.
+- La imagen original de categoria permanece intacta como estado por defecto.
+- Elegir un tamano activa el mismo mini carrusel 3D utilizado por Vasos.
+- Los potes vecinos aparecen separados a ambos lados y el seleccionado ocupa claramente el frente.
+- Flechas, contador, clic lateral y selector se mantienen sincronizados.
+- El drag interpola posicion, profundidad, rotacion, escala, opacidad, brillo y desenfoque en tiempo real.
+- Cambiar de categoria cierra el mini carrusel y devuelve cada categoria a su imagen general.
+- No se modificaron los mockups, colores ni dimensiones existentes de los potes.
 
 **Verification**
 
 - Sintaxis validada con `node --check`; formato validado con `git diff --check`.
-- Comparacion visual real bloqueada hasta recargar la pagina local.
+- Comparacion visual real pendiente de recargar la pagina local con `Ctrl+F5`.
 
 final result: blocked

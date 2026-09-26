@@ -445,6 +445,110 @@ window.setupProductShowroom = function (carousel) {
       let currentImage = image;
       let requestedImage = 0;
 
+      const bowlSizes = Object.keys(bowlImages).filter(size => size !== 'all');
+      let bowlRailItems = [];
+
+      function selectBowlSize(size) {
+        setVisualSelectValue(sizeSelect, size);
+        sizeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
+      }
+
+      function buildBowlRail() {
+        if (bowlRailItems.length) return;
+        bowlRailItems = bowlSizes.map(size => {
+          const variant = bowlImages[size];
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'showroom-size-product';
+          button.dataset.size = size;
+          button.setAttribute('aria-label', `${copy.explore} ${names[index]} ${size}`);
+          const railImage = document.createElement('img');
+          railImage.src = variant.src;
+          railImage.alt = '';
+          railImage.draggable = false;
+          railImage.style.setProperty('--cup-display-scale', variant.scale);
+          railImage.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+          button.append(railImage);
+          button.addEventListener('click', () => selectBowlSize(size));
+          art.append(button);
+          return { button, image: railImage, size };
+        });
+      }
+
+      function positionBowlRail(size) {
+        buildBowlRail();
+        const selectedIndex = bowlSizes.indexOf(size);
+        const selectedScale = Number(bowlImages[size].scale) || 1;
+        bowlRailItems.forEach(item => {
+          const itemScale = Number(bowlImages[item.size].scale) || 1;
+          const normalization = Math.pow(selectedScale / itemScale, .75);
+          item.image.style.setProperty('--cup-orbit-normalize', normalization.toFixed(4));
+          let offset = bowlSizes.indexOf(item.size) - selectedIndex;
+          if (offset > bowlSizes.length / 2) offset -= bowlSizes.length;
+          if (offset < -bowlSizes.length / 2) offset += bowlSizes.length;
+          const position = offset === 0 ? 'selected' : offset === -1 ? 'previous' : offset === 1 ? 'next' : 'hidden';
+          item.button.dataset.sizePosition = position;
+          item.button.tabIndex = Math.abs(offset) === 1 ? 0 : -1;
+          item.button.setAttribute('aria-hidden', String(Math.abs(offset) > 1 || offset === 0));
+        });
+        counter.textContent = `${String(selectedIndex + 1).padStart(2, '0')} / ${String(bowlSizes.length).padStart(2, '0')}`;
+      }
+
+      const bowlCarouselController = {
+        activate() {
+          const size = sizeSelect.dataset.value;
+          if (bowlSizes.includes(size)) positionBowlRail(size);
+        },
+        deactivate() {
+          bowlRailItems.forEach(item => {
+            item.button.dataset.sizePosition = 'hidden';
+            item.button.tabIndex = -1;
+            item.button.setAttribute('aria-hidden', 'true');
+          });
+        },
+        step(step) {
+          const current = Math.max(0, bowlSizes.indexOf(sizeSelect.dataset.value));
+          selectBowlSize(bowlSizes[(current + step + bowlSizes.length) % bowlSizes.length]);
+        },
+        preview(progress) {
+          const amount = Math.abs(progress);
+          const advancing = progress < 0;
+          const targetPosition = advancing ? 'next' : 'previous';
+          const oppositePosition = advancing ? 'previous' : 'next';
+          const centerX = -50 + progress * 24;
+          const centerZ = 150 - amount * 310;
+          figure.style.transform = `translate(${centerX}%, -48%) translateZ(${centerZ}px) rotateY(${progress * 16}deg) scale(${1 - amount * .14})`;
+          figure.style.opacity = String(1 - amount * .28);
+          bowlRailItems.forEach(item => {
+            const position = item.button.dataset.sizePosition;
+            if (position === targetPosition) {
+              const startX = advancing ? -8 : -92;
+              const x = startX + ((-50 - startX) * amount);
+              const startRotate = advancing ? -18 : 18;
+              item.button.style.transform = `translate(${x}%, -50%) translateZ(${-220 + amount * 370}px) rotateY(${startRotate * (1 - amount)}deg) scale(${.78 + amount * .22})`;
+              item.button.style.opacity = String(.46 + amount * .5);
+              item.button.style.filter = `saturate(${.72 + amount * .28}) brightness(${.76 + amount * .24}) blur(${1 - amount}px)`;
+              item.button.style.zIndex = '4';
+            } else if (position === oppositePosition) {
+              const startX = advancing ? -92 : -8;
+              const x = startX + (advancing ? -26 : 26) * amount;
+              item.button.style.transform = `translate(${x}%, -50%) translateZ(${-220 - amount * 180}px) rotateY(${advancing ? 18 : -18}deg) scale(${.78 - amount * .12})`;
+              item.button.style.opacity = String(.46 * (1 - amount * .72));
+            }
+          });
+        },
+        clearPreview() {
+          figure.style.removeProperty('transform');
+          figure.style.removeProperty('opacity');
+          bowlRailItems.forEach(item => {
+            item.button.style.removeProperty('transform');
+            item.button.style.removeProperty('opacity');
+            item.button.style.removeProperty('filter');
+            item.button.style.removeProperty('z-index');
+          });
+        },
+      };
+
       function updateBowlVisual() {
         const selectedSize = sizeSelect.dataset.value;
         const size = selectedSize === 'Todos' || selectedSize === 'All' ? 'all' : selectedSize;
@@ -454,6 +558,13 @@ window.setupProductShowroom = function (carousel) {
         const dimensionLabel = dimensions ? `, Ø ${dimensions.diameter} mm, ${dimensions.height} mm` : '';
         figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}${dimensionLabel}`);
         const request = ++requestedImage;
+        if (size !== 'all' && variant && active === index) {
+          enterNestedCarousel(bowlCarouselController);
+          positionBowlRail(size);
+        } else if (nestedCarousel === bowlCarouselController) {
+          leaveNestedCarousel();
+          counter.textContent = `${String(active + 1).padStart(2, '0')} / ${String(cards.length).padStart(2, '0')}`;
+        }
         if (!variant) { showBowlDimensions(size, null); return; }
         if (currentImage.getAttribute('src') === variant.src) { showBowlDimensions(size, variant); return; }
         showBowlDimensions(size, null);
