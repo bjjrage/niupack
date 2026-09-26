@@ -100,6 +100,7 @@ window.setupProductShowroom = function (carousel) {
 
       // Boca superior (A) y altura (B), en mm, de las fichas técnicas provistas.
       const cupDimensions = {
+        '4 oz': { diameter: '69,5', height: '44', approximate: true },
         '6 oz': { diameter: '70,5', height: '66' },
         '8 oz': { diameter: '78,12', height: '83' },
         '12 oz': { diameter: '83,8', height: '110' },
@@ -112,15 +113,21 @@ window.setupProductShowroom = function (carousel) {
       function showCupDimensions(type, size, variant) {
         const dimensions = type === 'simple' ? cupDimensions[size] : null;
         figure.classList.toggle('has-cup-measures', Boolean(dimensions && variant));
-        dimensionSource.hidden = !dimensions?.sheetType;
-        if (dimensions?.sheetType) dimensionSource.textContent = isPortuguese
+        dimensionSource.hidden = !dimensions?.sheetType && !dimensions?.approximate;
+        if (dimensions?.approximate) dimensionSource.textContent = isPortuguese
+          ? 'Medidas aproximadas; ficha técnica específica do copo de 4 oz pendente.'
+          : isEnglish
+            ? 'Approximate dimensions; specific 4 oz cup technical sheet pending.'
+            : 'Medidas aproximadas; ficha técnica específica del vaso de 4 oz pendiente.';
+        else if (dimensions?.sheetType) dimensionSource.textContent = isPortuguese
           ? 'Cotas da ficha de parede dupla; imagem ilustrativa de parede simples.'
           : isEnglish
             ? 'Dimensions from the double-wall sheet; single-wall image is illustrative.'
             : 'Cotas de la ficha de pared doble; imagen ilustrativa de pared simple.';
         if (!dimensions || !variant) return;
-        diameterValue.textContent = `Ø ${dimensions.diameter} mm`;
-        heightValue.textContent = `${dimensions.height} mm`;
+        const approximateMark = dimensions.approximate ? '≈ ' : '';
+        diameterValue.textContent = `${approximateMark}Ø ${dimensions.diameter} mm`;
+        heightValue.textContent = `${approximateMark}${dimensions.height} mm`;
         measures.style.setProperty('--cup-display-scale', variant.scale);
         measures.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
         measures.style.setProperty('--cup-measure-aspect', variant.measureAspect || '2 / 3');
@@ -131,7 +138,7 @@ window.setupProductShowroom = function (carousel) {
       const cupImages = {
         simple: {
           all: { src: image.getAttribute('src'), scale: '1' },
-          '4 oz': { src: 'assets/showroom/cup-single-4oz-v2.png', scale: '.62' },
+          '4 oz': { src: 'assets/showroom/cup-single-4oz-v2.png', scale: '.62', measureTop: '20%', measureBottom: '14%' },
           '6 oz': { src: 'assets/showroom/cup-single-6oz-v2.png', scale: '.7', measureTop: '20%', measureBottom: '14%' },
           '8 oz': { src: 'assets/showroom/cup-single-8oz-v3.png', scale: '.78', widthScale: '1.07', measureTop: '18%', measureBottom: '13%' },
           '12 oz': { src: 'assets/showroom/cup-single-12oz-v2.png', scale: '.88', measureTop: '15%', measureBottom: '11%' },

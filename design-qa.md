@@ -1,36 +1,36 @@
-# Design QA — showroom de potes
+# Design QA — flechas de medidas del showroom
 
-- Source visual truth: `C:\Users\User\AppData\Local\Temp\codex-clipboard-b99ae34f-cec6-4d1c-98ee-d016caa48d28.png` y `C:\Users\User\AppData\Local\Temp\codex-clipboard-d1f0deb7-44c0-4b65-98f1-89cd5ceb335c.png`
+- Source visual truth: `C:\Users\User\AppData\Local\Temp\codex-clipboard-5aaf163c-0c6d-4e1f-8034-e0c063cefe71.png`, `C:\Users\User\AppData\Local\Temp\codex-clipboard-4c64f5e7-379a-4a10-bc65-cedecdf9863e.png` y `C:\Users\User\AppData\Local\Temp\codex-clipboard-b48508ed-d5cd-407b-8018-54621a2fdc52.png`
 - Implementation screenshot: no disponible después del cambio; el navegador de automatización bloquea URLs `file://`.
-- Viewport: recorte aportado por el usuario; viewport completo no disponible.
-- Source pixels: 461 × 300 y 609 × 443.
+- Viewport: recortes aportados por el usuario; viewport completo no disponible.
+- Source pixels: 410 × 312, 360 × 360 y 363 × 356.
 - Implementation pixels/CSS size/density: no capturados.
-- State: showroom “Potes y bowls”, selecciones 3 oz y 20 oz.
+- State: showroom “Vasos”, pared simple, selecciones 4, 6 y 12 oz.
 
 **Findings**
 
-- [P1] La diferencia visual entre 3 y 5 oz estaba exagerada. Corregido igualando la escala base y manteniendo sólo la diferencia de proporción propia de cada imagen.
-- [P1] La cota vertical era ilegible. Corregido con línea de 2 px, mayor contraste, sombra y puntas más grandes.
-- [P1] El 20 oz no activaba cotas. Corregido con cotas aproximadas visibles y una aclaración explícita mientras falta la ficha técnica.
+- [P1] En 4 oz no aparecía ningún indicador porque faltaba una entrada de dimensiones. Corregido habilitando diámetro y altura aproximados, claramente identificados como tales.
+- [P1] En 6 y 12 oz aparecían las puntas y etiquetas, pero desaparecía la línea horizontal. Corregido reemplazando el borde subpíxel por una barra sólida de 3 px con contraste.
+- [P2] La línea vertical dependía también de un borde escalado. Corregido con una barra sólida de 3 px para mantener consistencia entre tamaños.
 
 **Required fidelity surfaces**
 
 - Fonts and typography: sin cambios.
-- Spacing and layout rhythm: se preservó el showroom; sólo cambian escala del producto y posición de cotas.
-- Colors and visual tokens: sin cambios; se reforzó el contraste de la línea vertical.
-- Image quality and asset fidelity: se conservan los PNG transparentes existentes.
-- Copy and content: se agregó una aclaración traducida para las medidas aproximadas de 20 oz.
+- Spacing and layout rhythm: se conservan posiciones; la etiqueta horizontal se separó 2 px adicionales de la línea.
+- Colors and visual tokens: blanco con sombra oscura para contraste sobre cualquier color de vaso.
+- Image quality and asset fidelity: los PNG existentes permanecen sin cambios.
+- Copy and content: se agregó una aclaración traducida para las cotas aproximadas de 4 oz.
 
 **Comparison history**
 
-- Iteración 1: las capturas mostraron escala excesiva, línea vertical invisible y ausencia total de cotas en 20 oz.
-- Fixes: escalas 3/5 oz igualadas; línea vertical reforzada; overlay habilitado para 20 oz.
+- Iteración 1: capturas mostraron ausencia total en 4 oz y líneas horizontales invisibles en 6 y 12 oz.
+- Fixes: overlay habilitado en 4 oz; barras sólidas de 3 px para diámetro y altura; versión de caché incrementada.
 - Post-fix visual evidence: bloqueada por la política del navegador para páginas `file://`.
 
 **Implementation checklist**
 
 - Recargar `index.html` con `Ctrl+F5`.
-- Revisar 3, 5, 8 y 20 oz en el mismo viewport.
-- Reemplazar las cotas aproximadas de 20 oz al recibir su ficha técnica.
+- Revisar 4, 6, 8 y 12 oz en el mismo viewport.
+- Reemplazar la cota aproximada de 4 oz cuando se reciba la ficha específica del vaso.
 
 final result: blocked
