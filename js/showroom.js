@@ -667,6 +667,7 @@ window.setupProductShowroom = function (carousel) {
   }
   carousel.querySelectorAll('[data-step]').forEach(button => button.addEventListener('click', () => navigateStage(Number(button.dataset.step))));
   let start = null;
+  let settlingFrame = 0;
   function relativeOffset(index) {
     let offset = (index - active + cards.length) % cards.length;
     if (offset > cards.length / 2) offset -= cards.length;
@@ -728,8 +729,31 @@ window.setupProductShowroom = function (carousel) {
   function resetDrag() {
     clearDragStyles();
   }
+  function settleNestedDrag(fromProgress, targetProgress, step = 0) {
+    const duration = targetProgress === 0 ? 220 : 280;
+    const startedAt = performance.now();
+    const animate = now => {
+      const elapsed = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - elapsed, 3);
+      const progress = fromProgress + (targetProgress - fromProgress) * eased;
+      nestedCarousel?.preview(progress);
+      if (elapsed < 1) {
+        settlingFrame = requestAnimationFrame(animate);
+        return;
+      }
+      settlingFrame = 0;
+      if (step) navigateStage(step);
+      nestedCarousel?.clearPreview?.();
+      images.forEach(image => {
+        image.style.removeProperty('transform');
+        image.style.removeProperty('opacity');
+      });
+      requestAnimationFrame(() => carousel.classList.remove('is-dragging'));
+    };
+    settlingFrame = requestAnimationFrame(animate);
+  }
   stage.addEventListener('pointerdown', event => {
-    if (event.target.closest('.showroom-stage-controls') || event.button !== 0) return;
+    if (settlingFrame || event.target.closest('.showroom-stage-controls') || event.button !== 0) return;
     start = { x: event.clientX, y: event.clientY, index: images.indexOf(event.target.closest('.showroom-product')) };
     carousel.classList.add('is-dragging');
     stage.setPointerCapture(event.pointerId);
@@ -740,10 +764,19 @@ window.setupProductShowroom = function (carousel) {
     const clicked = start.index;
     start = null;
     const horizontal = Math.abs(dx) > Math.abs(dy);
-    const { travel } = previewDrag(horizontal ? dx : 0);
-    if (horizontal && Math.abs(dx) > Math.max(45, travel * .18)) navigateStage(dx < 0 ? 1 : -1);
-    else if (Math.abs(dx) < 8 && Math.abs(dy) < 8 && clicked >= 0) show(clicked);
-    requestAnimationFrame(resetDrag);
+    const { progress, travel } = previewDrag(horizontal ? dx : 0);
+    const advances = horizontal && Math.abs(dx) > Math.max(45, travel * .18);
+    if (nestedCarousel) {
+      if (advances) settleNestedDrag(progress, dx < 0 ? -1 : 1, dx < 0 ? 1 : -1);
+      else {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8 && clicked >= 0) show(clicked);
+        settleNestedDrag(progress, 0);
+      }
+    } else {
+      if (advances) navigateStage(dx < 0 ? 1 : -1);
+      else if (Math.abs(dx) < 8 && Math.abs(dy) < 8 && clicked >= 0) show(clicked);
+      requestAnimationFrame(resetDrag);
+    }
     if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId);
   });
   stage.addEventListener('pointercancel', () => { start = null; resetDrag(); });
