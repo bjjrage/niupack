@@ -401,9 +401,9 @@ h3 {
 
 .hero-metrics div:hover {
   border-color: rgba(245, 55, 50, 0.48);
-  background: #fff;
+  background: #fff1f0;
   box-shadow: 0 20px 48px rgba(245, 55, 50, 0.24), 0 0 24px rgba(255, 255, 255, 0.95);
-  filter: brightness(1.12);
+  filter: brightness(1.04);
 }
 
 .hero-metrics strong,
