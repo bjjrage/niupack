@@ -25,3 +25,10 @@ final result: blocked
 - Los vasos de pared doble de 8 y 12 oz muestran diámetro y altura.
 - Cada mockup usa su propia relación de aspecto y límites transparentes para alinear las reglas con la boca y la altura real del vaso.
 - Cotas aplicadas: 8 oz, Ø 78,12 mm × 83 mm; 12 oz, Ø 83,8 mm × 110 mm.
+
+## Tapas viajeras
+
+- Se creó `assets/showroom/lids-traveler-all-v1.png`, composición cuadrada de tres tapas viajeras con transparencia alfa real.
+- La disposición replica la jerarquía visual de la categoría existente: perfil superior, pieza central dominante y pieza inferior inclinada.
+- “Viajera” se agregó como tercera opción en español, inglés y portugués, con tamaños 8, 12 y 16 oz.
+- La imagen original de la categoría Tapas permanece como estado predeterminado.
