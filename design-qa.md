@@ -19,3 +19,9 @@
 - Comparacion visual real pendiente de recargar la pagina local con `Ctrl+F5`.
 
 final result: blocked
+
+## Medidas de pared doble
+
+- Los vasos de pared doble de 8 y 12 oz muestran diámetro y altura.
+- Cada mockup usa su propia relación de aspecto y límites transparentes para alinear las reglas con la boca y la altura real del vaso.
+- Cotas aplicadas: 8 oz, Ø 78,12 mm × 83 mm; 12 oz, Ø 83,8 mm × 110 mm.

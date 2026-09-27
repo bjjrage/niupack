@@ -179,7 +179,7 @@ window.setupProductShowroom = function (carousel) {
       const diameterValue = measures.querySelector('.cup-measure-diameter .cup-measure-value');
       const heightValue = measures.querySelector('.cup-measure-height .cup-measure-value');
       function showCupDimensions(type, size, variant) {
-        const dimensions = type === 'simple' ? cupDimensions[size] : null;
+        const dimensions = cupDimensions[size];
         figure.classList.toggle('has-cup-measures', Boolean(dimensions && variant));
         dimensionSource.hidden = !dimensions?.sheetType && !dimensions?.approximate;
         if (dimensions?.approximate) dimensionSource.textContent = isPortuguese
@@ -212,8 +212,8 @@ window.setupProductShowroom = function (carousel) {
         },
         doble: {
           all: { src: 'assets/showroom/cups-double-all-v3.png', scale: '1' },
-          '8 oz': { src: 'assets/showroom/cup-double-8oz-v3.png', scale: '.78' },
-          '12 oz': { src: 'assets/showroom/cup-double-12oz-v3.png', scale: '.96' },
+          '8 oz': { src: 'assets/showroom/cup-double-8oz-v3.png', scale: '.78', imageAspect: 1216 / 1294, measureBounds: { left: 15.1, right: 15, top: 7.7, bottom: 7.7 } },
+          '12 oz': { src: 'assets/showroom/cup-double-12oz-v3.png', scale: '.96', imageAspect: 1145 / 1374, measureBounds: { left: 13.4, right: 13.4, top: 9, bottom: 5.7 } },
         },
       };
       let currentImage = image;
@@ -342,7 +342,7 @@ window.setupProductShowroom = function (carousel) {
         const size = selectedSize?.endsWith('oz') ? selectedSize : 'all';
         const variant = cupImages[type][size];
         const selection = `${typeSelect.querySelector('.custom-select-trigger').textContent}, ${sizeSelect.querySelector('.custom-select-trigger').textContent}`;
-        const dimensions = type === 'simple' ? cupDimensions[size] : null;
+        const dimensions = cupDimensions[size];
         const dimensionLabel = dimensions ? `, Ø ${dimensions.diameter} mm, ${dimensions.height} mm` : '';
         figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}${dimensionLabel}`);
         const request = ++requestedImage;
@@ -395,7 +395,7 @@ window.setupProductShowroom = function (carousel) {
         const selectedSize = sizeSelect.dataset.value;
         const size = selectedSize?.endsWith('oz') ? selectedSize : 'all';
         const variant = cupImages[type][size];
-        if (type === 'simple' && cupDimensions[size] && variant) applyMeasurementLayout(figure, measures, variant, 2 / 3);
+        if (cupDimensions[size] && variant) applyMeasurementLayout(figure, measures, variant, 2 / 3);
       });
       visualResetters[index] = () => {
         const allSizesLabel = isEnglish ? 'All' : 'Todos';
