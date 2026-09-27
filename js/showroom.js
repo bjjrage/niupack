@@ -127,7 +127,6 @@ window.setupProductShowroom = function (carousel) {
     visualResetters[index] = null;
     const image = card.querySelector('.product-card-media img');
     const isCupCard = card.hasAttribute('data-cup-card');
-    const isLidCard = card.hasAttribute('data-lid-card');
     const isBowlCard = Boolean(card.querySelector('[data-bowl-size]'));
     const figure = document.createElement('button');
     figure.type = 'button';
@@ -135,7 +134,7 @@ window.setupProductShowroom = function (carousel) {
     figure.setAttribute('aria-label', `${copy.explore} ${names[index]}`);
     image.draggable = false;
     figure.append(image);
-    if (isCupCard || isLidCard) {
+    if (isCupCard) {
       figure.dataset.cupVisual = '';
       image.classList.add('showroom-cup-image', 'is-current');
     }
@@ -407,50 +406,6 @@ window.setupProductShowroom = function (carousel) {
       };
       image.style.setProperty('--cup-display-scale', '1');
       queueMicrotask(updateCupVisual);
-    } else if (isLidCard) {
-      const typeSelect = panel.querySelector('[data-lid-type]');
-      const nextImage = document.createElement('img');
-      nextImage.className = 'showroom-cup-image';
-      nextImage.draggable = false;
-      nextImage.alt = '';
-      figure.append(nextImage);
-      const lidImages = {
-        pico: image.getAttribute('src'),
-        'sin-pico': image.getAttribute('src'),
-        viajera: 'assets/showroom/lids-traveler-all-v1.png',
-      };
-      let currentImage = image;
-      let requestedImage = 0;
-
-      function updateLidVisual() {
-        const type = typeSelect.dataset.value || 'pico';
-        const src = lidImages[type] || lidImages.pico;
-        const selection = typeSelect.querySelector('.custom-select-trigger').textContent;
-        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}`);
-        const request = ++requestedImage;
-        if (currentImage.getAttribute('src') === src) return;
-        const preload = new Image();
-        preload.onload = () => {
-          if (request !== requestedImage) return;
-          const incoming = currentImage === image ? nextImage : image;
-          incoming.classList.remove('is-current', 'is-exiting');
-          incoming.src = src;
-          incoming.alt = selection;
-          void incoming.offsetWidth;
-          currentImage.classList.remove('is-current');
-          currentImage.classList.add('is-exiting');
-          incoming.classList.add('is-current');
-          currentImage = incoming;
-        };
-        preload.src = src;
-      }
-
-      panel.addEventListener('custom-select-change', () => queueMicrotask(updateLidVisual));
-      visualResetters[index] = () => {
-        setVisualSelectValue(typeSelect, 'pico');
-        typeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
-      };
-      queueMicrotask(updateLidVisual);
     } else if (isBowlCard) {
       const sizeSelect = panel.querySelector('[data-bowl-size]');
       const nextImage = document.createElement('img');
