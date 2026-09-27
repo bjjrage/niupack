@@ -104,6 +104,8 @@
 .showroom button:focus-visible, .showroom a:focus-visible { outline: 3px solid #f53732; outline-offset: 4px; }
 .showroom.is-dragging .showroom-product, .showroom.is-dragging .showroom-art { transition: none; }
 .showroom.is-dragging .showroom-size-product { transition: none; }
+.showroom.is-drag-commit .showroom-cup-image,
+.showroom.is-drag-commit .showroom-cup-measures { transition: none !important; }
 @keyframes showroom-enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 @keyframes showroom-float { from { transform: translateY(-5px) rotateX(var(--look-y, 0deg)) rotateY(var(--look-x, 0deg)); } to { transform: translateY(5px) rotateX(var(--look-y, 0deg)) rotateY(var(--look-x, 0deg)); } }
 @keyframes showroom-cup-float { from { transform: translateY(-5px) scaleX(var(--cup-display-width-scale, 1)) scale(var(--cup-display-scale, 1)) rotateX(var(--look-y, 0deg)) rotateY(var(--look-x, 0deg)); } to { transform: translateY(5px) scaleX(var(--cup-display-width-scale, 1)) scale(var(--cup-display-scale, 1)) rotateX(var(--look-y, 0deg)) rotateY(var(--look-x, 0deg)); } }

@@ -262,6 +262,7 @@ window.setupProductShowroom = function (carousel) {
         railItems.forEach(item => {
           const itemScale = Number(cupImages[type][item.size].scale) || 1;
           const normalization = Math.pow(selectedScale / itemScale, .75);
+          item.orbitNormalization = normalization;
           item.image.style.setProperty('--cup-orbit-normalize', normalization.toFixed(4));
           let offset = sizes.indexOf(item.size) - selectedIndex;
           if (offset > sizes.length / 2) offset -= sizes.length;
@@ -312,6 +313,8 @@ window.setupProductShowroom = function (carousel) {
               item.button.style.opacity = String(.46 + amount * .5);
               item.button.style.filter = `saturate(${.72 + amount * .28}) brightness(${.76 + amount * .24}) blur(${1 - amount}px)`;
               item.button.style.zIndex = '4';
+              const normalization = item.orbitNormalization + (1 - item.orbitNormalization) * amount;
+              item.image.style.setProperty('--cup-orbit-normalize', normalization.toFixed(4));
             } else if (position === oppositePosition) {
               const startX = advancing ? -92 : -8;
               const x = startX + (advancing ? -26 : 26) * amount;
@@ -328,6 +331,7 @@ window.setupProductShowroom = function (carousel) {
             item.button.style.removeProperty('opacity');
             item.button.style.removeProperty('filter');
             item.button.style.removeProperty('z-index');
+            item.image.style.setProperty('--cup-orbit-normalize', String(item.orbitNormalization || 1));
           });
         },
       };
@@ -351,6 +355,18 @@ window.setupProductShowroom = function (carousel) {
         }
         // Unmocked sizes remain selectable without swapping the displayed product.
         if (!variant) { showCupDimensions(type, size, null); return; }
+        if (carousel.classList.contains('is-drag-commit')) {
+          const inactive = currentImage === image ? nextImage : image;
+          inactive.classList.remove('is-current', 'is-exiting');
+          currentImage.src = variant.src;
+          currentImage.alt = selection;
+          currentImage.style.setProperty('--cup-display-scale', variant.scale);
+          currentImage.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+          currentImage.classList.remove('is-exiting');
+          currentImage.classList.add('is-current');
+          showCupDimensions(type, size, variant);
+          return;
+        }
         if (currentImage.getAttribute('src') === variant.src) { showCupDimensions(type, size, variant); return; }
         showCupDimensions(type, size, null);
 
@@ -482,6 +498,7 @@ window.setupProductShowroom = function (carousel) {
         bowlRailItems.forEach(item => {
           const itemScale = Number(bowlImages[item.size].scale) || 1;
           const normalization = Math.pow(selectedScale / itemScale, .75);
+          item.orbitNormalization = normalization;
           item.image.style.setProperty('--cup-orbit-normalize', normalization.toFixed(4));
           let offset = bowlSizes.indexOf(item.size) - selectedIndex;
           if (offset > bowlSizes.length / 2) offset -= bowlSizes.length;
@@ -529,6 +546,8 @@ window.setupProductShowroom = function (carousel) {
               item.button.style.opacity = String(.46 + amount * .5);
               item.button.style.filter = `saturate(${.72 + amount * .28}) brightness(${.76 + amount * .24}) blur(${1 - amount}px)`;
               item.button.style.zIndex = '4';
+              const normalization = item.orbitNormalization + (1 - item.orbitNormalization) * amount;
+              item.image.style.setProperty('--cup-orbit-normalize', normalization.toFixed(4));
             } else if (position === oppositePosition) {
               const startX = advancing ? -92 : -8;
               const x = startX + (advancing ? -26 : 26) * amount;
@@ -545,6 +564,7 @@ window.setupProductShowroom = function (carousel) {
             item.button.style.removeProperty('opacity');
             item.button.style.removeProperty('filter');
             item.button.style.removeProperty('z-index');
+            item.image.style.setProperty('--cup-orbit-normalize', String(item.orbitNormalization || 1));
           });
         },
       };
@@ -566,6 +586,18 @@ window.setupProductShowroom = function (carousel) {
           counter.textContent = `${String(active + 1).padStart(2, '0')} / ${String(cards.length).padStart(2, '0')}`;
         }
         if (!variant) { showBowlDimensions(size, null); return; }
+        if (carousel.classList.contains('is-drag-commit')) {
+          const inactive = currentImage === image ? nextImage : image;
+          inactive.classList.remove('is-current', 'is-exiting');
+          currentImage.src = variant.src;
+          currentImage.alt = selection;
+          currentImage.style.setProperty('--cup-display-scale', variant.scale);
+          currentImage.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+          currentImage.classList.remove('is-exiting');
+          currentImage.classList.add('is-current');
+          showBowlDimensions(size, variant);
+          return;
+        }
         if (currentImage.getAttribute('src') === variant.src) { showBowlDimensions(size, variant); return; }
         showBowlDimensions(size, null);
 
@@ -742,13 +774,20 @@ window.setupProductShowroom = function (carousel) {
         return;
       }
       settlingFrame = 0;
-      if (step) navigateStage(step);
+      if (step) {
+        carousel.classList.add('is-drag-commit');
+        navigateStage(step);
+      }
       nestedCarousel?.clearPreview?.();
       images.forEach(image => {
         image.style.removeProperty('transform');
         image.style.removeProperty('opacity');
       });
-      requestAnimationFrame(() => carousel.classList.remove('is-dragging'));
+      requestAnimationFrame(() => {
+        void carousel.offsetWidth;
+        carousel.classList.remove('is-dragging');
+        requestAnimationFrame(() => carousel.classList.remove('is-drag-commit'));
+      });
     };
     settlingFrame = requestAnimationFrame(animate);
   }
