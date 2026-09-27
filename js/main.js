@@ -220,7 +220,7 @@ function fillCustomSelect(select, options) {
 if (cupType && cupSize) {
   const allSizesLabel = document.documentElement.lang === 'en' ? 'All' : 'Todos';
   const cupSizes = {
-    simple: [allSizesLabel, '4 oz', '6 oz', '8 oz', '10 oz', '12 oz', '14 oz', '16 oz', '21 oz', '24 oz'],
+    simple: [allSizesLabel, '4 oz', '6 oz', '8 oz', '12 oz', '16 oz', '21 oz', '24 oz'],
     doble: [allSizesLabel, '8 oz', '12 oz'],
   };
 
