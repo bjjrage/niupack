@@ -35,3 +35,12 @@ final result: blocked
 - El mockup se muestra como opción dentro de la categoría Tapas; no crea una categoría adicional.
 - El selector Diseño contiene únicamente Tapa con pico y Tapa viajera.
 - Al seleccionar Tapa viajera, la imagen cambia al montaje transparente nuevo y los tamaños pasan a 8, 12 y 16 oz.
+
+## Tapas individuales por diámetro
+
+- Tapa con pico: mockups individuales para 6, 8, 12, 16, 21 y 24 oz.
+- Tapa viajera: mockups individuales para 8, 12 y 16 oz.
+- La escala visual se calcula desde el diámetro de boca: 70,5; 78,12; 83,8; 89,4; 89,65 y 91,5 mm.
+- Se compensó la diferencia de encuadre alfa entre ambos modelos para que una tapa del mismo diámetro ocupe el mismo ancho visible.
+- Cada selección individual muestra una regla horizontal con el diámetro; no se inventa una altura de tapa sin ficha técnica.
+- El estado Todos mantiene las composiciones de categoría originales.

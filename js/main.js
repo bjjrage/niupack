@@ -233,9 +233,10 @@ if (cupType && cupSize) {
 }
 
 if (lidType && lidSize) {
+  const allSizesLabel = document.documentElement.lang === 'en' ? 'All' : 'Todos';
   const lidSizes = {
-    pico: ['6 oz', '8 oz', '12 oz', '16 oz', '21 oz', '24 oz'],
-    viajera: ['8 oz', '12 oz', '16 oz'],
+    pico: [allSizesLabel, '6 oz', '8 oz', '12 oz', '16 oz', '21 oz', '24 oz'],
+    viajera: [allSizesLabel, '8 oz', '12 oz', '16 oz'],
   };
 
   const updateLidSizes = () => fillCustomSelect(lidSize, lidSizes[lidType.dataset.value] || lidSizes.pico);

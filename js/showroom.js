@@ -409,46 +409,99 @@ window.setupProductShowroom = function (carousel) {
       queueMicrotask(updateCupVisual);
     } else if (isLidCard) {
       const typeSelect = panel.querySelector('[data-lid-type]');
+      const sizeSelect = panel.querySelector('[data-lid-size]');
       const nextImage = document.createElement('img');
       nextImage.className = 'showroom-cup-image';
       nextImage.draggable = false;
       nextImage.alt = '';
       figure.append(nextImage);
+      const measures = document.createElement('span');
+      measures.className = 'showroom-cup-measures showroom-lid-measures';
+      measures.setAttribute('aria-hidden', 'true');
+      measures.innerHTML = '<span class="cup-measure cup-measure-diameter"><span class="cup-measure-value"></span></span>';
+      figure.append(measures);
+      const lidDimensions = {
+        '6 oz': { diameter: '70,5' },
+        '8 oz': { diameter: '78,12' },
+        '12 oz': { diameter: '83,8' },
+        '16 oz': { diameter: '89,4' },
+        '21 oz': { diameter: '89,65' },
+        '24 oz': { diameter: '91,5' },
+      };
+      const spoutBounds = { left: 12.6, right: 12.4, top: 17.7, bottom: 17.1 };
+      const travelerBounds = { left: 9.6, right: 9.2, top: 18.2, bottom: 11.4 };
       const lidImages = {
-        pico: image.getAttribute('src'),
-        viajera: 'assets/showroom/lids-traveler-all-v1.png',
+        pico: {
+          all: { src: image.getAttribute('src'), scale: '1' },
+          '6 oz': { src: 'assets/showroom/lid-spout-6oz-v1.png', scale: '.716', measureBounds: spoutBounds, imageAspect: 1 },
+          '8 oz': { src: 'assets/showroom/lid-spout-8oz-v1.png', scale: '.794', measureBounds: spoutBounds, imageAspect: 1 },
+          '12 oz': { src: 'assets/showroom/lid-spout-12oz-v1.png', scale: '.852', measureBounds: spoutBounds, imageAspect: 1 },
+          '16 oz': { src: 'assets/showroom/lid-spout-16oz-v1.png', scale: '.909', measureBounds: spoutBounds, imageAspect: 1 },
+          '21 oz': { src: 'assets/showroom/lid-spout-21oz-v1.png', scale: '.912', measureBounds: spoutBounds, imageAspect: 1 },
+          '24 oz': { src: 'assets/showroom/lid-spout-24oz-v1.png', scale: '.93', measureBounds: spoutBounds, imageAspect: 1 },
+        },
+        viajera: {
+          all: { src: 'assets/showroom/lids-traveler-all-v1.png', scale: '1' },
+          '8 oz': { src: 'assets/showroom/lid-traveler-8oz-v1.png', scale: '.734', measureBounds: travelerBounds, imageAspect: 1 },
+          '12 oz': { src: 'assets/showroom/lid-traveler-12oz-v1.png', scale: '.787', measureBounds: travelerBounds, imageAspect: 1 },
+          '16 oz': { src: 'assets/showroom/lid-traveler-16oz-v1.png', scale: '.840', measureBounds: travelerBounds, imageAspect: 1 },
+        },
       };
       let currentImage = image;
       let requestedImage = 0;
+      const diameterValue = measures.querySelector('.cup-measure-value');
+
+      function showLidDimension(size, variant) {
+        const dimensions = lidDimensions[size];
+        figure.classList.toggle('has-cup-measures', Boolean(dimensions && variant));
+        if (!dimensions || !variant) return;
+        diameterValue.textContent = `Ø ${dimensions.diameter} mm`;
+        applyMeasurementLayout(figure, measures, variant, 1);
+      }
 
       function updateLidVisual() {
         const type = typeSelect.dataset.value || 'pico';
-        const src = lidImages[type] || lidImages.pico;
-        const selection = typeSelect.querySelector('.custom-select-trigger').textContent;
-        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}`);
+        const selectedSize = sizeSelect.dataset.value;
+        const size = selectedSize?.endsWith('oz') ? selectedSize : 'all';
+        const variant = lidImages[type]?.[size] || lidImages[type]?.all || lidImages.pico.all;
+        const selection = `${typeSelect.querySelector('.custom-select-trigger').textContent}, ${sizeSelect.querySelector('.custom-select-trigger').textContent}`;
+        const dimensions = lidDimensions[size];
+        const dimensionLabel = dimensions ? `, Ø ${dimensions.diameter} mm` : '';
+        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}${dimensionLabel}`);
         const request = ++requestedImage;
-        if (currentImage.getAttribute('src') === src) return;
+        if (currentImage.getAttribute('src') === variant.src) { showLidDimension(size, variant); return; }
+        showLidDimension(size, null);
         const preload = new Image();
         preload.onload = () => {
           if (request !== requestedImage) return;
           const incoming = currentImage === image ? nextImage : image;
           incoming.classList.remove('is-current', 'is-exiting');
-          incoming.src = src;
+          incoming.src = variant.src;
           incoming.alt = selection;
+          incoming.style.setProperty('--cup-display-scale', variant.scale);
           void incoming.offsetWidth;
           currentImage.classList.remove('is-current');
           currentImage.classList.add('is-exiting');
           incoming.classList.add('is-current');
           currentImage = incoming;
+          showLidDimension(size, variant);
         };
-        preload.src = src;
+        preload.src = variant.src;
       }
 
       panel.addEventListener('custom-select-change', () => queueMicrotask(updateLidVisual));
+      measurementRefreshers.push(() => {
+        const type = typeSelect.dataset.value || 'pico';
+        const selectedSize = sizeSelect.dataset.value;
+        const size = selectedSize?.endsWith('oz') ? selectedSize : 'all';
+        const variant = lidImages[type]?.[size];
+        if (lidDimensions[size] && variant) applyMeasurementLayout(figure, measures, variant, 1);
+      });
       visualResetters[index] = () => {
         setVisualSelectValue(typeSelect, 'pico');
         typeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
       };
+      image.style.setProperty('--cup-display-scale', '1');
       queueMicrotask(updateLidVisual);
     } else if (isBowlCard) {
       const sizeSelect = panel.querySelector('[data-bowl-size]');
