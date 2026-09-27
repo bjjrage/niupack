@@ -756,16 +756,14 @@ h3 {
   font-weight: 800;
 }
 
-.regional-map .map-label-paraguay {
-  left: 48%;
-  top: 47%;
+.regional-map .map-label-mercosur {
+  left: 42%;
+  top: 45%;
   background: var(--niu-red);
   color: #fff;
 }
 
-.map-label-uruguay { right: 19%; bottom: 14%; }
-.map-label-brasil { right: 12%; top: 24%; }
-.map-label-argentina { left: 25%; bottom: 16%; }
+.map-label-world { right: 10%; top: 24%; }
 
 .regional-map small {
   position: absolute;
