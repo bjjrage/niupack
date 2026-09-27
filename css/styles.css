@@ -697,6 +697,168 @@ h3 {
   color: var(--muted);
 }
 
+/* Regional B2B panel */
+.about-section .feature-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(330px, 0.82fr);
+  column-gap: clamp(26px, 4vw, 58px);
+  padding: clamp(28px, 4vw, 46px);
+}
+
+.about-section .feature-heading {
+  align-self: center;
+  margin: 0;
+}
+
+.about-section .feature-heading h3 {
+  max-width: 760px;
+  color: var(--ink);
+  font-size: clamp(1.8rem, 3.15vw, 3.05rem);
+  letter-spacing: -0.035em;
+}
+
+.about-section .feature-heading h3 strong {
+  color: var(--niu-red);
+  font-weight: 800;
+}
+
+.about-section .feature-heading p:not(.eyebrow) {
+  max-width: 690px;
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+
+.regional-map {
+  position: relative;
+  align-self: stretch;
+  min-height: 245px;
+  overflow: hidden;
+}
+
+.regional-map > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 51%;
+  mix-blend-mode: multiply;
+}
+
+.regional-map .map-label {
+  position: absolute;
+  z-index: 2;
+  padding: 7px 13px;
+  border: 1px solid rgba(20, 32, 43, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--ink);
+  box-shadow: 0 8px 24px rgba(21, 25, 31, 0.1);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.regional-map .map-label-paraguay {
+  left: 48%;
+  top: 47%;
+  background: var(--niu-red);
+  color: #fff;
+}
+
+.map-label-bolivia { left: 24%; top: 20%; }
+.map-label-brasil { right: 12%; top: 24%; }
+.map-label-argentina { left: 25%; bottom: 16%; }
+
+.regional-map small {
+  position: absolute;
+  right: 0;
+  bottom: 12px;
+  color: #9ca7b1;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.about-section .feature-grid {
+  grid-column: 1 / -1;
+  margin-top: 12px;
+  gap: 18px;
+}
+
+.about-section .panel-item {
+  display: flex;
+  min-height: 315px;
+  padding: 20px 18px 16px;
+  flex-direction: column;
+}
+
+.about-section .panel-topline {
+  margin-bottom: 10px;
+}
+
+.about-section .panel-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+}
+
+.about-section .panel-icon svg {
+  width: 27px;
+  height: 27px;
+}
+
+.about-section .panel-item h3 {
+  margin-bottom: 7px;
+  font-size: 1rem;
+}
+
+.about-section .panel-item p {
+  margin-bottom: 14px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.panel-photo {
+  width: 100%;
+  height: 124px;
+  margin-top: auto;
+  border-radius: 10px;
+  object-fit: cover;
+  display: block;
+}
+
+@media (max-width: 900px) {
+  .about-section .feature-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .regional-map {
+    min-height: 280px;
+  }
+
+  .about-section .feature-grid {
+    grid-column: 1;
+  }
+}
+
+@media (max-width: 700px) {
+  .regional-map {
+    min-height: 230px;
+  }
+
+  .regional-map small {
+    display: none;
+  }
+
+  .about-section .panel-item {
+    min-height: 0;
+  }
+
+  .panel-photo {
+    height: 160px;
+  }
+}
+
 .panel-item h3 {
   margin-bottom: 12px;
   font-size: 1.18rem;

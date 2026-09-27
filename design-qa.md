@@ -20,6 +20,18 @@
 
 final result: blocked
 
+## Reemplazo del panel regional B2B — 2026-09-27
+
+- Se sustituyó el contenido del panel “Por qué elegir NIU PACK” por la composición regional seleccionada.
+- El nuevo encabezado comunica la operación desde Paraguay y la cobertura de Paraguay, Brasil, Argentina y Bolivia.
+- Se incorporó un mapa regional con Paraguay destacado y etiquetas HTML localizadas.
+- Las tres tarjetas ahora muestran fabricación local, cobertura comercial y proyectos por volumen, cada una con fotografía propia.
+- La versión responsive apila mapa y tarjetas sin eliminar contenido.
+- Se aplicó el cambio en español, inglés y portugués.
+- La validación visual automatizada está bloqueada porque el navegador seguro no admite URLs `file://`; la estructura y los recursos sí fueron validados localmente.
+
+final result: blocked
+
 ## Medidas de pared doble
 
 - Los vasos de pared doble de 8 y 12 oz muestran diámetro y altura.
