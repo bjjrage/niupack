@@ -44,3 +44,12 @@ final result: blocked
 - Se compensó la diferencia de encuadre alfa entre ambos modelos para que una tapa del mismo diámetro ocupe el mismo ancho visible.
 - Cada selección individual muestra una regla horizontal con el diámetro; no se inventa una altura de tapa sin ficha técnica.
 - El estado Todos mantiene las composiciones de categoría originales.
+
+## Bandejas individuales por tamaño
+
+- 13,6 × 14,6 cm: una bandeja irregular aislada de la fotografía suministrada.
+- 18,5 × 15,5 cm: una bandeja rectangular frontal aislada de la imagen de categoría.
+- 22,5 × 19,5 cm: el mismo modelo rectangular, escalado proporcionalmente como producto mayor.
+- Las tres piezas usan PNG con transparencia alfa real y conservan material de fibra moldeada.
+- El estado Todos mantiene la composición de categoría; cada tamaño muestra una sola bandeja.
+- Las reglas horizontal y vertical indican ancho y profundidad en centímetros.

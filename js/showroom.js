@@ -128,6 +128,7 @@ window.setupProductShowroom = function (carousel) {
     const image = card.querySelector('.product-card-media img');
     const isCupCard = card.hasAttribute('data-cup-card');
     const isLidCard = card.hasAttribute('data-lid-card');
+    const isTrayCard = card.hasAttribute('data-tray-card');
     const isBowlCard = Boolean(card.querySelector('[data-bowl-size]'));
     const figure = document.createElement('button');
     figure.type = 'button';
@@ -135,7 +136,7 @@ window.setupProductShowroom = function (carousel) {
     figure.setAttribute('aria-label', `${copy.explore} ${names[index]}`);
     image.draggable = false;
     figure.append(image);
-    if (isCupCard || isLidCard) {
+    if (isCupCard || isLidCard || isTrayCard) {
       figure.dataset.cupVisual = '';
       image.classList.add('showroom-cup-image', 'is-current');
     }
@@ -503,6 +504,88 @@ window.setupProductShowroom = function (carousel) {
       };
       image.style.setProperty('--cup-display-scale', '1');
       queueMicrotask(updateLidVisual);
+    } else if (isTrayCard) {
+      const sizeSelect = panel.querySelector('[data-tray-size]');
+      const nextImage = document.createElement('img');
+      nextImage.className = 'showroom-cup-image';
+      nextImage.draggable = false;
+      nextImage.alt = '';
+      figure.append(nextImage);
+      const measures = document.createElement('span');
+      measures.className = 'showroom-cup-measures showroom-tray-measures';
+      measures.setAttribute('aria-hidden', 'true');
+      measures.innerHTML = '<span class="cup-measure cup-measure-diameter"><span class="cup-measure-value"></span></span><span class="cup-measure cup-measure-height"><span class="cup-measure-value"></span></span>';
+      figure.append(measures);
+      const trayDimensions = {
+        '13.6x14.6': { width: '13.6', depth: '14.6' },
+        '18.5x15.5': { width: '18.5', depth: '15.5' },
+        '22.5x19.5': { width: '22.5', depth: '19.5' },
+      };
+      const trayImages = {
+        all: { src: image.getAttribute('src'), scale: '1' },
+        '13.6x14.6': { src: 'assets/showroom/tray-13.6x14.6-v1.png', scale: '.651', imageAspect: 1, measureBounds: { left: 9.9, right: 3.6, top: 16.7, bottom: 9.2 } },
+        '18.5x15.5': { src: 'assets/showroom/tray-18.5x15.5-v1.png', scale: '.754', imageAspect: 1, measureBounds: { left: 5.1, right: 4.5, top: 16.9, bottom: 11.7 } },
+        '22.5x19.5': { src: 'assets/showroom/tray-22.5x19.5-v1.png', scale: '.93', imageAspect: 1, measureBounds: { left: 5.1, right: 4.5, top: 16.9, bottom: 11.7 } },
+      };
+      let currentImage = image;
+      let requestedImage = 0;
+      const widthValue = measures.querySelector('.cup-measure-diameter .cup-measure-value');
+      const depthValue = measures.querySelector('.cup-measure-height .cup-measure-value');
+      const localizedNumber = value => isEnglish ? value : value.replace('.', ',');
+      const traySizeKey = () => {
+        const value = sizeSelect.dataset.value || '';
+        return value === 'Todos' || value === 'All' ? 'all' : value.replaceAll(',', '.').replaceAll(' ', '');
+      };
+
+      function showTrayDimensions(size, variant) {
+        const dimensions = trayDimensions[size];
+        figure.classList.toggle('has-cup-measures', Boolean(dimensions && variant));
+        if (!dimensions || !variant) return;
+        widthValue.textContent = `${localizedNumber(dimensions.width)} cm`;
+        depthValue.textContent = `${localizedNumber(dimensions.depth)} cm`;
+        applyMeasurementLayout(figure, measures, variant, 1);
+      }
+
+      function updateTrayVisual() {
+        const size = traySizeKey();
+        const variant = trayImages[size] || trayImages.all;
+        const selection = sizeSelect.querySelector('.custom-select-trigger').textContent;
+        const dimensions = trayDimensions[size];
+        const dimensionLabel = dimensions ? `, ${localizedNumber(dimensions.width)} × ${localizedNumber(dimensions.depth)} cm` : '';
+        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}${dimensionLabel}`);
+        const request = ++requestedImage;
+        if (currentImage.getAttribute('src') === variant.src) { showTrayDimensions(size, variant); return; }
+        showTrayDimensions(size, null);
+        const preload = new Image();
+        preload.onload = () => {
+          if (request !== requestedImage) return;
+          const incoming = currentImage === image ? nextImage : image;
+          incoming.classList.remove('is-current', 'is-exiting');
+          incoming.src = variant.src;
+          incoming.alt = selection;
+          incoming.style.setProperty('--cup-display-scale', variant.scale);
+          void incoming.offsetWidth;
+          currentImage.classList.remove('is-current');
+          currentImage.classList.add('is-exiting');
+          incoming.classList.add('is-current');
+          currentImage = incoming;
+          showTrayDimensions(size, variant);
+        };
+        preload.src = variant.src;
+      }
+
+      panel.addEventListener('custom-select-change', () => queueMicrotask(updateTrayVisual));
+      measurementRefreshers.push(() => {
+        const size = traySizeKey();
+        const variant = trayImages[size];
+        if (trayDimensions[size] && variant) applyMeasurementLayout(figure, measures, variant, 1);
+      });
+      visualResetters[index] = () => {
+        setVisualSelectValue(sizeSelect, isEnglish ? 'All' : 'Todos');
+        sizeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
+      };
+      image.style.setProperty('--cup-display-scale', '1');
+      queueMicrotask(updateTrayVisual);
     } else if (isBowlCard) {
       const sizeSelect = panel.querySelector('[data-bowl-size]');
       const nextImage = document.createElement('img');
