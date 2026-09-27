@@ -386,7 +386,8 @@ h3 {
 }
 
 .hero-metrics div {
-  padding: 16px;
+  min-width: 0;
+  padding: 14px;
   border: 1px solid rgba(245, 55, 50, 0.16);
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.76);
@@ -404,27 +405,40 @@ h3 {
 
 .hero-metrics strong,
 .hero-metrics span { display: block; }
-.hero-metrics strong { font-size: 1.05rem; }
-.hero-metrics span { color: var(--muted); font-size: 0.82rem; }
-
-.hero-metrics .hero-metric-fsc {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.hero-metrics strong {
+  font-size: clamp(0.9rem, 1.2vw, 1.05rem);
+  white-space: nowrap;
+}
+.hero-metrics span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
-.hero-metric-fsc > img {
-  width: 46px;
-  height: 46px;
-  flex: 0 0 46px;
-  border-radius: 7px;
+.hero-metrics .hero-metric-fsc {
+  display: block;
+}
+
+.hero-metric-fsc .fsc-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.hero-metric-fsc .fsc-heading img {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 5px;
   object-fit: cover;
   object-position: left center;
   filter: grayscale(1) contrast(1.1);
 }
 
-.hero-metric-fsc > span {
-  min-width: 0;
+.hero-metric-fsc .fsc-heading strong {
+  color: var(--ink);
 }
 
 .hero-visual {
