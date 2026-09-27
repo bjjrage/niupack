@@ -235,7 +235,7 @@ if (cupType && cupSize) {
 if (lidType && lidSize) {
   const lidSizes = {
     pico: ['6 oz', '8 oz', '12 oz', '16 oz', '21 oz', '24 oz'],
-    'sin-pico': ['6 oz', '8 oz', '12 oz', '16 oz'],
+    viajera: ['8 oz', '12 oz', '16 oz'],
   };
 
   const updateLidSizes = () => fillCustomSelect(lidSize, lidSizes[lidType.dataset.value] || lidSizes.pico);

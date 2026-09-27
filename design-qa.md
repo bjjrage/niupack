@@ -32,6 +32,6 @@ final result: blocked
 - La disposición replica la jerarquía visual de la categoría existente: perfil superior, pieza central dominante y pieza inferior inclinada.
 - “Viajera” se agregó como tercera opción en español, inglés y portugués, con tamaños 8, 12 y 16 oz.
 - La imagen original de la categoría Tapas permanece como estado predeterminado.
-- El mockup ahora ocupa una categoría independiente inmediatamente después de Tapas.
-- La categoría independiente incluye selector Todos, 8 oz, 12 oz y 16 oz y aparece en las pestañas, flechas, contador y drag del carrusel principal.
-- La opción Viajera fue retirada del selector de la categoría Tapas para evitar duplicación.
+- El mockup se muestra como opción dentro de la categoría Tapas; no crea una categoría adicional.
+- El selector Diseño contiene únicamente Tapa con pico y Tapa viajera.
+- Al seleccionar Tapa viajera, la imagen cambia al montaje transparente nuevo y los tamaños pasan a 8, 12 y 16 oz.
