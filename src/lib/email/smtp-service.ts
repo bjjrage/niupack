@@ -34,7 +34,7 @@ export class SMTPService {
         pass,
       },
       tls: {
-        rejectUnauthorized: false, // Prevents self-signed cert blocks on custom corporate mail servers
+        rejectUnauthorized: true,
       },
     });
   }

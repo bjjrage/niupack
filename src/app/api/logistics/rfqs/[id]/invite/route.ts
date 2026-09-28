@@ -16,13 +16,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!rfq) return NextResponse.json({ error: 'RFQ_NOT_FOUND' }, { status: 404 });
     if (new Date(rfq.quote_deadline).getTime() <= Date.now()) return NextResponse.json({ error: 'RFQ_DEADLINE_EXPIRED' }, { status: 409 });
     const suppliers = await logisticsRepository.listProviders(identity.organizationId);
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const selectedSuppliers = suppliers.filter((supplier) => supplierIds.includes(supplier.id));
+    if (selectedSuppliers.length !== supplierIds.length) {
+      return NextResponse.json({ error: 'PROVIDER_NOT_FOUND' }, { status: 404 });
+    }
+    const configuredBaseUrl = process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, '');
+    if (process.env.NODE_ENV === 'production' && (!configuredBaseUrl || configuredBaseUrl.includes('localhost'))) {
+      return NextResponse.json({ error: 'PUBLIC_BASE_URL_NOT_CONFIGURED' }, { status: 503 });
+    }
+    const baseUrl = configuredBaseUrl || 'http://localhost:3000';
     const emailConfigured = await SMTPService.isConfigured();
     const invitations = [];
 
-    for (const supplierId of supplierIds) {
-      const supplier = suppliers.find((item) => item.id === supplierId);
-      if (!supplier) continue;
+    for (const supplier of selectedSuppliers) {
       const { token, hash } = createMagicToken();
       const invitation = await logisticsRepository.createInvitation({
         organization_id: rfq.organization_id, rfq_id: rfq.id, supplier_id: supplier.id, token_hash: hash,
@@ -46,6 +52,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ invitations, email: emailConfigured ? 'CONFIGURED' : 'NOT_CONFIGURED' });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'INVALID_REQUEST' }, { status: 400 });
+    if (error instanceof z.ZodError) return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 });
+    if (error instanceof Error && error.message === 'INVITATION_ALREADY_RESPONDED') {
+      return NextResponse.json({ error: 'INVITATION_ALREADY_RESPONDED' }, { status: 409 });
+    }
+    console.error('[logistics/invite] invitation creation failed', error);
+    return NextResponse.json({ error: 'INVITATION_CREATION_UNAVAILABLE' }, { status: 503 });
   }
 }

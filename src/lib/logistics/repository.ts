@@ -123,14 +123,33 @@ export const logisticsRepository = {
 
   async createInvitation(input: Omit<LogisticsInvitation, 'id' | 'created_at'>): Promise<LogisticsInvitation> {
     this.assertPersistence();
-    const record: LogisticsInvitation = { ...input, id: crypto.randomUUID(), created_at: now() };
     if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
-      const { data, error } = await supabaseAdmin.from('logistics_rfq_invitations').upsert(record, { onConflict: 'rfq_id,supplier_id' }).select().single();
+      const { data: existing, error: existingError } = await supabaseAdmin
+        .from('logistics_rfq_invitations')
+        .select('id,status,created_at')
+        .eq('organization_id', input.organization_id)
+        .eq('rfq_id', input.rfq_id)
+        .eq('supplier_id', input.supplier_id)
+        .maybeSingle();
+      if (existingError) throw new Error(existingError.message);
+      if (existing?.status === 'RESPONDED') throw new Error('INVITATION_ALREADY_RESPONDED');
+      const record: LogisticsInvitation = { ...input, id: existing?.id ?? crypto.randomUUID(), created_at: existing?.created_at ?? now() };
+      const query = existing
+        ? supabaseAdmin.from('logistics_rfq_invitations').update(record).eq('id', existing.id)
+        : supabaseAdmin.from('logistics_rfq_invitations').insert(record);
+      const { data, error } = await query.select().single();
       if (error) throw new Error(error.message);
       return data as LogisticsInvitation;
     }
+    const record: LogisticsInvitation = { ...input, id: crypto.randomUUID(), created_at: now() };
     const existing = memory.invitations.findIndex((item) => item.rfq_id === input.rfq_id && item.supplier_id === input.supplier_id);
-    if (existing >= 0) memory.invitations[existing] = record; else memory.invitations.push(record);
+    if (existing >= 0) {
+      if (memory.invitations[existing].status === 'RESPONDED') throw new Error('INVITATION_ALREADY_RESPONDED');
+      const updated = { ...record, id: memory.invitations[existing].id };
+      memory.invitations[existing] = updated;
+      return updated;
+    }
+    memory.invitations.push(record);
     return record;
   },
 
@@ -176,7 +195,10 @@ export const logisticsRepository = {
     const record: LogisticsQuote = { ...input, id: crypto.randomUUID(), submitted_at: stamp, created_at: stamp, updated_at: stamp };
     if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
       const { data, error } = await supabaseAdmin.from('logistics_rfq_quotes').insert(record).select().single();
-      if (error) throw new Error(error.message);
+      if (error) {
+        if (error.code === '23505') throw new Error('INVITATION_ALREADY_RESPONDED');
+        throw new Error(error.message);
+      }
       return data as LogisticsQuote;
     }
     if (memory.quotes.some((quote) => quote.invitation_id === input.invitation_id)) throw new Error('INVITATION_ALREADY_RESPONDED');
@@ -260,7 +282,8 @@ export const logisticsRepository = {
     if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
       const { data, error } = await supabaseAdmin.from('logistics_bookings').insert(record).select().single();
       if (error) throw new Error(error.message);
-      await supabaseAdmin.from('logistics_rates').update({ status: 'BOOKING_REQUESTED', updated_at: stamp }).eq('id', rate.id);
+      const { error: rateError } = await supabaseAdmin.from('logistics_rates').update({ status: 'BOOKING_REQUESTED', updated_at: stamp }).eq('id', rate.id).eq('organization_id', rate.organization_id);
+      if (rateError) throw new Error(rateError.message);
       return data as LogisticsBooking;
     }
     memory.bookings.unshift(record);
@@ -290,7 +313,8 @@ export const logisticsRepository = {
         insurance: quote.insurance, other_charges: quote.other_charges },
     });
     if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
-      await supabaseAdmin.from('logistics_rfq_quotes').update({ status: 'SELECTED' }).eq('id', quote.id);
+      const { error } = await supabaseAdmin.from('logistics_rfq_quotes').update({ status: 'SELECTED' }).eq('id', quote.id).eq('organization_id', quote.organization_id);
+      if (error) throw new Error(error.message);
     } else {
       const index = memory.quotes.findIndex((item) => item.id === quote.id);
       memory.quotes[index] = { ...memory.quotes[index], status: 'SELECTED', updated_at: now() };
