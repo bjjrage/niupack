@@ -92,7 +92,7 @@ export interface LogisticsRfq {
   destination_city: string;
   destination_address?: string;
   pickup_date: string;
-  delivery_target_date?: string;
+  delivery_target_date?: string | null;
   cargo_description: string;
   weight_kg: number;
   volume_m3: number;
