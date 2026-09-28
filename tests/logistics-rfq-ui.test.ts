@@ -27,5 +27,8 @@ describe('road RFQ form labels', () => {
 
     expect(html).toContain('name="delivery_target_date"');
     expect(html).not.toContain('name="delivery_target_date" required');
+    expect(html).toContain('grid grid-cols-1 items-end gap-x-6 gap-y-5 md:grid-cols-2 lg:grid-cols-4');
+    expect(html).not.toContain('md:col-span-2');
+    expect((html.match(/box-border h-9 w-full min-w-0/g) || []).length).toBe(13);
   });
 });
