@@ -12,16 +12,29 @@ export default function LoginPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('your-project')) {
-      setMessage('Supabase Auth no está configurado en este entorno.');
+    setMessage('');
+
+    try {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!url || !key || url.includes('your-project')) {
+        setMessage('Supabase Auth no está configurado en este entorno.');
+        return;
+      }
+
+      const client = createSupabaseBrowserClient();
+      const result = await Promise.race([
+        client.auth.signInWithPassword({ email, password }),
+        new Promise<{ error: Error }>((_, reject) => setTimeout(() => reject(new Error('Tiempo de espera agotado al conectar con Supabase Auth.')), 15000)),
+      ]);
+
+      if (result.error) setMessage(result.error.message);
+      else window.location.href = new URLSearchParams(window.location.search).get('next') || '/logistics';
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo iniciar sesión.');
+    } finally {
       setLoading(false);
-      return;
     }
-    const client = createSupabaseBrowserClient();
-    const { error } = await client.auth.signInWithPassword({ email, password });
-    if (error) setMessage(error.message);
-    else window.location.href = new URLSearchParams(window.location.search).get('next') || '/logistics';
-    setLoading(false);
   }
 
   return <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-white">
