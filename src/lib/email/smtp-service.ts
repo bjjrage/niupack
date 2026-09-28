@@ -1,6 +1,11 @@
 import nodemailer from 'nodemailer';
 import { repository } from '@/lib/db/repository';
 
+function isPlaceholder(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return !normalized || normalized.includes('tudominio') || normalized.includes('tu-contrase') || normalized.includes('your-') || normalized.includes('example.com');
+}
+
 export class SMTPService {
   /**
    * Get configured nodemailer transport from database settings or .env
@@ -16,7 +21,7 @@ export class SMTPService {
         ? settings.smtp_secure
         : port === 465 || process.env.SMTP_SECURE === 'true';
 
-    if (!host || !user || !pass) {
+    if (isPlaceholder(host) || isPlaceholder(user) || isPlaceholder(pass)) {
       return null;
     }
 
@@ -39,7 +44,7 @@ export class SMTPService {
     const host = settings.smtp_host || process.env.SMTP_HOST || '';
     const user = settings.smtp_user || process.env.SMTP_USER || '';
     const pass = settings.smtp_pass || process.env.SMTP_PASS || '';
-    return Boolean(host && user && pass);
+    return !isPlaceholder(host) && !isPlaceholder(user) && !isPlaceholder(pass);
   }
 
   public static async verifyConnection(): Promise<{ success: boolean; message: string }> {

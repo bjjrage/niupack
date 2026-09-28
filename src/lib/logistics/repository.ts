@@ -1,5 +1,6 @@
-import { supabaseAdmin, isSupabaseConfigured } from '@/lib/db/supabase';
+import { supabaseAdmin, isSupabaseAdminConfigured } from '@/lib/db/supabase';
 import { repository } from '@/lib/db/repository';
+import type { Supplier } from '@/types';
 import {
   LogisticsInvitation,
   LogisticsQuote,
@@ -24,31 +25,76 @@ if (process.env.NODE_ENV !== 'production') global.__niu_logistics_store = memory
 const now = () => new Date().toISOString();
 
 async function selectAll<T>(table: string, order = 'created_at'): Promise<T[]> {
-  if (!isSupabaseConfigured || !supabaseAdmin) return [];
+  if (!isSupabaseAdminConfigured || !supabaseAdmin) return [];
   const { data, error } = await supabaseAdmin.from(table).select('*').order(order, { ascending: false });
   if (error) throw new Error(`${table}: ${error.message}`);
   return (data ?? []) as T[];
 }
 
 export const logisticsRepository = {
-  persistenceMode(): 'SUPABASE' | 'MEMORY_FALLBACK' {
-    return isSupabaseConfigured && Boolean(supabaseAdmin) ? 'SUPABASE' : 'MEMORY_FALLBACK';
+  persistenceMode(nodeEnv = process.env.NODE_ENV, allowMemory = process.env.NIU_LOGISTICS_ALLOW_MEMORY === 'true'): 'SUPABASE' | 'MEMORY_FALLBACK' | 'NOT_CONFIGURED' {
+    if (isSupabaseAdminConfigured && Boolean(supabaseAdmin)) return 'SUPABASE';
+    if (nodeEnv === 'test' || (nodeEnv === 'development' && allowMemory)) return 'MEMORY_FALLBACK';
+    return 'NOT_CONFIGURED';
   },
 
-  async listRfqs(): Promise<LogisticsRfq[]> {
-    return this.persistenceMode() === 'SUPABASE' ? selectAll<LogisticsRfq>('logistics_rfqs') : [...memory.rfqs];
+  assertPersistence(nodeEnv = process.env.NODE_ENV, allowMemory = process.env.NIU_LOGISTICS_ALLOW_MEMORY === 'true') {
+    if (this.persistenceMode(nodeEnv, allowMemory) === 'NOT_CONFIGURED') throw new Error('LOGISTICS_PERSISTENCE_NOT_CONFIGURED');
   },
 
-  async getRfq(id: string): Promise<LogisticsRfq | undefined> {
+  async logAuditEvent(input: { organization_id: string; actor_id?: string; event_type: string; target_entity: string; entity_id: string; metadata: Record<string, unknown> }) {
+    this.assertPersistence();
     if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
-      const { data, error } = await supabaseAdmin.from('logistics_rfqs').select('*').eq('id', id).maybeSingle();
+      const { error } = await supabaseAdmin.from('audit_events').insert({
+        organization_id: input.organization_id,
+        actor_id: input.actor_id,
+        event_type: input.event_type,
+        target_entity: input.target_entity,
+        entity_id: input.entity_id,
+        metadata_json: input.metadata,
+      });
+      if (error) throw new Error(error.message);
+      return;
+    }
+    await repository.logAuditEvent({ event_type: input.event_type as never, target_entity: input.target_entity, entity_id: input.entity_id, metadata: input.metadata });
+  },
+
+  async listProviders(organizationId: string): Promise<Supplier[]> {
+    this.assertPersistence();
+    if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.from('suppliers').select('*').eq('organization_id', organizationId).order('name');
+      if (error) throw new Error(error.message);
+      return (data ?? []) as Supplier[];
+    }
+    return (await repository.getSuppliers()).filter((supplier) => supplier.organization_id === organizationId);
+  },
+
+  async listRfqs(organizationId?: string): Promise<LogisticsRfq[]> {
+    this.assertPersistence();
+    if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
+      let query = supabaseAdmin.from('logistics_rfqs').select('*').order('created_at', { ascending: false });
+      if (organizationId) query = query.eq('organization_id', organizationId);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return (data ?? []) as LogisticsRfq[];
+    }
+    return memory.rfqs.filter((rfq) => !organizationId || rfq.organization_id === organizationId);
+  },
+
+  async getRfq(id: string, organizationId?: string): Promise<LogisticsRfq | undefined> {
+    this.assertPersistence();
+    if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
+      let query = supabaseAdmin.from('logistics_rfqs').select('*').eq('id', id);
+      if (organizationId) query = query.eq('organization_id', organizationId);
+      const { data, error } = await query.maybeSingle();
       if (error) throw new Error(error.message);
       return data as LogisticsRfq | undefined;
     }
-    return memory.rfqs.find((rfq) => rfq.id === id);
+    return memory.rfqs.find((rfq) => rfq.id === id && (!organizationId || rfq.organization_id === organizationId));
   },
 
   async createRfq(input: Omit<LogisticsRfq, 'id' | 'created_at' | 'updated_at'>): Promise<LogisticsRfq> {
+    this.assertPersistence();
     const record: LogisticsRfq = { ...input, id: crypto.randomUUID(), created_at: now(), updated_at: now() };
     if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
       const { data, error } = await supabaseAdmin.from('logistics_rfqs').insert(record).select().single();
@@ -59,20 +105,24 @@ export const logisticsRepository = {
     return record;
   },
 
-  async updateRfq(id: string, updates: Partial<LogisticsRfq>): Promise<LogisticsRfq> {
+  async updateRfq(id: string, updates: Partial<LogisticsRfq>, organizationId?: string): Promise<LogisticsRfq> {
+    this.assertPersistence();
     const payload = { ...updates, updated_at: now() };
     if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
-      const { data, error } = await supabaseAdmin.from('logistics_rfqs').update(payload).eq('id', id).select().single();
+      let query = supabaseAdmin.from('logistics_rfqs').update(payload).eq('id', id);
+      if (organizationId) query = query.eq('organization_id', organizationId);
+      const { data, error } = await query.select().single();
       if (error) throw new Error(error.message);
       return data as LogisticsRfq;
     }
     const index = memory.rfqs.findIndex((item) => item.id === id);
-    if (index < 0) throw new Error('RFQ_NOT_FOUND');
+    if (index < 0 || (organizationId && memory.rfqs[index].organization_id !== organizationId)) throw new Error('RFQ_NOT_FOUND');
     memory.rfqs[index] = { ...memory.rfqs[index], ...payload };
     return memory.rfqs[index];
   },
 
   async createInvitation(input: Omit<LogisticsInvitation, 'id' | 'created_at'>): Promise<LogisticsInvitation> {
+    this.assertPersistence();
     const record: LogisticsInvitation = { ...input, id: crypto.randomUUID(), created_at: now() };
     if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
       const { data, error } = await supabaseAdmin.from('logistics_rfq_invitations').upsert(record, { onConflict: 'rfq_id,supplier_id' }).select().single();
@@ -84,18 +134,21 @@ export const logisticsRepository = {
     return record;
   },
 
-  async listInvitations(rfqId?: string): Promise<LogisticsInvitation[]> {
+  async listInvitations(rfqId?: string, organizationId?: string): Promise<LogisticsInvitation[]> {
+    this.assertPersistence();
     if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
       let query = supabaseAdmin.from('logistics_rfq_invitations').select('*').order('created_at', { ascending: false });
       if (rfqId) query = query.eq('rfq_id', rfqId);
+      if (organizationId) query = query.eq('organization_id', organizationId);
       const { data, error } = await query;
       if (error) throw new Error(error.message);
       return (data ?? []) as LogisticsInvitation[];
     }
-    return memory.invitations.filter((item) => !rfqId || item.rfq_id === rfqId);
+    return memory.invitations.filter((item) => (!rfqId || item.rfq_id === rfqId) && (!organizationId || item.organization_id === organizationId));
   },
 
   async findInvitationByHash(hash: string): Promise<LogisticsInvitation | undefined> {
+    this.assertPersistence();
     if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
       const { data, error } = await supabaseAdmin.from('logistics_rfq_invitations').select('*').eq('token_hash', hash).maybeSingle();
       if (error) throw new Error(error.message);
@@ -105,6 +158,7 @@ export const logisticsRepository = {
   },
 
   async updateInvitation(id: string, updates: Partial<LogisticsInvitation>): Promise<LogisticsInvitation> {
+    this.assertPersistence();
     if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
       const { data, error } = await supabaseAdmin.from('logistics_rfq_invitations').update(updates).eq('id', id).select().single();
       if (error) throw new Error(error.message);
@@ -117,6 +171,7 @@ export const logisticsRepository = {
   },
 
   async submitQuote(input: Omit<LogisticsQuote, 'id' | 'created_at' | 'updated_at' | 'submitted_at'>): Promise<LogisticsQuote> {
+    this.assertPersistence();
     const stamp = now();
     const record: LogisticsQuote = { ...input, id: crypto.randomUUID(), submitted_at: stamp, created_at: stamp, updated_at: stamp };
     if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
@@ -129,18 +184,26 @@ export const logisticsRepository = {
     return record;
   },
 
-  async listQuotes(rfqId?: string): Promise<LogisticsQuote[]> {
+  async listQuotes(rfqId?: string, organizationId?: string): Promise<LogisticsQuote[]> {
+    this.assertPersistence();
     let quotes: LogisticsQuote[];
-    if (this.persistenceMode() === 'SUPABASE') quotes = await selectAll<LogisticsQuote>('logistics_rfq_quotes', 'submitted_at');
-    else quotes = [...memory.quotes];
-    const suppliers = await repository.getSuppliers();
-    return quotes.filter((quote) => !rfqId || quote.rfq_id === rfqId).map((quote) => ({
+    if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
+      let query = supabaseAdmin.from('logistics_rfq_quotes').select('*').order('submitted_at', { ascending: false });
+      if (rfqId) query = query.eq('rfq_id', rfqId);
+      if (organizationId) query = query.eq('organization_id', organizationId);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      quotes = (data ?? []) as LogisticsQuote[];
+    } else quotes = [...memory.quotes];
+    const suppliers = organizationId ? await this.listProviders(organizationId) : await repository.getSuppliers();
+    return quotes.filter((quote) => (!rfqId || quote.rfq_id === rfqId) && (!organizationId || quote.organization_id === organizationId)).map((quote) => ({
       ...quote,
       supplier_name: suppliers.find((supplier) => supplier.id === quote.supplier_id)?.name ?? 'Transportista',
     }));
   },
 
   async createRate(input: Omit<LogisticsRate, 'id' | 'created_at' | 'updated_at'>): Promise<LogisticsRate> {
+    this.assertPersistence();
     const stamp = now();
     const record: LogisticsRate = { ...input, id: crypto.randomUUID(), created_at: stamp, updated_at: stamp };
     if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
@@ -152,25 +215,43 @@ export const logisticsRepository = {
     return record;
   },
 
-  async listRates(): Promise<LogisticsRate[]> {
-    const rates = this.persistenceMode() === 'SUPABASE' ? await selectAll<LogisticsRate>('logistics_rates') : [...memory.rates];
+  async listRates(organizationId?: string): Promise<LogisticsRate[]> {
+    this.assertPersistence();
+    let rates: LogisticsRate[];
+    if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
+      let query = supabaseAdmin.from('logistics_rates').select('*').order('created_at', { ascending: false });
+      if (organizationId) query = query.eq('organization_id', organizationId);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      rates = (data ?? []) as LogisticsRate[];
+    } else rates = [...memory.rates];
     const stamp = Date.now();
-    return rates.map((rate) => rate.valid_until && new Date(rate.valid_until).getTime() < stamp && !['BOOKED','EXPIRED'].includes(rate.status)
+    return rates.filter((rate) => !organizationId || rate.organization_id === organizationId).map((rate) => rate.valid_until && new Date(rate.valid_until).getTime() < stamp && !['BOOKED','EXPIRED'].includes(rate.status)
       ? { ...rate, status: 'EXPIRED' as LogisticsRateStatus }
       : rate);
   },
 
-  async getRate(id: string): Promise<LogisticsRate | undefined> {
-    const rates = await this.listRates();
+  async getRate(id: string, organizationId?: string): Promise<LogisticsRate | undefined> {
+    const rates = await this.listRates(organizationId);
     return rates.find((rate) => rate.id === id);
   },
 
-  async listBookings(): Promise<LogisticsBooking[]> {
-    return this.persistenceMode() === 'SUPABASE' ? selectAll<LogisticsBooking>('logistics_bookings') : [...memory.bookings];
+  async listBookings(organizationId?: string): Promise<LogisticsBooking[]> {
+    this.assertPersistence();
+    let bookings: LogisticsBooking[];
+    if (this.persistenceMode() === 'SUPABASE' && supabaseAdmin) {
+      let query = supabaseAdmin.from('logistics_bookings').select('*').order('created_at', { ascending: false });
+      if (organizationId) query = query.eq('organization_id', organizationId);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      bookings = (data ?? []) as LogisticsBooking[];
+    } else bookings = [...memory.bookings];
+    return bookings.filter((booking) => !organizationId || booking.organization_id === organizationId);
   },
 
-  async createBooking(rateId: string): Promise<LogisticsBooking> {
-    const rate = await this.getRate(rateId);
+  async createBooking(rateId: string, organizationId?: string): Promise<LogisticsBooking> {
+    this.assertPersistence();
+    const rate = await this.getRate(rateId, organizationId);
     if (!rate) throw new Error('RATE_NOT_FOUND');
     if (!['SELECTED', 'CONFIRMED'].includes(rate.status)) throw new Error('RATE_NOT_BOOKABLE');
     if (rate.valid_until && new Date(rate.valid_until).getTime() < Date.now()) throw new Error('RATE_EXPIRED');
@@ -188,12 +269,13 @@ export const logisticsRepository = {
     return record;
   },
 
-  async selectQuote(quoteId: string): Promise<LogisticsRate> {
-    const quotes = await this.listQuotes();
+  async selectQuote(quoteId: string, organizationId?: string): Promise<LogisticsRate> {
+    this.assertPersistence();
+    const quotes = await this.listQuotes(undefined, organizationId);
     const quote = quotes.find((item) => item.id === quoteId);
     if (!quote) throw new Error('QUOTE_NOT_FOUND');
     if (quote.valid_until && new Date(quote.valid_until).getTime() < Date.now()) throw new Error('QUOTE_EXPIRED');
-    const rfq = await this.getRfq(quote.rfq_id);
+    const rfq = await this.getRfq(quote.rfq_id, organizationId);
     if (!rfq) throw new Error('RFQ_NOT_FOUND');
     const rate = await this.createRate({
       organization_id: quote.organization_id,
@@ -213,7 +295,7 @@ export const logisticsRepository = {
       const index = memory.quotes.findIndex((item) => item.id === quote.id);
       memory.quotes[index] = { ...memory.quotes[index], status: 'SELECTED', updated_at: now() };
     }
-    await this.updateRfq(rfq.id, { status: 'CLOSED' });
+    await this.updateRfq(rfq.id, { status: 'CLOSED' }, organizationId);
     return rate;
   },
 };

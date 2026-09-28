@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { hashMagicToken } from '@/lib/logistics/security';
 import { logisticsRepository } from '@/lib/logistics/repository';
-import { repository } from '@/lib/db/repository';
 
 const quoteSchema = z.object({
   quoted_total: z.coerce.number().nonnegative(), currency: z.string().length(3), transit_days: z.coerce.number().int().nonnegative(),
@@ -22,20 +21,24 @@ async function resolve(token: string) {
     await logisticsRepository.updateInvitation(invitation.id, { status: 'EXPIRED' });
     return { error: 'TOKEN_EXPIRED', status: 410 } as const;
   }
-  const rfq = await logisticsRepository.getRfq(invitation.rfq_id);
+  const rfq = await logisticsRepository.getRfq(invitation.rfq_id, invitation.organization_id);
   if (!rfq || rfq.organization_id !== invitation.organization_id) return { error: 'RFQ_NOT_FOUND', status: 404 } as const;
   return { invitation, rfq };
 }
 
 export async function GET(_request: Request, context: { params: Promise<{ token: string }> }) {
-  const { token } = await context.params;
-  const resolved = await resolve(token);
-  if ('error' in resolved) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
-  if (resolved.invitation.status === 'PENDING') {
-    await logisticsRepository.updateInvitation(resolved.invitation.id, { status: 'OPENED', opened_at: new Date().toISOString() });
-    await repository.logAuditEvent({ event_type: 'INVITATION_OPENED', target_entity: 'logistics_rfq_invitations', entity_id: resolved.invitation.id, metadata: { rfq_id: resolved.rfq.id } });
+  try {
+    const { token } = await context.params;
+    const resolved = await resolve(token);
+    if ('error' in resolved) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+    if (resolved.invitation.status === 'PENDING') {
+      await logisticsRepository.updateInvitation(resolved.invitation.id, { status: 'OPENED', opened_at: new Date().toISOString() });
+      await logisticsRepository.logAuditEvent({ organization_id: resolved.invitation.organization_id, event_type: 'INVITATION_OPENED', target_entity: 'logistics_rfq_invitations', entity_id: resolved.invitation.id, metadata: { rfq_id: resolved.rfq.id } });
+    }
+    return NextResponse.json({ rfq: resolved.rfq, expires_at: resolved.invitation.expires_at });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'PUBLIC_QUOTE_UNAVAILABLE' }, { status: 503 });
   }
-  return NextResponse.json({ rfq: resolved.rfq, expires_at: resolved.invitation.expires_at });
 }
 
 export async function POST(request: Request, context: { params: Promise<{ token: string }> }) {
@@ -52,10 +55,10 @@ export async function POST(request: Request, context: { params: Promise<{ token:
       status: partial ? 'PARTIAL' : 'RECEIVED', normalized_total: body.currency === 'USD' ? body.quoted_total : undefined,
     });
     await logisticsRepository.updateInvitation(resolved.invitation.id, { status: 'RESPONDED', responded_at: new Date().toISOString() });
-    const quotes = await logisticsRepository.listQuotes(resolved.rfq.id);
-    const invitations = await logisticsRepository.listInvitations(resolved.rfq.id);
-    await logisticsRepository.updateRfq(resolved.rfq.id, { status: quotes.length >= invitations.length ? 'CLOSED' : 'PARTIALLY_RESPONDED' });
-    await repository.logAuditEvent({ event_type: 'QUOTE_SUBMITTED', target_entity: 'logistics_rfq_quotes', entity_id: quote.id, metadata: { rfq_id: resolved.rfq.id, status: quote.status } });
+    const quotes = await logisticsRepository.listQuotes(resolved.rfq.id, resolved.invitation.organization_id);
+    const invitations = await logisticsRepository.listInvitations(resolved.rfq.id, resolved.invitation.organization_id);
+    await logisticsRepository.updateRfq(resolved.rfq.id, { status: quotes.length >= invitations.length ? 'CLOSED' : 'PARTIALLY_RESPONDED' }, resolved.invitation.organization_id);
+    await logisticsRepository.logAuditEvent({ organization_id: resolved.invitation.organization_id, event_type: 'QUOTE_SUBMITTED', target_entity: 'logistics_rfq_quotes', entity_id: quote.id, metadata: { rfq_id: resolved.rfq.id, status: quote.status } });
     return NextResponse.json({ success: true, quote_id: quote.id }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'INVALID_REQUEST' }, { status: 400 });

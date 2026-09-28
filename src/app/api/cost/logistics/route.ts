@@ -3,9 +3,11 @@ import { ExportLogisticsEngine, STANDARD_CONTAINERS } from '@/lib/engines/export
 import { repository } from '@/lib/db/repository';
 import { FxEngine } from '@/lib/fx/fx-provider';
 import { ContainerType } from '@/types';
+import { logisticsAuthErrorResponse, requireLogisticsIdentity } from '@/lib/auth/logistics-auth';
 
 export async function GET() {
   try {
+    await requireLogisticsIdentity();
     const packagingSpecs = await repository.getPackagingSpecs();
     const fxInfo = await FxEngine.getEffectiveQuote();
 
@@ -17,6 +19,7 @@ export async function GET() {
       fxStatus: fxInfo.status,
     });
   } catch (error: any) {
+    if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
     return NextResponse.json(
       { success: false, error: error?.message || 'Failed to fetch logistics specs' },
       { status: 500 }
@@ -26,6 +29,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    await requireLogisticsIdentity();
     const body = await req.json();
     const { action = 'CALCULATE_ALL', sku = 'CUP-12OZ-SW' } = body;
 
@@ -106,6 +110,7 @@ export async function POST(req: NextRequest) {
       landedCost,
     });
   } catch (error: any) {
+    if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
     return NextResponse.json(
       { success: false, error: error?.message || 'Failed to calculate logistics' },
       { status: 500 }

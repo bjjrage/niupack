@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { repository } from '@/lib/db/repository';
 import { logisticsRepository } from '@/lib/logistics/repository';
+import { logisticsAuthErrorResponse, requireLogisticsIdentity } from '@/lib/auth/logistics-auth';
 
 const schema = z.object({
   origin: z.object({ country: z.string(), city: z.string().optional(), port: z.string().optional() }),
@@ -12,12 +12,15 @@ const schema = z.object({
   components: z.record(z.string(), z.number()).optional(), status: z.enum(['INDICATIVE','CONFIRMED']).default('CONFIRMED'),
 });
 
-export async function GET() { return NextResponse.json({ rates: await logisticsRepository.listRates(), persistence: logisticsRepository.persistenceMode() }); }
+export async function GET() {
+  try { const identity = await requireLogisticsIdentity(); return NextResponse.json({ rates: await logisticsRepository.listRates(identity.organizationId), persistence: logisticsRepository.persistenceMode() }); }
+  catch (error) { return logisticsAuthErrorResponse(error); }
+}
 export async function POST(request: Request) {
   try {
+    const identity = await requireLogisticsIdentity();
     const body = schema.parse(await request.json());
-    const organization = await repository.getOrganization();
-    const rate = await logisticsRepository.createRate({ ...body, organization_id: organization.id, source: 'MANUAL_RATE', components: body.components ?? {} });
+    const rate = await logisticsRepository.createRate({ ...body, organization_id: identity.organizationId, source: 'MANUAL_RATE', components: body.components ?? {} });
     return NextResponse.json({ rate }, { status: 201 });
-  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'INVALID_REQUEST' }, { status: 400 }); }
+  } catch (error) { if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error); return NextResponse.json({ error: error instanceof Error ? error.message : 'INVALID_REQUEST' }, { status: 400 }); }
 }

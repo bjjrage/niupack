@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { repository } from '@/lib/db/repository';
 import { logisticsRepository } from '@/lib/logistics/repository';
+import { logisticsAuthErrorResponse, requireLogisticsIdentity } from '@/lib/auth/logistics-auth';
 
 const schema = z.object({
   origin_country: z.string().min(2), origin_city: z.string().min(2), origin_address: z.string().optional(),
@@ -13,20 +13,21 @@ const schema = z.object({
 });
 
 export async function GET() {
-  return NextResponse.json({ rfqs: await logisticsRepository.listRfqs(), persistence: logisticsRepository.persistenceMode() });
+  try {
+    const identity = await requireLogisticsIdentity();
+    return NextResponse.json({ rfqs: await logisticsRepository.listRfqs(identity.organizationId), persistence: logisticsRepository.persistenceMode() });
+  } catch (error) { return logisticsAuthErrorResponse(error); }
 }
 
 export async function POST(request: Request) {
   try {
+    const identity = await requireLogisticsIdentity();
     const input = schema.parse(await request.json());
-    const organization = await repository.getOrganization();
     const rfq = await logisticsRepository.createRfq({
-      ...input, organization_id: organization.id, code: `LRFQ-${Date.now().toString().slice(-8)}`,
+      ...input, organization_id: identity.organizationId, code: `LRFQ-${Date.now().toString().slice(-8)}`,
       status: 'DRAFT', transport_mode: 'ROAD', created_by: 'NIUPACK_OS',
     });
-    await repository.logAuditEvent({ event_type: 'RFQ_CREATED', target_entity: 'logistics_rfqs', entity_id: rfq.id, metadata: { code: rfq.code } });
+    await logisticsRepository.logAuditEvent({ organization_id: identity.organizationId, actor_id: identity.profileId, event_type: 'RFQ_CREATED', target_entity: 'logistics_rfqs', entity_id: rfq.id, metadata: { code: rfq.code } });
     return NextResponse.json({ rfq }, { status: 201 });
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'INVALID_REQUEST' }, { status: 400 });
-  }
+  } catch (error) { return error instanceof Error && ['AUTH_REQUIRED','AUTH_NOT_CONFIGURED','AUTH_PROFILE_NOT_LINKED','AUTH_PROFILE_LINK_FAILED'].includes(error.message) ? logisticsAuthErrorResponse(error) : NextResponse.json({ error: error instanceof Error ? error.message : 'INVALID_REQUEST' }, { status: 400 }); }
 }

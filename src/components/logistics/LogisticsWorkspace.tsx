@@ -14,9 +14,9 @@ export function LogisticsWorkspace({ view }: { view: View }) {
   const [rates, setRates] = useState<LogisticsRate[]>([]); const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [persistence, setPersistence] = useState(''); const [feedback, setFeedback] = useState('');
   const load = async () => {
-    const [rfqRes, quoteRes, rateRes, supplierRes] = await Promise.all([fetch('/api/logistics/rfqs'),fetch('/api/logistics/quotes'),fetch('/api/logistics/rates'),fetch('/api/market/suppliers')]);
+    const [rfqRes, quoteRes, rateRes, supplierRes] = await Promise.all([fetch('/api/logistics/rfqs'),fetch('/api/logistics/quotes'),fetch('/api/logistics/rates'),fetch('/api/logistics/providers')]);
     const [r,q,ra,s] = await Promise.all([rfqRes.json(),quoteRes.json(),rateRes.json(),supplierRes.json()]);
-    setRfqs(r.rfqs || []); setQuotes(q.quotes || []); setRates(ra.rates || []); setSuppliers(s.suppliers || []); setPersistence(r.persistence || ra.persistence || '');
+    setRfqs(r.rfqs || []); setQuotes(q.quotes || []); setRates(ra.rates || []); setSuppliers(s.providers || []); setPersistence(r.persistence || ra.persistence || (r.error === 'AUTH_NOT_CONFIGURED' || r.error === 'LOGISTICS_PERSISTENCE_NOT_CONFIGURED' ? 'NOT_CONFIGURED' : ''));
   };
   useEffect(() => { load().catch((error) => setFeedback(error.message)); }, []);
 
@@ -24,6 +24,7 @@ export function LogisticsWorkspace({ view }: { view: View }) {
     <div><div className="flex items-center gap-2 text-xs text-slate-400"><Truck className="h-4 w-4 text-red-500"/> LOGISTICS + EXPORT COST</div><h1 className="mt-1 text-2xl font-bold text-white">Logística NIUPACK</h1><p className="text-sm text-slate-400">Tarifas marítimas, RFQs terrestres y costos de exportación trazables.</p></div>
     <nav className="flex flex-wrap gap-2 border-b border-slate-800 pb-3">{nav.map(([key,label,href]) => <Link key={key} href={href} className={`rounded px-3 py-2 text-xs font-semibold ${view===key?'bg-red-600 text-white':'bg-[#141820] text-slate-300 hover:bg-slate-800'}`}>{label}</Link>)}</nav>
     {persistence === 'MEMORY_FALLBACK' && <div className="flex gap-2 rounded border border-amber-800 bg-amber-950/30 p-3 text-xs text-amber-300"><AlertTriangle className="h-4 w-4"/> Persistencia Supabase no configurada: el entorno actual usa memoria y no es refresh-safe entre procesos.</div>}
+    {persistence === 'NOT_CONFIGURED' && <div className="flex gap-2 rounded border border-red-800 bg-red-950/30 p-3 text-xs text-red-300"><AlertTriangle className="h-4 w-4"/> Backend logístico no configurado: las operaciones están bloqueadas hasta conectar Supabase.</div>}
     {feedback && <div className="rounded border border-slate-700 bg-[#141820] p-3 text-xs text-slate-300">{feedback}</div>}{content}
   </div>;
 

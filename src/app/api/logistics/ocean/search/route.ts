@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { repository } from '@/lib/db/repository';
 import { SeaRatesProvider } from '@/lib/logistics/providers';
+import { logisticsAuthErrorResponse, requireLogisticsIdentity } from '@/lib/auth/logistics-auth';
 
 const schema = z.object({
   origin: z.object({ country: z.string(), city: z.string().optional(), port: z.string().optional() }),
@@ -12,10 +12,11 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   try {
+    const identity = await requireLogisticsIdentity();
     const input = schema.parse(await request.json());
-    const organization = await repository.getOrganization();
-    return NextResponse.json(await new SeaRatesProvider().searchRates(input, organization.id));
+    return NextResponse.json(await new SeaRatesProvider().searchRates(input, identity.organizationId));
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
     return NextResponse.json({ status: 'ERROR', rates: [], message: error instanceof Error ? error.message : 'INVALID_REQUEST' }, { status: 400 });
   }
 }

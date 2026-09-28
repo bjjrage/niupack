@@ -1,19 +1,22 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { logisticsRepository } from '@/lib/logistics/repository';
-import { repository } from '@/lib/db/repository';
+import { logisticsAuthErrorResponse, requireLogisticsIdentity } from '@/lib/auth/logistics-auth';
 
 export async function GET() {
-  return NextResponse.json({ bookings: await logisticsRepository.listBookings(), persistence: logisticsRepository.persistenceMode() });
+  try { const identity = await requireLogisticsIdentity(); return NextResponse.json({ bookings: await logisticsRepository.listBookings(identity.organizationId), persistence: logisticsRepository.persistenceMode() }); }
+  catch (error) { return logisticsAuthErrorResponse(error); }
 }
 
 export async function POST(request: Request) {
   try {
+    const identity = await requireLogisticsIdentity();
     const { rate_id } = z.object({ rate_id: z.string().uuid() }).parse(await request.json());
-    const booking = await logisticsRepository.createBooking(rate_id);
-    await repository.logAuditEvent({ event_type: 'BOOKING_CREATED', target_entity: 'logistics_booking', entity_id: booking.id, metadata: { rate_id } });
+    const booking = await logisticsRepository.createBooking(rate_id, identity.organizationId);
+    await logisticsRepository.logAuditEvent({ organization_id: identity.organizationId, actor_id: identity.profileId, event_type: 'BOOKING_CREATED', target_entity: 'logistics_booking', entity_id: booking.id, metadata: { rate_id } });
     return NextResponse.json({ booking }, { status: 201 });
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
     return NextResponse.json({ error: error instanceof Error ? error.message : 'INVALID_REQUEST' }, { status: 400 });
   }
 }
