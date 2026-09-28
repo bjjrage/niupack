@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { logisticsRepository } from '@/lib/logistics/repository';
-import { logisticsAuthErrorResponse, requireLogisticsIdentity } from '@/lib/auth/logistics-auth';
+import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
 
 export async function GET() {
   try {
-    const identity = await requireLogisticsIdentity();
+    const identity = await requireNiuIdentity();
     const providers = await logisticsRepository.listProviders(identity.organizationId);
     return NextResponse.json({ providers });
   } catch (error) {
-    return logisticsAuthErrorResponse(error);
+    return authErrorResponse(error);
   }
 }

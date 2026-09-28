@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { logisticsRepository } from '@/lib/logistics/repository';
-import { logisticsAuthErrorResponse, requireLogisticsIdentity } from '@/lib/auth/logistics-auth';
+import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
 
 const schema = z.object({
   origin: z.object({ country: z.string(), city: z.string().optional(), port: z.string().optional() }),
@@ -13,17 +13,17 @@ const schema = z.object({
 });
 
 export async function GET() {
-  try { const identity = await requireLogisticsIdentity(); return NextResponse.json({ rates: await logisticsRepository.listRates(identity.organizationId), persistence: logisticsRepository.persistenceMode() }); }
-  catch (error) { return logisticsAuthErrorResponse(error); }
+  try { const identity = await requireNiuIdentity(); return NextResponse.json({ rates: await logisticsRepository.listRates(identity.organizationId), persistence: logisticsRepository.persistenceMode() }); }
+  catch (error) { return authErrorResponse(error); }
 }
 export async function POST(request: Request) {
   try {
-    const identity = await requireLogisticsIdentity();
+    const identity = await requireNiuIdentity();
     const body = schema.parse(await request.json());
     const rate = await logisticsRepository.createRate({ ...body, organization_id: identity.organizationId, source: 'MANUAL_RATE', components: body.components ?? {} });
     return NextResponse.json({ rate }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
+    if (error instanceof Error && error.message.startsWith('AUTH_')) return authErrorResponse(error);
     if (error instanceof z.ZodError) return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 });
     return NextResponse.json({ error: 'RATE_CREATION_FAILED' }, { status: 400 });
   }

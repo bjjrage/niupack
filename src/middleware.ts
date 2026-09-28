@@ -5,7 +5,7 @@ export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request });
   const pathname = request.nextUrl.pathname;
   const isLogin = pathname === '/login';
-  const isPublicMagicLink = pathname.startsWith('/api/logistics/public/');
+  const isPublicMagicLink = pathname.startsWith('/api/logistics/public/') || pathname.startsWith('/logistics/quote/');
 
   if (isLogin || isPublicMagicLink) return response;
 

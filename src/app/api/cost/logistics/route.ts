@@ -3,11 +3,11 @@ import { ExportLogisticsEngine, STANDARD_CONTAINERS } from '@/lib/engines/export
 import { repository } from '@/lib/db/repository';
 import { FxEngine } from '@/lib/fx/fx-provider';
 import { ContainerType } from '@/types';
-import { logisticsAuthErrorResponse, requireLogisticsIdentity } from '@/lib/auth/logistics-auth';
+import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
 
 export async function GET() {
   try {
-    await requireLogisticsIdentity();
+    await requireNiuIdentity();
     const packagingSpecs = await repository.getPackagingSpecs();
     const fxInfo = await FxEngine.getEffectiveQuote();
 
@@ -19,14 +19,14 @@ export async function GET() {
       fxStatus: fxInfo.status,
     });
   } catch (error: any) {
-    if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
+    if (error instanceof Error && error.message.startsWith('AUTH_')) return authErrorResponse(error);
     return NextResponse.json({ success: false, error: 'LOGISTICS_UNAVAILABLE' }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    await requireLogisticsIdentity();
+    await requireNiuIdentity();
     const body = await req.json();
     const { action = 'CALCULATE_ALL', sku = 'CUP-12OZ-SW' } = body;
 
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
       landedCost,
     });
   } catch (error: any) {
-    if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
+    if (error instanceof Error && error.message.startsWith('AUTH_')) return authErrorResponse(error);
     return NextResponse.json({ success: false, error: 'LOGISTICS_CALCULATION_FAILED' }, { status: 500 });
   }
 }

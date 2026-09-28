@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { ExportCostAdjustmentEngine } from '@/lib/engines/export-cost-adjustment-engine';
 import { logisticsRepository } from '@/lib/logistics/repository';
 import { supabaseAdmin } from '@/lib/db/supabase';
-import { logisticsAuthErrorResponse, requireLogisticsIdentity } from '@/lib/auth/logistics-auth';
+import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
 
 const schema = z.object({
   sku: z.string(), quantity: z.number().positive(), export_specific_costs: z.number().nonnegative(), units_per_box: z.number().positive(),
@@ -17,7 +17,7 @@ const schema = z.object({
 export async function POST(request: Request) {
   try {
     const input = schema.parse(await request.json());
-    const identity = await requireLogisticsIdentity();
+    const identity = await requireNiuIdentity();
     const logisticsRate = input.logistics_rate_id ? await logisticsRepository.getRate(input.logistics_rate_id, identity.organizationId) : undefined;
     if (input.logistics_rate_id && !logisticsRate) throw new Error('LOGISTICS_RATE_NOT_FOUND');
     if (logisticsRate && !['SELECTED', 'BOOKING_REQUESTED', 'BOOKED'].includes(logisticsRate.status)) throw new Error('LOGISTICS_RATE_NOT_SELECTED');
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ result, persistence: logisticsRepository.persistenceMode() });
   }
   catch (error) {
-    if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
+    if (error instanceof Error && error.message.startsWith('AUTH_')) return authErrorResponse(error);
     if (error instanceof z.ZodError) return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 });
     const code = error instanceof Error ? error.message : '';
     const safeCode = ['LOGISTICS_RATE_NOT_FOUND', 'LOGISTICS_RATE_NOT_SELECTED'].includes(code) ? code : 'EXPORT_COST_FAILED';

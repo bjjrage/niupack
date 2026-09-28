@@ -20,7 +20,7 @@ Out of scope by instruction: new modules, UI redesign, commercial logic, SeaRate
 ## Architecture
 
 - Public website: static `index.html`, `pt.html`, `en.html` and assets; it does not use the internal Next.js middleware or Supabase session.
-- Internal OS: Next.js App Router under `src/app`, with `src/middleware.ts` as the authentication boundary and the `(dashboard)` layout as a second server-side guard.
+- Internal OS: Next.js App Router under `src/app`, with `src/middleware.ts` as the single authentication boundary. The dashboard and domain layouts do not run a second login or session guard.
 - Logistics persistence: Supabase-backed repository with organization filters and server-side identity resolution.
 - Legacy OS persistence: in-process repository singleton in `src/lib/db/repository.ts`; it is not a Supabase-backed tenant repository.
 - Trusted database access: server-only `supabaseAdmin` usage in auth and Logistics server code. No browser module imports the admin client.
@@ -75,9 +75,10 @@ No table was classified as shared public-safe data or unknown after schema revie
 The original root-level `middleware.ts` was not included by Next because the application uses `src/app`. It was moved to `src/middleware.ts`, and the production build now reports `Middleware` in its route output.
 
 - Internal OS auth: PASS for anonymous isolation; unauthenticated APIs return `401`, and internal pages redirect to `/login`.
+- Session model: PASS for one global NIUPACK session; Logistics resolves tenant identity from that session and has no separate auth module, login, session, or middleware.
 - Server-side tenant resolution: PASS for Logistics; FAIL globally because legacy repository consumers still use fixed in-memory organization state.
 - Anonymous isolation: PASS in real HTTP smoke (`/api/actions` → `401`, internal page → `307` to login).
-- Public exception: `/api/logistics/public/[token]` remains reachable without a session and validates one-time magic tokens server-side.
+- Public exception: `/api/logistics/public/[token]` and `/logistics/quote/[token]` remain reachable without a session and validate one-time magic tokens server-side.
 
 ## RPCs / database functions
 
@@ -117,7 +118,9 @@ The more important unresolved legacy issue is in the application layer: `src/lib
 - Removed direct client table grants; server-role access remains available for trusted server code.
 - Hardened `private.current_organization_id()` search path and authorization inputs.
 - Activated the global internal authentication boundary in the correct `src/` location.
-- Added the dashboard server-side guard.
+- Removed the duplicate dashboard and Logistics-specific server-side guards.
+- Replaced the Logistics auth module with the shared NIUPACK identity resolver used only for session-to-tenant context.
+- Preserved unauthenticated magic-link API and quote-page access.
 - Redacted settings secrets and sanitized audit metadata.
 - Replaced raw internal errors in API responses with stable error codes.
 - Added security headers without an untested CSP.
@@ -163,7 +166,9 @@ Using the existing certification users and organizations against the real Supaba
 
 ### Logistics regression
 
-- Auth: PASS
+- Global session/auth boundary: PASS
+- Logistics does not create or require a second session: PASS
+- Public magic-link page remains accessible without a session: PASS
 - RFQ: PASS
 - Magic link: PASS
 - Quote: PASS

@@ -3,14 +3,14 @@ import { z } from 'zod';
 import { createMagicToken } from '@/lib/logistics/security';
 import { logisticsRepository } from '@/lib/logistics/repository';
 import { SMTPService } from '@/lib/email/smtp-service';
-import { logisticsAuthErrorResponse, requireLogisticsIdentity } from '@/lib/auth/logistics-auth';
+import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
 
 const schema = z.object({ supplierIds: z.array(z.string().uuid()).min(1) });
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
-    const identity = await requireLogisticsIdentity();
+    const identity = await requireNiuIdentity();
     const { supplierIds } = schema.parse(await request.json());
     const rfq = await logisticsRepository.getRfq(id, identity.organizationId);
     if (!rfq) return NextResponse.json({ error: 'RFQ_NOT_FOUND' }, { status: 404 });
@@ -51,7 +51,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     await logisticsRepository.updateRfq(rfq.id, { status: 'OPEN' }, identity.organizationId);
     return NextResponse.json({ invitations, email: emailConfigured ? 'CONFIGURED' : 'NOT_CONFIGURED' });
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
+    if (error instanceof Error && error.message.startsWith('AUTH_')) return authErrorResponse(error);
     if (error instanceof z.ZodError) return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 });
     if (error instanceof Error && error.message === 'INVITATION_ALREADY_RESPONDED') {
       return NextResponse.json({ error: 'INVITATION_ALREADY_RESPONDED' }, { status: 409 });
