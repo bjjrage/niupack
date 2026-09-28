@@ -385,6 +385,7 @@ h3 {
   width: max-content;
   max-width: none;
   margin-top: 70px;
+  transform: translateY(32px);
 }
 
 .hero-metrics div {
