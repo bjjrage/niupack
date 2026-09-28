@@ -95,6 +95,16 @@ export const Sidebar: React.FC = () => {
       ],
     },
     {
+      title: '6. LOGÍSTICA',
+      items: [
+        { name: 'Overview', href: '/logistics', icon: Truck, badge: 'NEW' },
+        { name: 'Marítimo', href: '/logistics/ocean', icon: Compass },
+        { name: 'Terrestre', href: '/logistics/road', icon: Truck },
+        { name: 'Transportistas', href: '/logistics/providers', icon: Factory },
+        { name: 'Histórico', href: '/logistics/history', icon: Database },
+      ],
+    },
+    {
       title: 'SISTEMA & REPORTES',
       items: [
         { name: 'Reportes Ejecutivos', href: '/reports', icon: FileText },

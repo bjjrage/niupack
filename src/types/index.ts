@@ -699,7 +699,20 @@ export interface AuditEvent {
     | 'rfq_approval'
     | 'email_sent'
     | 'strategy_changes'
-    | 'budget_exceeded';
+    | 'budget_exceeded'
+    | 'RFQ_CREATED'
+    | 'INVITATION_CREATED'
+    | 'INVITATION_SENT'
+    | 'INVITATION_OPENED'
+    | 'QUOTE_SUBMITTED'
+    | 'QUOTE_UPDATED'
+    | 'RFQ_CLOSED'
+    | 'RATE_SELECTED'
+    | 'BOOKING_CREATED'
+    | 'BOOKING_REQUESTED'
+    | 'BOOKING_CONFIRMED'
+    | 'BOOKING_STATUS_CHANGED'
+    | 'EXPORT_COST_CALCULATED';
   target_entity: string;
   entity_id: string;
   metadata: Record<string, any>;
