@@ -8,7 +8,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     const updated = await repository.updateAction(id, body);
     return NextResponse.json({ action: updated });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }

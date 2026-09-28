@@ -32,11 +32,10 @@ export async function POST(req: NextRequest) {
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: { message: response.statusText } }));
       return NextResponse.json(
         {
           success: false,
-          error: errorData.error?.message || `Error de OpenAI HTTP ${response.status}`,
+          error: `OPENAI_REQUEST_REJECTED_${response.status}`,
         },
         { status: 400 }
       );
@@ -52,11 +51,11 @@ export async function POST(req: NextRequest) {
       success: true,
       message: 'Conexión con OpenAI verificada exitosamente. El Bot de Visibilidad IA está listo para operar.',
     });
-  } catch (error: any) {
+  } catch {
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Error al conectar con OpenAI',
+        error: 'OPENAI_CONNECTION_FAILED',
       },
       { status: 500 }
     );

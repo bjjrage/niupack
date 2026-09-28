@@ -17,8 +17,8 @@ export const isSupabasePublicConfigured = Boolean(
   supabaseUrl && (supabaseAnonKey || supabasePublishableKey) && !supabaseUrl.includes('your-project')
 );
 
-// Client for browser / public access
-export const supabase = isSupabaseConfigured
+// Public client: never fall back to the server-only service role key.
+export const supabase = isSupabasePublicConfigured
   ? createClient(supabaseUrl, supabaseAnonKey || supabasePublishableKey)
   : null;
 

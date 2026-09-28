@@ -17,6 +17,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ booking }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'INVALID_REQUEST' }, { status: 400 });
+    if (error instanceof z.ZodError) return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 });
+    const code = error instanceof Error ? error.message : '';
+    const safeCode = ['RATE_NOT_FOUND', 'RATE_NOT_BOOKABLE', 'RATE_EXPIRED'].includes(code) ? code : 'BOOKING_FAILED';
+    return NextResponse.json({ error: safeCode }, { status: 400 });
   }
 }

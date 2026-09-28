@@ -3,6 +3,20 @@ import { repository } from '@/lib/db/repository';
 import { OpenAIService } from '@/lib/openai/openai-service';
 import { GmailClient } from '@/lib/gmail/gmail-client';
 
+function publicSettings(settings: Awaited<ReturnType<typeof repository.getSettings>>) {
+  const { openai_api_key: _openaiApiKey, smtp_pass: _smtpPass, ...safeSettings } = settings;
+  return safeSettings;
+}
+
+function safeAuditUpdates(body: Record<string, unknown>) {
+  const { openai_api_key: _openaiApiKey, smtp_pass: _smtpPass, ...safeBody } = body;
+  return {
+    ...safeBody,
+    openai_api_key_configured: Boolean(body.openai_api_key),
+    smtp_pass_configured: Boolean(body.smtp_pass),
+  };
+}
+
 export async function GET() {
   try {
     const settings = await repository.getSettings();
@@ -14,7 +28,9 @@ export async function GET() {
 
     return NextResponse.json({
       settings: {
-        ...settings,
+        ...publicSettings(settings),
+        openai_api_key: undefined,
+        smtp_pass: undefined,
         gmail_connected: gmailStatus.status === 'CONNECTED',
       },
       auditEvents,
@@ -26,7 +42,7 @@ export async function GET() {
       },
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Error fetching settings' }, { status: 500 });
+    return NextResponse.json({ error: 'SETTINGS_UNAVAILABLE' }, { status: 500 });
   }
 }
 
@@ -62,7 +78,7 @@ export async function PATCH(request: NextRequest) {
       entity_id: 'settings-001',
       actor_id: 'admin@niupack.com.py',
       metadata: {
-        updates: body,
+        updates: safeAuditUpdates(body),
         previous: {
           max_spend_per_run_usd: current.max_spend_per_run_usd,
           max_monthly_spend_usd: current.max_monthly_spend_usd,
@@ -70,8 +86,8 @@ export async function PATCH(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({ success: true, settings: updated });
+    return NextResponse.json({ success: true, settings: publicSettings(updated) });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Error updating settings' }, { status: 500 });
+    return NextResponse.json({ error: 'SETTINGS_UPDATE_FAILED' }, { status: 500 });
   }
 }

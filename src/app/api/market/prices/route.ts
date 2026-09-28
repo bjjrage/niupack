@@ -7,8 +7,8 @@ export async function GET() {
   try {
     const prices = await repository.getMarketPrices();
     return NextResponse.json({ prices });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }
 
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ price: created });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }

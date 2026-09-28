@@ -35,5 +35,11 @@ export async function POST(request: Request) {
     await logisticsRepository.logAuditEvent({ organization_id: identity.organizationId, actor_id: identity.profileId, event_type: 'EXPORT_COST_CALCULATED', target_entity: 'export_cost_adjustment', entity_id: input.sku, metadata: { logistics_rate_id: logisticsRate?.id, persistence: logisticsRepository.persistenceMode() } });
     return NextResponse.json({ result, persistence: logisticsRepository.persistenceMode() });
   }
-  catch (error) { if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error); return NextResponse.json({ error: error instanceof Error ? error.message : 'INVALID_REQUEST' }, { status: 400 }); }
+  catch (error) {
+    if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
+    if (error instanceof z.ZodError) return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 });
+    const code = error instanceof Error ? error.message : '';
+    const safeCode = ['LOGISTICS_RATE_NOT_FOUND', 'LOGISTICS_RATE_NOT_SELECTED'].includes(code) ? code : 'EXPORT_COST_FAILED';
+    return NextResponse.json({ error: safeCode }, { status: 400 });
+  }
 }

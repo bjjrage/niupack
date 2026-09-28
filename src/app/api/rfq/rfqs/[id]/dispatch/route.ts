@@ -84,7 +84,7 @@ contacto@niupack.com.py`;
       status: 'SENT',
       dispatches: results,
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Error dispatching RFQ' }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }

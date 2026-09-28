@@ -17,6 +17,7 @@ export async function POST(request: Request) {
     return NextResponse.json(await new SeaRatesProvider().searchRates(input, identity.organizationId));
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
-    return NextResponse.json({ status: 'ERROR', rates: [], message: error instanceof Error ? error.message : 'INVALID_REQUEST' }, { status: 400 });
+    if (error instanceof z.ZodError) return NextResponse.json({ status: 'ERROR', rates: [], message: 'INVALID_REQUEST' }, { status: 400 });
+    return NextResponse.json({ status: 'ERROR', rates: [], message: 'SEARCH_FAILED' }, { status: 400 });
   }
 }

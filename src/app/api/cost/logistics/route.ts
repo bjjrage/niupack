@@ -20,10 +20,7 @@ export async function GET() {
     });
   } catch (error: any) {
     if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
-    return NextResponse.json(
-      { success: false, error: error?.message || 'Failed to fetch logistics specs' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'LOGISTICS_UNAVAILABLE' }, { status: 500 });
   }
 }
 
@@ -111,9 +108,6 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
-    return NextResponse.json(
-      { success: false, error: error?.message || 'Failed to calculate logistics' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'LOGISTICS_CALCULATION_FAILED' }, { status: 500 });
   }
 }

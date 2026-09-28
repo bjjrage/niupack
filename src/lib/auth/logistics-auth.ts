@@ -48,5 +48,5 @@ export async function requireLogisticsIdentity(): Promise<LogisticsIdentity> {
 
 export function logisticsAuthErrorResponse(error: unknown) {
   if (error instanceof LogisticsAuthError) return NextResponse.json({ error: error.message }, { status: error.status });
-  return NextResponse.json({ error: error instanceof Error ? error.message : 'AUTH_FAILED' }, { status: 500 });
+  return NextResponse.json({ error: 'AUTH_FAILED' }, { status: 500 });
 }

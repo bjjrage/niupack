@@ -6,11 +6,8 @@ export async function GET() {
   try {
     const matches = await repository.getQuoteMatches();
     return NextResponse.json({ success: true, matches });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || 'Failed to fetch quote matches' },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({ success: false, error: 'QUOTE_MATCHES_UNAVAILABLE' }, { status: 500 });
   }
 }
 
@@ -41,10 +38,7 @@ export async function POST(req: NextRequest) {
       success: true,
       match: matchResult,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || 'Failed to execute quote matcher' },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({ success: false, error: 'QUOTE_MATCH_FAILED' }, { status: 500 });
   }
 }

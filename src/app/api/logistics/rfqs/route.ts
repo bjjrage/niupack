@@ -29,5 +29,9 @@ export async function POST(request: Request) {
     });
     await logisticsRepository.logAuditEvent({ organization_id: identity.organizationId, actor_id: identity.profileId, event_type: 'RFQ_CREATED', target_entity: 'logistics_rfqs', entity_id: rfq.id, metadata: { code: rfq.code } });
     return NextResponse.json({ rfq }, { status: 201 });
-  } catch (error) { return error instanceof Error && ['AUTH_REQUIRED','AUTH_NOT_CONFIGURED','AUTH_PROFILE_NOT_LINKED','AUTH_PROFILE_LINK_FAILED'].includes(error.message) ? logisticsAuthErrorResponse(error) : NextResponse.json({ error: error instanceof Error ? error.message : 'INVALID_REQUEST' }, { status: 400 }); }
+  } catch (error) {
+    if (error instanceof Error && ['AUTH_REQUIRED','AUTH_NOT_CONFIGURED','AUTH_PROFILE_NOT_LINKED','AUTH_PROFILE_LINK_FAILED'].includes(error.message)) return logisticsAuthErrorResponse(error);
+    if (error instanceof z.ZodError) return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 });
+    return NextResponse.json({ error: 'RFQ_CREATION_FAILED' }, { status: 400 });
+  }
 }

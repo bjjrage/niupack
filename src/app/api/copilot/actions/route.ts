@@ -22,9 +22,9 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ success: true, action: updated });
-  } catch (error: any) {
+  } catch {
     return NextResponse.json(
-      { success: false, error: error.message || 'Error al actualizar acción' },
+      { success: false, error: 'INTERNAL_SERVER_ERROR' },
       { status: 500 }
     );
   }

@@ -9,8 +9,8 @@ export async function GET(req: Request) {
     const sku = searchParams.get('sku') || 'CUP-12OZ-SW';
     const sheet = await repository.getActiveCostSheetForSKU(sku);
     return NextResponse.json({ sheet });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }
 
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     await repository.saveCostSheet(sheet);
 
     return NextResponse.json({ sheet, breakdown });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }

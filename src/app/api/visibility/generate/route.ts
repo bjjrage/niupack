@@ -53,7 +53,7 @@ export async function POST(req: Request) {
     );
 
     return NextResponse.json({ generated: savedQueries });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }

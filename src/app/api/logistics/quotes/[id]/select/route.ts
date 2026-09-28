@@ -11,7 +11,8 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     return NextResponse.json({ rate });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
-    const message = error instanceof Error ? error.message : 'SELECTION_FAILED';
-    return NextResponse.json({ error: message }, { status: message === 'QUOTE_EXPIRED' ? 409 : 400 });
+    const code = error instanceof Error ? error.message : '';
+    const safeCode = ['QUOTE_NOT_FOUND', 'QUOTE_EXPIRED'].includes(code) ? code : 'SELECTION_FAILED';
+    return NextResponse.json({ error: safeCode }, { status: safeCode === 'QUOTE_EXPIRED' ? 409 : 400 });
   }
 }

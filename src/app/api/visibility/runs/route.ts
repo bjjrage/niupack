@@ -6,8 +6,8 @@ export async function GET() {
   try {
     const runs = await repository.getRuns();
     return NextResponse.json({ runs });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }
 
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
     );
 
     return NextResponse.json({ run });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }

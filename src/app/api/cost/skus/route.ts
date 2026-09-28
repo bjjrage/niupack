@@ -6,8 +6,8 @@ export async function GET() {
     const skus = await repository.getSKUs();
     const products = await repository.getProducts();
     return NextResponse.json({ skus, products });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }
 
@@ -55,7 +55,7 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ sku: created });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }

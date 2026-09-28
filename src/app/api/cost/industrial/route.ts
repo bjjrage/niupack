@@ -60,8 +60,8 @@ export async function GET(req: NextRequest) {
       input,
       breakdown,
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Error fetching industrial cost' }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }
 
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
       breakdown,
       sheet,
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Error saving industrial cost' }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }

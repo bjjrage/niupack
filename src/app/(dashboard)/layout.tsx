@@ -1,13 +1,23 @@
 import React from 'react';
+import { redirect } from 'next/navigation';
 import { Sidebar } from '@/components/navigation/sidebar';
 import { Topbar } from '@/components/navigation/topbar';
 import { CopilotLayoutWrapper } from '@/components/copilot/CopilotLayoutWrapper';
+import { requireLogisticsIdentity } from '@/lib/auth/logistics-auth';
 
-export default function DashboardLayout({
+export const dynamic = 'force-dynamic';
+
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  try {
+    await requireLogisticsIdentity();
+  } catch {
+    redirect('/login?next=/');
+  }
+
   return (
     <CopilotLayoutWrapper>
       <div className="flex h-screen w-screen overflow-hidden bg-[#0c0f14]">

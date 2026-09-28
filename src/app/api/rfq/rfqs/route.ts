@@ -5,8 +5,8 @@ export async function GET() {
   try {
     const rfqs = await repository.getRFQs();
     return NextResponse.json({ rfqs });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }
 
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ rfq: created });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }

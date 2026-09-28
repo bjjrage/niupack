@@ -22,5 +22,9 @@ export async function POST(request: Request) {
     const body = schema.parse(await request.json());
     const rate = await logisticsRepository.createRate({ ...body, organization_id: identity.organizationId, source: 'MANUAL_RATE', components: body.components ?? {} });
     return NextResponse.json({ rate }, { status: 201 });
-  } catch (error) { if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error); return NextResponse.json({ error: error instanceof Error ? error.message : 'INVALID_REQUEST' }, { status: 400 }); }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('AUTH_')) return logisticsAuthErrorResponse(error);
+    if (error instanceof z.ZodError) return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 });
+    return NextResponse.json({ error: 'RATE_CREATION_FAILED' }, { status: 400 });
+  }
 }

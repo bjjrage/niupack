@@ -18,11 +18,8 @@ export async function GET(req: NextRequest) {
       settings: result.settings,
       history,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || 'Failed to fetch FX rates' },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({ success: false, error: 'FX_UNAVAILABLE' }, { status: 500 });
   }
 }
 
@@ -59,10 +56,7 @@ export async function POST(req: NextRequest) {
       status: effective.status,
       costingRate: effective.costingRate,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || 'Failed to update FX settings' },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({ success: false, error: 'FX_UPDATE_FAILED' }, { status: 500 });
   }
 }

@@ -165,10 +165,9 @@ export async function POST(req: NextRequest) {
       model: modelName,
       cost_usd: costUSD,
     });
-  } catch (error: any) {
-    console.error('Error in Copilot chat route:', error);
+  } catch {
     return NextResponse.json(
-      { success: false, error: error.message || 'Error al procesar consulta de Copilot' },
+      { success: false, error: 'INTERNAL_SERVER_ERROR' },
       { status: 500 }
     );
   }
@@ -187,9 +186,9 @@ export async function GET(req: NextRequest) {
 
     const threads = await repository.getCopilotThreads();
     return NextResponse.json({ success: true, threads });
-  } catch (error: any) {
+  } catch {
     return NextResponse.json(
-      { success: false, error: error.message || 'Error al obtener historial' },
+      { success: false, error: 'INTERNAL_SERVER_ERROR' },
       { status: 500 }
     );
   }

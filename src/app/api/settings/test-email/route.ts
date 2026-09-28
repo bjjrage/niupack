@@ -80,11 +80,11 @@ export async function POST(req: NextRequest) {
       success: true,
       message: `Conexión SMTP exitosa y correo de prueba enviado a ${recipient}.`,
     });
-  } catch (error: any) {
+  } catch {
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Error al probar configuración SMTP',
+        error: 'SMTP_TEST_FAILED',
       },
       { status: 500 }
     );

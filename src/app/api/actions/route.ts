@@ -5,8 +5,8 @@ export async function GET() {
   try {
     const actions = await repository.getActions();
     return NextResponse.json({ actions });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }
 
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ action: created });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
   }
 }
