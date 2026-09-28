@@ -185,4 +185,4 @@ The database/RLS and Logistics security baseline is hardened and evidenced, but 
 ## Commit reference
 
 - Security hardening commit: `2bcdd37` (`fix(security): harden global tenant and database access`)
-- Full closure report commit: added after this report is committed.
+- Full closure report commit: `7d7c870` (`docs(security): certify NIUPACK security baseline`).
