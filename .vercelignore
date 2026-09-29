@@ -1,0 +1,19 @@
+# The repository also contains the static corporate website for GitHub Pages.
+# NIUPACK OS is the Next.js app and does not reference these legacy assets.
+assets/
+css/
+js/
+index.html
+en.html
+pt.html
+NIUPACK OS.html
+ARCHIVO ACT.pdf
+logotipo niupack-01.png
+SGS 22000.png
+robots.txt
+sitemap.xml
+INICIAR_NIU_OS.bat
+start.bat
+start.mjs
+*.zip
+niupack-claude-*/
