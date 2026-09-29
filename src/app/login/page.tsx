@@ -1,9 +1,12 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
+import { Moon, Sun } from 'lucide-react';
 import { createSupabaseBrowserClient } from '@/lib/auth/supabase-browser';
+import { useTheme } from '@/components/theme/ThemeProvider';
 
 export default function LoginPage() {
+  const { theme, toggleTheme } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
@@ -37,7 +40,17 @@ export default function LoginPage() {
     }
   }
 
-  return <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-white">
+  return <main className="relative flex min-h-screen items-center justify-center bg-slate-950 p-6 text-white">
+    <button
+      type="button"
+      onClick={toggleTheme}
+      className="absolute right-6 top-6 flex items-center gap-2 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 transition-colors hover:text-white"
+      title={`Cambiar al tema ${theme === 'dark' ? 'claro' : 'oscuro'}`}
+      aria-label={`Cambiar al tema ${theme === 'dark' ? 'claro' : 'oscuro'}`}
+    >
+      {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      {theme === 'dark' ? 'Tema claro' : 'Tema oscuro'}
+    </button>
     <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-lg border border-slate-700 bg-slate-900 p-6">
       <div><p className="text-xs uppercase tracking-[0.2em] text-red-400">NIU Intelligence OS</p><h1 className="mt-2 text-2xl font-semibold">Acceso interno</h1><p className="mt-2 text-sm text-slate-400">Iniciá sesión para acceder a Logística.</p></div>
       <label className="block text-sm">Email<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-2" /></label>

@@ -2,12 +2,14 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { DollarSign, ShieldAlert, Sparkles, Plus, RefreshCw, Mail, Settings } from 'lucide-react';
+import { Sparkles, Plus, Mail, Settings, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useCopilot } from '@/components/copilot/CopilotContext';
+import { useTheme } from '@/components/theme/ThemeProvider';
 
 export const Topbar: React.FC = () => {
   const { toggleDrawer, isOpen } = useCopilot();
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <header className="h-14 bg-[#0a0d12] border-b border-slate-800 px-6 flex items-center justify-between shrink-0 select-none z-20">
@@ -98,6 +100,17 @@ export const Topbar: React.FC = () => {
           <Settings className="h-3.5 w-3.5 text-slate-400" />
           <span className="font-medium text-xs">Ajustes</span>
         </Link>
+
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 text-xs transition-colors"
+          title={`Cambiar al tema ${theme === 'dark' ? 'claro' : 'oscuro'}`}
+          aria-label={`Cambiar al tema ${theme === 'dark' ? 'claro' : 'oscuro'}`}
+        >
+          {theme === 'dark' ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+          <span className="font-medium text-xs">{theme === 'dark' ? 'Claro' : 'Oscuro'}</span>
+        </button>
 
         {/* User Avatar */}
         <div className="h-7 w-7 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-semibold text-slate-300">
