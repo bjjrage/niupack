@@ -18,18 +18,16 @@ import { OpenAIService } from '@/lib/openai/openai-service';
 import { MarketBenchmarkEngine } from '@/lib/engines/market-benchmark';
 import { TrueCostEngine } from '@/lib/engines/true-cost-engine';
 import { StrategyMatrixRow, MarketCode } from '@/types';
+import { requireNiuIdentity } from '@/lib/auth/identity';
 
 export const revalidate = 0;
 
 export default async function StrategyPage() {
-  const [sheet, prices, mentions] = await Promise.all([
-    repository.getActiveCostSheetForSKU('CUP-12OZ-SW'),
-    repository.getMarketPrices(),
-    repository.getMentions(),
+  const identity = await requireNiuIdentity();
+  const [skus, prices] = await Promise.all([
+    repository.getSKUs(identity.organizationId),
+    repository.getMarketPrices(identity.organizationId),
   ]);
-
-  const unitCost = sheet?.true_unit_cost_usd || 0.0468;
-  const sku = 'CUP-12OZ-SW';
 
   // Build matrix rows for BR, AR, BO, PY
   const targetMarkets: Array<{ code: MarketCode; score: number }> = [
@@ -39,17 +37,22 @@ export default async function StrategyPage() {
     { code: 'PY', score: 88.0 },
   ];
 
-  const rows: StrategyMatrixRow[] = targetMarkets.map((m) => {
-    const bench = MarketBenchmarkEngine.calculateBenchmark(prices, sku, m.code);
-    return OpenAIService.buildStrategyRow({
-      country_code: m.code,
-      sku,
-      visibility_score: m.score,
-      market_benchmark_usd: bench?.weighted_benchmark_usd || (m.code === 'BR' ? 0.0495 : m.code === 'AR' ? 0.0588 : 0.063),
-      benchmark_confidence: bench?.avg_confidence || 0.85,
-      niupack_cost_usd: unitCost,
+  const rows: StrategyMatrixRow[] = (await Promise.all(skus.map(async (skuRecord) => {
+    const sheet = await repository.getActiveCostSheetForSKU(skuRecord.sku, identity.organizationId);
+    if (!sheet) return [];
+    return targetMarkets.flatMap((m) => {
+      const bench = MarketBenchmarkEngine.calculateBenchmark(prices, skuRecord.sku, m.code);
+      if (!bench) return [];
+      return [OpenAIService.buildStrategyRow({
+        country_code: m.code,
+        sku: skuRecord.sku,
+        visibility_score: m.score,
+        market_benchmark_usd: bench.weighted_benchmark_usd,
+        benchmark_confidence: bench.avg_confidence,
+        niupack_cost_usd: sheet.true_unit_cost_usd,
+      })];
     });
-  });
+  }))).flat();
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -79,6 +82,7 @@ export default async function StrategyPage() {
 
       {/* Synthesis Matrix */}
       <div className="space-y-4">
+        {rows.length === 0 && <div className="rounded border border-slate-800 bg-[#141820] p-5 text-sm text-slate-300">Sin hoja de costo activa o benchmark real disponible para los SKUs activos.</div>}
         {rows.map((row) => {
           const isParityOrBetter = row.competitive_status === 'COMPETITIVE' || row.competitive_status === 'PARITY';
           return (

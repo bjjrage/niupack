@@ -1,18 +1,21 @@
 import { NextResponse } from 'next/server';
 import { repository } from '@/lib/db/repository';
+import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
 
 export async function GET() {
   try {
-    const skus = await repository.getSKUs();
-    const products = await repository.getProducts();
+    const identity = await requireNiuIdentity();
+    const skus = await repository.getSKUs(identity.organizationId);
+    const products = await repository.getProducts(identity.organizationId);
     return NextResponse.json({ skus, products });
-  } catch {
-    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
+  } catch (error) {
+    return authErrorResponse(error);
   }
 }
 
 export async function POST(req: Request) {
   try {
+    const identity = await requireNiuIdentity();
     const body = await req.json();
     const {
       product_id,
@@ -34,6 +37,8 @@ export async function POST(req: Request) {
       notes,
     } = body;
 
+    if (!product_id || !sku) return NextResponse.json({ error: 'PRODUCT_AND_SKU_REQUIRED' }, { status: 400 });
+
     const created = await repository.addSKU({
       product_id,
       sku,
@@ -52,10 +57,10 @@ export async function POST(req: Request) {
       compatible_lids,
       moq: parseInt(moq),
       notes,
-    });
+    }, identity.organizationId);
 
     return NextResponse.json({ sku: created });
-  } catch {
-    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
+  } catch (error) {
+    return authErrorResponse(error);
   }
 }

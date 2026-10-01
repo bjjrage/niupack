@@ -17,7 +17,6 @@ import {
   ChevronRight,
   Database,
   Layers,
-  Cpu,
   Target,
   Sparkles,
   Inbox,
@@ -73,7 +72,6 @@ export const Sidebar: React.FC = () => {
       items: [
         { name: 'Productos & SKUs', href: '/cost/skus', icon: Database },
         { name: 'Hojas de Costo Real', href: '/cost/cost-sheets', icon: Calculator },
-        { name: 'Procesos Industriales', href: '/cost/processes', icon: Cpu },
         { name: 'Export Logistics', href: '/cost/logistics', icon: Truck, badge: 'NEW' },
         { name: 'Simulador de Escenarios', href: '/cost/scenarios', icon: Compass },
         { name: 'Oportunidades de Eficiencia', href: '/cost/efficiency', icon: TrendingUp },

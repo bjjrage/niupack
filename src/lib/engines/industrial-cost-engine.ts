@@ -1,10 +1,92 @@
 import {
+  CostInputSource,
+  CostV1RubricKey,
+  CostV1RubricResult,
   IndustrialCostBreakdown,
   IndustrialPaperFormula,
   IndustrialProductCostInput,
 } from '@/types';
 
+const RUBRIC_LABELS: Record<CostV1RubricKey, string> = {
+  raw_material: 'Materia prima',
+  printing_die_cut: 'Impresión + troquelado',
+  operational: 'Costos operativos',
+  scrap: 'Merma',
+  depreciation: 'Depreciación',
+  packaging: 'Embalaje',
+};
+
+const DEFAULT_RUBRICS: Record<CostV1RubricKey, { enabled: boolean; source: CostInputSource; unit: 'PER_UNIT' | 'PER_1000' | 'TOTAL_BATCH' | 'PERCENT' }> = {
+  raw_material: { enabled: true, source: 'FORMULA', unit: 'PER_UNIT' },
+  printing_die_cut: { enabled: true, source: 'QUOTE', unit: 'PER_1000' },
+  operational: { enabled: true, source: 'MANUAL', unit: 'PER_1000' },
+  scrap: { enabled: true, source: 'MANUAL', unit: 'PERCENT' },
+  depreciation: { enabled: true, source: 'MANUAL', unit: 'PER_1000' },
+  packaging: { enabled: true, source: 'MANUAL', unit: 'PER_1000' },
+};
+
+function rubricEnabled(input: IndustrialProductCostInput, key: CostV1RubricKey): boolean {
+  return input.rubrics?.[key]?.enabled ?? DEFAULT_RUBRICS[key].enabled;
+}
+
+function rubricResults(
+  input: IndustrialProductCostInput,
+  values: Record<CostV1RubricKey, number>
+): CostV1RubricResult[] {
+  return (Object.keys(RUBRIC_LABELS) as CostV1RubricKey[]).map((key) => {
+    const config = { ...DEFAULT_RUBRICS[key], ...(input.rubrics?.[key] ?? {}) };
+    return {
+      key,
+      label: RUBRIC_LABELS[key],
+      enabled: config.enabled,
+      source: config.source,
+      unit: config.unit,
+      notes: config.notes,
+      impact_usd_per_unit: config.enabled ? Number(values[key].toFixed(5)) : 0,
+      impact_usd_batch: config.enabled ? Number((values[key] * Math.max(input.batch_size, 0)).toFixed(2)) : 0,
+    };
+  });
+}
+
 export class IndustrialCostEngine {
+  public static getMissingConfiguration(input: IndustrialProductCostInput): string[] {
+    const missing: string[] = [];
+    const rawEnabled = rubricEnabled(input, 'raw_material');
+    const printingEnabled = rubricEnabled(input, 'printing_die_cut');
+    const operationalEnabled = rubricEnabled(input, 'operational');
+    const depreciationEnabled = rubricEnabled(input, 'depreciation');
+    const packagingEnabled = rubricEnabled(input, 'packaging');
+
+    if (rawEnabled) {
+      const paper = input.paper_formula;
+      const paperHasYield = paper.paper_yield_units_per_ton > 0;
+      const paperHasGeometry = paper.printing_method === 'OFFSET'
+        ? Boolean(paper.sheet_width_mm && paper.sheet_height_mm && paper.units_per_sheet)
+        : Boolean(paper.web_width_mm && paper.units_per_linear_meter);
+      if (!(paper.cif_price_ton_usd > 0 && (paperHasYield || paperHasGeometry))) missing.push('Materia prima: cuerpo/cone');
+
+      const bottomFormulaReady = Boolean(
+        input.bottom_formula &&
+        input.bottom_formula.cif_price_ton_usd > 0 &&
+        input.bottom_formula.gsm > 0 &&
+        input.bottom_formula.units_per_m2 > 0
+      );
+      const bottomLegacyReady = input.bottom_paper_cost_ton_usd > 0 && input.bottom_yield_units_per_ton > 0;
+      if (!bottomFormulaReady && !bottomLegacyReady) missing.push('Materia prima: fondo');
+    }
+
+    if (printingEnabled && input.quoted_printing_rate_usd <= 0) missing.push('Impresión + troquelado');
+    if (operationalEnabled && input.operational_cost_per_thousand_usd <= 0) missing.push('Costos operativos');
+    if (depreciationEnabled && input.machine_depreciation_per_thousand_usd <= 0) missing.push('Depreciación');
+    if (packagingEnabled && input.packaging_cost_per_thousand_usd <= 0) missing.push('Embalaje');
+    if (input.batch_size <= 0) missing.push('Tamaño de lote');
+    return missing;
+  }
+
+  public static isConfigured(input: IndustrialProductCostInput): boolean {
+    return this.getMissingConfiguration(input).length === 0;
+  }
+
   /**
    * Calculate exact industrial cost from real plant parameters
    * No mocks, no Excel formulas required outside the OS.
@@ -35,13 +117,20 @@ export class IndustrialCostEngine {
       (cifPrice + customs_dispatch_ton_usd + financial_cost_ton_usd).toFixed(2)
     );
 
+    const rawMaterialEnabled = rubricEnabled(input, 'raw_material');
+    const printingEnabled = rubricEnabled(input, 'printing_die_cut');
+    const operationalEnabled = rubricEnabled(input, 'operational');
+    const scrapEnabled = rubricEnabled(input, 'scrap');
+    const depreciationEnabled = rubricEnabled(input, 'depreciation');
+    const packagingEnabled = rubricEnabled(input, 'packaging');
+
     let cost_paper_cone_usd = 0;
     let price_per_sheet_usd: number | undefined = undefined;
     let price_per_linear_meter_usd: number | undefined = undefined;
 
     const totalGSM = Number(pf.gsm || 0) + Number(pf.coating_gsm || 0);
 
-    if (pf.printing_method === 'OFFSET') {
+    if (rawMaterialEnabled && pf.printing_method === 'OFFSET') {
       if (pf.sheet_width_mm && pf.sheet_height_mm && totalGSM > 0) {
         // Peso en kg por pliego = (ancho_mm * largo_mm * gsm) / 1,000,000,000
         const sheetWeightKg = (pf.sheet_width_mm * pf.sheet_height_mm * totalGSM) / 1_000_000_000;
@@ -52,7 +141,7 @@ export class IndustrialCostEngine {
           cost_paper_cone_usd = price_per_sheet_usd / pf.units_per_sheet;
         }
       }
-    } else if (pf.printing_method === 'FLEXO') {
+    } else if (rawMaterialEnabled && pf.printing_method === 'FLEXO') {
       if (pf.web_width_mm && totalGSM > 0) {
         // Peso en kg por metro lineal = (ancho_mm * 1000mm * gsm) / 1,000,000,000
         const meterWeightKg = (pf.web_width_mm * 1000 * totalGSM) / 1_000_000_000;
@@ -66,7 +155,7 @@ export class IndustrialCostEngine {
     }
 
     // Direct yield fallback / override if yield is given and no specific sheet/meter was provided
-    if (cost_paper_cone_usd <= 0 && pf.paper_yield_units_per_ton > 0) {
+    if (rawMaterialEnabled && cost_paper_cone_usd <= 0 && pf.paper_yield_units_per_ton > 0) {
       cost_paper_cone_usd = total_paper_ton_cost_usd / pf.paper_yield_units_per_ton;
     }
 
@@ -86,7 +175,7 @@ export class IndustrialCostEngine {
     let bottom_units_per_m2 = 0;
     let bottom_units_per_sheet = 0;
 
-    if (bf) {
+    if (rawMaterialEnabled && bf) {
       bottom_cif_price_ton_usd = Number(bf.cif_price_ton_usd || 0);
       const bCustomsPercent = bf.customs_dispatch_percent !== undefined ? bf.customs_dispatch_percent : 13;
       const bFinancialPercent = bf.financial_cost_percent !== undefined ? bf.financial_cost_percent : 6;
@@ -119,7 +208,7 @@ export class IndustrialCostEngine {
     }
 
     // Direct / legacy fallback if bottom_formula was omitted
-    if (cost_bottom_usd <= 0) {
+    if (rawMaterialEnabled && cost_bottom_usd <= 0) {
       if (bottom_yield_units_per_ton > 0) {
         cost_bottom_usd = Number((bottom_paper_cost_ton_usd / bottom_yield_units_per_ton).toFixed(5));
       }
@@ -127,27 +216,36 @@ export class IndustrialCostEngine {
 
     // 3. Impresión y Troquelado (Cotización variable cargada al cotizar)
     let cost_printing_diecut_usd = 0;
-    if (printing_cost_mode === 'PER_THOUSAND') {
+    if (printingEnabled && printing_cost_mode === 'PER_THOUSAND') {
       cost_printing_diecut_usd = Number((quoted_printing_rate_usd / 1000).toFixed(5));
-    } else if (printing_cost_mode === 'PER_UNIT') {
+    } else if (printingEnabled && printing_cost_mode === 'PER_UNIT') {
       cost_printing_diecut_usd = Number(quoted_printing_rate_usd.toFixed(5));
-    } else if (printing_cost_mode === 'TOTAL_BATCH') {
+    } else if (printingEnabled && printing_cost_mode === 'TOTAL_BATCH') {
       cost_printing_diecut_usd =
         batch_size > 0 ? Number((quoted_printing_rate_usd / batch_size).toFixed(5)) : 0;
     }
 
     // 4. Costos Operativos (Mano de obra directa, energía, planta)
-    const cost_operational_usd = Number((operational_cost_per_thousand_usd / 1000).toFixed(5));
+    const cost_operational_usd = operationalEnabled
+      ? Number((operational_cost_per_thousand_usd / 1000).toFixed(5))
+      : 0;
 
     // 5. Depreciación de Maquinaria
-    const cost_depreciation_usd = Number((machine_depreciation_per_thousand_usd / 1000).toFixed(5));
+    const cost_depreciation_usd = depreciationEnabled
+      ? Number((machine_depreciation_per_thousand_usd / 1000).toFixed(5))
+      : 0;
 
     // 6. Merma (% calculada sobre la materia prima directa cono + culito)
     const rawMaterialDirectCost = cost_paper_cone_usd + cost_bottom_usd;
-    const cost_scrap_usd = Number((rawMaterialDirectCost * (scrap_rate_percent / 100)).toFixed(5));
+    const scrapRatio = Math.min(Math.max(scrap_rate_percent / 100, 0), 0.99);
+    const cost_scrap_usd = scrapEnabled
+      ? Number((rawMaterialDirectCost * (scrapRatio / Math.max(1 - scrapRatio, 0.01))).toFixed(5))
+      : 0;
 
     // 7. Empaque (Cajas corrugadas, bolsas polietileno, pallet)
-    const cost_packaging_usd = Number((packaging_cost_per_thousand_usd / 1000).toFixed(5));
+    const cost_packaging_usd = packagingEnabled
+      ? Number((packaging_cost_per_thousand_usd / 1000).toFixed(5))
+      : 0;
 
     // Total Costo Unitario Industrial (True Cost)
     const true_unit_cost_usd = Number(
@@ -175,6 +273,17 @@ export class IndustrialCostEngine {
     const cost_financial_usd = total_paper_ton_cost_usd > 0
       ? Number(((financial_cost_ton_usd / total_paper_ton_cost_usd) * cost_paper_cone_usd).toFixed(5))
       : 0;
+
+    const rubricValues: Record<CostV1RubricKey, number> = {
+      raw_material: cost_paper_cone_usd + cost_bottom_usd,
+      printing_die_cut: cost_printing_diecut_usd,
+      operational: cost_operational_usd,
+      scrap: cost_scrap_usd,
+      depreciation: cost_depreciation_usd,
+      packaging: cost_packaging_usd,
+    };
+
+    const missingConfiguration = this.getMissingConfiguration(input);
 
     return {
       cost_paper_cone_usd: Number(cost_paper_cone_usd.toFixed(5)),
@@ -211,43 +320,36 @@ export class IndustrialCostEngine {
       share_depreciation_percent: calcShare(cost_depreciation_usd),
       share_scrap_percent: calcShare(cost_scrap_usd),
       share_packaging_percent: calcShare(cost_packaging_usd),
+      share_raw_material_percent: calcShare(rubricValues.raw_material),
+      rubrics: rubricResults(input, rubricValues),
+      configured: missingConfiguration.length === 0,
+      missing_configuration: missingConfiguration,
     };
   }
 
   /**
    * Convert industrial breakdown into CostComponents format to sync with CostSheetVersion
    */
-  public static toCostComponents(breakdown: IndustrialCostBreakdown, sheetId: string) {
+  public static toV1CostComponents(breakdown: IndustrialCostBreakdown, sheetId: string) {
     const today = new Date().toISOString().split('T')[0];
+    const rawMaterial = breakdown.cost_paper_cone_usd + breakdown.cost_bottom_usd;
+    const newId = () => crypto.randomUUID();
     return [
       {
-        id: `ic-paper-cone`,
+        id: newId(),
         cost_sheet_id: sheetId,
-        category: 'papel' as const,
-        name: 'Papel Cuerpo/Cono (CIF + Despacho 13% + Costo Dinero 6%)',
+        category: 'materia_prima' as const,
+        name: 'Materia prima (cuerpo + fondo)',
         component_type: 'VARIABLE' as const,
         basis: 'PER_UNIT' as const,
-        rate_usd: breakdown.cost_paper_cone_usd,
+        rate_usd: rawMaterial,
         quantity: 1,
         unit_of_measure: 'unit',
         effective_date: today,
-        notes: `${breakdown.share_paper_cone_percent}% del costo unitario`,
+        notes: `${breakdown.share_raw_material_percent ?? 0}% del costo unitario`,
       },
       {
-        id: `ic-bottom`,
-        cost_sheet_id: sheetId,
-        category: 'papel' as const,
-        name: 'Fondo del Vaso ("Culito" Bobina Angosta)',
-        component_type: 'VARIABLE' as const,
-        basis: 'PER_UNIT' as const,
-        rate_usd: breakdown.cost_bottom_usd,
-        quantity: 1,
-        unit_of_measure: 'unit',
-        effective_date: today,
-        notes: `${breakdown.share_bottom_percent}% del costo unitario`,
-      },
-      {
-        id: `ic-printing`,
+        id: newId(),
         cost_sheet_id: sheetId,
         category: 'impresion' as const,
         name: 'Impresión y Troquelado (Cotización Variable)',
@@ -260,7 +362,7 @@ export class IndustrialCostEngine {
         notes: `${breakdown.share_printing_percent}% del costo unitario`,
       },
       {
-        id: `ic-operational`,
+        id: newId(),
         cost_sheet_id: sheetId,
         category: 'mano_de_obra' as const,
         name: 'Costos Operativos (Mano de Obra Línea + Energía)',
@@ -273,7 +375,7 @@ export class IndustrialCostEngine {
         notes: `${breakdown.share_operational_percent}% del costo unitario`,
       },
       {
-        id: `ic-depreciation`,
+        id: newId(),
         cost_sheet_id: sheetId,
         category: 'maquina' as const,
         name: 'Depreciación Maquinaria (Formadora y Línea)',
@@ -286,7 +388,7 @@ export class IndustrialCostEngine {
         notes: `${breakdown.share_depreciation_percent}% del costo unitario`,
       },
       {
-        id: `ic-scrap`,
+        id: newId(),
         cost_sheet_id: sheetId,
         category: 'merma' as const,
         name: 'Merma de Proceso Industrial',
@@ -299,7 +401,7 @@ export class IndustrialCostEngine {
         notes: `${breakdown.share_scrap_percent}% del costo unitario`,
       },
       {
-        id: `ic-packaging`,
+        id: newId(),
         cost_sheet_id: sheetId,
         category: 'empaque' as const,
         name: 'Empaque Secundario (Cajas y Bolsas Polietileno)',
@@ -311,6 +413,27 @@ export class IndustrialCostEngine {
         effective_date: today,
         notes: `${breakdown.share_packaging_percent}% del costo unitario`,
       },
+    ];
+  }
+
+  /** Legacy seven-line adapter retained for existing reports/tests. V1 uses toV1CostComponents. */
+  public static toCostComponents(breakdown: IndustrialCostBreakdown, sheetId: string) {
+    const components = this.toV1CostComponents(breakdown, sheetId);
+    const raw = components[0];
+    return [
+      {
+        ...raw,
+        id: crypto.randomUUID(),
+        name: 'Papel cuerpo / cono',
+        rate_usd: breakdown.cost_paper_cone_usd,
+      },
+      {
+        ...raw,
+        id: crypto.randomUUID(),
+        name: 'Papel fondo',
+        rate_usd: breakdown.cost_bottom_usd,
+      },
+      ...components.slice(1),
     ];
   }
 }

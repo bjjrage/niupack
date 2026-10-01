@@ -404,6 +404,33 @@ export type CostBasis =
   | 'FIXED'
   | 'PER_BATCH';
 
+export type CostV1RubricKey =
+  | 'raw_material'
+  | 'printing_die_cut'
+  | 'operational'
+  | 'scrap'
+  | 'depreciation'
+  | 'packaging';
+
+export type CostInputSource = 'MANUAL' | 'FORMULA' | 'QUOTE';
+export type CostV1Unit = 'PER_UNIT' | 'PER_1000' | 'TOTAL_BATCH' | 'PERCENT';
+
+export interface CostV1RubricConfig {
+  enabled: boolean;
+  source: CostInputSource;
+  unit: CostV1Unit;
+  notes?: string;
+}
+
+export type CostV1RubricConfigMap = Record<CostV1RubricKey, CostV1RubricConfig>;
+
+export interface CostV1RubricResult extends CostV1RubricConfig {
+  key: CostV1RubricKey;
+  label: string;
+  impact_usd_per_unit: number;
+  impact_usd_batch: number;
+}
+
 export interface DualCurrencyValue {
   amount_original: number;
   currency_original: string;
@@ -834,6 +861,8 @@ export interface IndustrialProductCostInput {
   scrap_rate_percent: number;               // Merma %
   packaging_cost_per_thousand_usd: number;  // Empaque cajas y bolsas ($/1000u)
   batch_size: number;                       // Tamaño de lote a cotizar
+  /** V1 control plane. Missing entries remain enabled for backwards compatibility. */
+  rubrics?: Partial<CostV1RubricConfigMap>;
 }
 
 export interface IndustrialCostBreakdown {
@@ -876,6 +905,22 @@ export interface IndustrialCostBreakdown {
   die_cutting_outsourced_cost_usd?: number;
   printing_internal_cost_usd?: number;
   die_cutting_internal_cost_usd?: number;
+  configured?: boolean;
+  missing_configuration?: string[];
+  rubrics?: CostV1RubricResult[];
+  share_raw_material_percent?: number;
+}
+
+export interface CostV1Configuration {
+  id?: string;
+  organization_id?: string;
+  product_id?: string;
+  sku: string;
+  input: IndustrialProductCostInput;
+  version: number;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 // ==========================================

@@ -1,33 +1,16 @@
-import React from 'react';
-import { repository } from '@/lib/db/repository';
-import { MarketBenchmarkEngine } from '@/lib/engines/market-benchmark';
-import { PricingStrategyClient } from './pricing-strategy-client';
+'use client';
 
-export const revalidate = 0;
+import Link from 'next/link';
+import { ArrowRight, ShieldCheck } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { IndustrialCostCalculator } from '@/components/cost/IndustrialCostCalculator';
 
-export default async function PricingStrategyPage() {
-  const [sheet, prices, industrialInputs] = await Promise.all([
-    repository.getActiveCostSheetForSKU('CUP-12OZ-SW'),
-    repository.getMarketPrices(),
-    repository.getIndustrialCostInputs(),
-  ]);
-
-  const benchmarkBR = MarketBenchmarkEngine.calculateBenchmark(prices, 'CUP-12OZ-SW', 'BR');
-  const benchmarkAR = MarketBenchmarkEngine.calculateBenchmark(prices, 'CUP-12OZ-SW', 'AR');
-  const benchmarkBO = MarketBenchmarkEngine.calculateBenchmark(prices, 'CUP-12OZ-SW', 'BO');
-
-  const unitCost = sheet?.true_unit_cost_usd || 0.0468;
-  const benchmarkPrice = benchmarkBR?.weighted_benchmark_usd || 0.0490;
-
-  const initialInput = industrialInputs.find((i: { sku: string }) => i.sku === 'CUP-12OZ-SW') || industrialInputs[0];
-
+export default function PricingStrategyPage() {
   return (
-    <PricingStrategyClient
-      initialUnitCost={unitCost}
-      initialBenchmarkBR={benchmarkPrice}
-      initialBenchmarkAR={benchmarkAR?.weighted_benchmark_usd || 0.0520}
-      initialBenchmarkBO={benchmarkBO?.weighted_benchmark_usd || 0.0515}
-      initialIndustrialInput={initialInput}
-    />
+    <div className="mx-auto max-w-7xl space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4"><div><span className="text-[11px] font-mono font-semibold uppercase text-brand-400">Pricing Strategy</span><h1 className="mt-1 text-xl font-bold text-white">Precio sugerido desde True Cost V1</h1><p className="mt-0.5 text-xs text-slate-400">El precio parte de una hoja de costo real seleccionada desde el Maestro. Sin benchmark ficticio ni CAPEX de proceso.</p></div><Link href="/cost/scenarios"><Button variant="secondary" size="sm">Simular escenarios <ArrowRight className="ml-1 h-3 w-3" /></Button></Link></div>
+      <div className="flex items-start gap-3 rounded border border-slate-800 bg-[#10141b] p-3 text-xs text-slate-300"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" /><span>Las estrategias comerciales V1 se calculan únicamente sobre los seis rubros habilitados y un benchmark real, si existe.</span></div>
+      <IndustrialCostCalculator />
+    </div>
   );
 }

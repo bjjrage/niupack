@@ -1,7 +1,96 @@
-import { CostComponent, CostScenario, EfficiencyOpportunity } from '@/types';
+import { CostComponent, CostScenario, EfficiencyOpportunity, IndustrialProductCostInput } from '@/types';
+import { IndustrialCostEngine } from './industrial-cost-engine';
 import { TrueCostEngine } from './true-cost-engine';
 
 export class ScenarioEngine {
+  public static simulateV1(params: {
+    input: IndustrialProductCostInput;
+    batchSize: number;
+    rawMaterialPercent: number;
+    printingDieCutPercent: number;
+    operationalPercent: number;
+    scrapPercent: number;
+    depreciationPercent: number;
+    packagingPercent: number;
+    targetMarginPercent: number;
+    annualVolumeUnits?: number;
+    marketBenchmarkUSD?: number;
+  }) {
+    const baseInput = { ...params.input, batch_size: Math.max(params.input.batch_size, 1) };
+    const base = IndustrialCostEngine.calculateCost(baseInput);
+    const simulatedInput: IndustrialProductCostInput = {
+      ...baseInput,
+      batch_size: Math.max(params.batchSize, 1),
+      paper_formula: {
+        ...baseInput.paper_formula,
+        cif_price_ton_usd: baseInput.paper_formula.cif_price_ton_usd * (1 + params.rawMaterialPercent / 100),
+      },
+      bottom_formula: baseInput.bottom_formula
+        ? {
+            ...baseInput.bottom_formula,
+            cif_price_ton_usd: baseInput.bottom_formula.cif_price_ton_usd * (1 + params.rawMaterialPercent / 100),
+          }
+        : undefined,
+      bottom_paper_cost_ton_usd: baseInput.bottom_paper_cost_ton_usd * (1 + params.rawMaterialPercent / 100),
+      quoted_printing_rate_usd: baseInput.quoted_printing_rate_usd * (1 + params.printingDieCutPercent / 100),
+      operational_cost_per_thousand_usd: baseInput.operational_cost_per_thousand_usd * (1 + params.operationalPercent / 100),
+      machine_depreciation_per_thousand_usd: baseInput.machine_depreciation_per_thousand_usd * (1 + params.depreciationPercent / 100),
+      packaging_cost_per_thousand_usd: baseInput.packaging_cost_per_thousand_usd * (1 + params.packagingPercent / 100),
+      scrap_rate_percent: Math.max(0, baseInput.scrap_rate_percent * (1 + params.scrapPercent / 100)),
+    };
+    const calculated = IndustrialCostEngine.calculateCost(simulatedInput);
+    // V1 sliders are independent rubric overrides. Merma is a configured rubric
+    // whose dollar impact is adjusted directly; it must not silently change again
+    // when the raw-material slider changes.
+    const simulatedScrap = Number((base.cost_scrap_usd * Math.max(0, 1 + params.scrapPercent / 100)).toFixed(5));
+    const simulatedTotal = Number((
+      calculated.cost_paper_cone_usd +
+      calculated.cost_bottom_usd +
+      calculated.cost_printing_diecut_usd +
+      calculated.cost_operational_usd +
+      calculated.cost_depreciation_usd +
+      simulatedScrap +
+      calculated.cost_packaging_usd
+    ).toFixed(5));
+    const simulated = {
+      ...calculated,
+      cost_scrap_usd: simulatedScrap,
+      true_unit_cost_usd: simulatedTotal,
+      batch_total_cost_usd: Number((simulatedTotal * simulatedInput.batch_size).toFixed(2)),
+      rubrics: calculated.rubrics?.map((rubric) => rubric.key === 'scrap'
+        ? { ...rubric, impact_usd_per_unit: simulatedScrap, impact_usd_batch: Number((simulatedScrap * simulatedInput.batch_size).toFixed(2)) }
+        : rubric),
+    };
+    const marginFactor = Math.max(0.01, Math.min(0.9, 1 - params.targetMarginPercent / 100));
+    const suggestedPriceUSD = Number((simulated.true_unit_cost_usd / marginFactor).toFixed(4));
+    const unitCostDeltaUSD = Number((simulated.true_unit_cost_usd - base.true_unit_cost_usd).toFixed(5));
+    const benchmark = params.marketBenchmarkUSD && params.marketBenchmarkUSD > 0 ? params.marketBenchmarkUSD : null;
+    const priceGapUSD = benchmark === null ? null : Number((suggestedPriceUSD - benchmark).toFixed(4));
+    const priceGapPercent = benchmark === null || benchmark === 0 ? null : Number((((priceGapUSD as number) / benchmark) * 100).toFixed(2));
+    const annualImpactUSD = params.annualVolumeUnits
+      ? Number((-unitCostDeltaUSD * params.annualVolumeUnits).toFixed(2))
+      : null;
+
+    return {
+      baseUnitCostUSD: base.true_unit_cost_usd,
+      simulatedUnitCostUSD: simulated.true_unit_cost_usd,
+      unitCostDeltaUSD,
+      unitCostDeltaPercent: base.true_unit_cost_usd > 0 ? Number(((unitCostDeltaUSD / base.true_unit_cost_usd) * 100).toFixed(2)) : 0,
+      batchCostDeltaUSD: Number((simulated.batch_total_cost_usd - base.batch_total_cost_usd).toFixed(2)),
+      suggestedPriceUSD,
+      marginUSD: Number((suggestedPriceUSD - simulated.true_unit_cost_usd).toFixed(4)),
+      marginPercent: suggestedPriceUSD > 0 ? Number((((suggestedPriceUSD - simulated.true_unit_cost_usd) / suggestedPriceUSD) * 100).toFixed(2)) : 0,
+      priceGapUSD,
+      priceGapPercent,
+      annualImpactUSD,
+      benchmarkUSD: benchmark,
+      baseRubrics: base.rubrics ?? [],
+      simulatedRubrics: simulated.rubrics ?? [],
+      baseBreakdown: base,
+      simulatedBreakdown: simulated,
+    };
+  }
+
   /**
    * Run a simulation on cost components with custom deltas
    */
@@ -13,7 +102,7 @@ export class ScenarioEngine {
     efficiencyDeltaPercent: number; // e.g. +10.0
     marginTargetPercent: number; // e.g. 15.0
     freightDeltaPercent: number; // e.g. -10.0
-    marketBenchmarkUSD: number; // e.g. 0.0495
+    marketBenchmarkUSD: number; // real observed benchmark, when available
     annualVolumeUnits?: number; // default 20,000,000
   }): {
     baseUnitCostUSD: number;

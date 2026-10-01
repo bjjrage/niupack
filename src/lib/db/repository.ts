@@ -30,6 +30,7 @@ import {
   FxSettings,
   ProductPackagingSpec,
   QuoteMatchResult,
+  CostV1Configuration,
 } from '@/types';
 import {
   INITIAL_ORG,
@@ -51,7 +52,7 @@ import {
   INITIAL_FX_SETTINGS,
   INITIAL_PACKAGING_SPECS,
 } from './seed-data';
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, supabaseAdmin, isSupabaseConfigured, isSupabaseAdminConfigured } from './supabase';
 
 function normalizeDomain(input?: string | null): string {
   if (!input) return '';
@@ -63,6 +64,8 @@ function normalizeDomain(input?: string | null): string {
   cleaned = cleaned.split(':')[0];
   return cleaned;
 }
+
+const allowCostFixtures = process.env.NODE_ENV !== 'production' || process.env.NIU_ENABLE_COST_SEED_FIXTURES === 'true';
 
 // Persistent in-process store for zero-friction local dev, tests, and CI
 class Store {
@@ -81,8 +84,9 @@ class Store {
   rfqs: RFQ[] = [];
   quotes: SupplierQuote[] = [];
   marketPrices: MarketPriceObservation[] = [...INITIAL_PRICE_OBSERVATIONS];
-  costSheets: CostSheetVersion[] = [{ ...INITIAL_COST_SHEET }];
-  industrialCostInputs: IndustrialProductCostInput[] = [...INITIAL_INDUSTRIAL_COST_INPUTS];
+  // Cost fixtures are useful for local development/tests, never a production fallback.
+  costSheets: CostSheetVersion[] = allowCostFixtures ? [{ ...INITIAL_COST_SHEET }] : [];
+  industrialCostInputs: IndustrialProductCostInput[] = allowCostFixtures ? [...INITIAL_INDUSTRIAL_COST_INPUTS] : [];
   processes: ProcessDefinition[] = [{ ...INITIAL_PROCESS_DEF }];
   scenarios: CostScenario[] = [];
   actions: ActionItem[] = [...INITIAL_ACTIONS];
@@ -130,13 +134,34 @@ export const repository = {
   },
 
   // Products & SKUs
-  async getProducts(): Promise<Product[]> {
+  async getProducts(organizationId?: string): Promise<Product[]> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('products')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .eq('is_active', true)
+        .order('name');
+      if (error) throw new Error(`products: ${error.message}`);
+      return (data ?? []) as Product[];
+    }
     return [...store.products];
   },
   async getProductByCode(code: string): Promise<Product | undefined> {
     return store.products.find((p) => p.code === code);
   },
-  async getSKUs(): Promise<ProductAttribute[]> {
+  async getSKUs(organizationId?: string): Promise<ProductAttribute[]> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const products = await this.getProducts(organizationId);
+      if (products.length === 0) return [];
+      const { data, error } = await supabaseAdmin
+        .from('product_attributes')
+        .select('*')
+        .in('product_id', products.map((product) => product.id))
+        .order('sku');
+      if (error) throw new Error(`product_attributes: ${error.message}`);
+      return (data ?? []) as ProductAttribute[];
+    }
     return [...store.skus];
   },
   async getSKU(skuCode: string): Promise<ProductAttribute | undefined> {
@@ -152,7 +177,16 @@ export const repository = {
     store.products.push(newProduct);
     return newProduct;
   },
-  async addSKU(sku: Omit<ProductAttribute, 'id'>): Promise<ProductAttribute> {
+  async addSKU(sku: Omit<ProductAttribute, 'id'>, organizationId?: string): Promise<ProductAttribute> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('product_attributes')
+        .insert(sku)
+        .select()
+        .single();
+      if (error) throw new Error(`product_attributes: ${error.message}`);
+      return data as ProductAttribute;
+    }
     const newSku: ProductAttribute = {
       ...sku,
       id: crypto.randomUUID(),
@@ -442,7 +476,17 @@ export const repository = {
   },
 
   // Market Price Observations
-  async getMarketPrices(): Promise<MarketPriceObservation[]> {
+  async getMarketPrices(organizationId?: string): Promise<MarketPriceObservation[]> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('market_price_observations')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .eq('is_active', true)
+        .order('observation_date', { ascending: false });
+      if (error) throw new Error(`market_price_observations: ${error.message}`);
+      return (data ?? []) as MarketPriceObservation[];
+    }
     return [...store.marketPrices];
   },
   async addMarketPrice(price: Omit<MarketPriceObservation, 'id'>): Promise<MarketPriceObservation> {
@@ -461,10 +505,97 @@ export const repository = {
   async getCostSheet(id: string): Promise<CostSheetVersion | undefined> {
     return store.costSheets.find((c) => c.id === id);
   },
-  async getActiveCostSheetForSKU(sku: string): Promise<CostSheetVersion | undefined> {
+  async getActiveCostSheetForSKU(sku: string, organizationId?: string): Promise<CostSheetVersion | undefined> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const { data: dbSheet, error: sheetError } = await supabaseAdmin
+        .from('cost_sheet_versions')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .eq('sku', sku)
+        .eq('status', 'ACTIVE')
+        .order('version', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (sheetError) throw new Error(`cost_sheet_versions: ${sheetError.message}`);
+      if (!dbSheet) return undefined;
+      const { data: dbComponents, error: componentError } = await supabaseAdmin
+        .from('cost_components')
+        .select('*')
+        .eq('cost_sheet_id', dbSheet.id)
+        .order('created_at');
+      if (componentError) throw new Error(`cost_components: ${componentError.message}`);
+      return {
+        ...dbSheet,
+        components: (dbComponents ?? []) as CostSheetVersion['components'],
+      } as CostSheetVersion;
+    }
     return store.costSheets.find((c) => c.sku === sku && c.status === 'ACTIVE');
   },
-  async saveCostSheet(sheet: CostSheetVersion): Promise<CostSheetVersion> {
+  async saveCostSheet(sheet: CostSheetVersion, organizationId?: string): Promise<CostSheetVersion> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const skus = await this.getSKUs(organizationId);
+      const skuRecord = skus.find((candidate) => candidate.sku === sheet.sku);
+      if (!skuRecord) throw new Error(`SKU ${sheet.sku} is not present in the product master`);
+
+      const { data: existing, error: existingError } = await supabaseAdmin
+        .from('cost_sheet_versions')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('sku', sheet.sku)
+        .eq('version', sheet.version)
+        .maybeSingle();
+      if (existingError) throw new Error(`cost_sheet_versions: ${existingError.message}`);
+
+      const record = {
+        ...(existing?.id ? { id: existing.id } : {}),
+        organization_id: organizationId,
+        product_id: sheet.product_id || skuRecord.product_id,
+        sku: sheet.sku,
+        version: sheet.version,
+        name: sheet.name,
+        batch_size: sheet.batch_size,
+        effective_date: sheet.effective_date,
+        status: sheet.status,
+        true_unit_cost_usd: sheet.true_unit_cost_usd,
+        minimum_sustainable_price_usd: sheet.minimum_sustainable_price_usd,
+        break_even_units: sheet.break_even_units,
+        notes: sheet.notes,
+        updated_at: new Date().toISOString(),
+      };
+      const { data: saved, error: saveError } = await supabaseAdmin
+        .from('cost_sheet_versions')
+        .upsert(record)
+        .select('*')
+        .single();
+      if (saveError) throw new Error(`cost_sheet_versions: ${saveError.message}`);
+
+      const { error: deleteComponentsError } = await supabaseAdmin
+        .from('cost_components')
+        .delete()
+        .eq('cost_sheet_id', saved.id);
+      if (deleteComponentsError) throw new Error(`cost_components: ${deleteComponentsError.message}`);
+
+      for (const component of sheet.components ?? []) {
+        const { error: componentError } = await supabaseAdmin
+          .from('cost_components')
+          .insert({
+            id: component.id,
+            cost_sheet_id: saved.id,
+            category: component.category,
+            name: component.name,
+            component_type: component.component_type,
+            basis: component.basis,
+            rate_usd: component.rate_usd,
+            quantity: component.quantity,
+            unit_of_measure: component.unit_of_measure,
+            effective_date: component.effective_date,
+            notes: component.notes,
+            updated_at: new Date().toISOString(),
+          });
+        if (componentError) throw new Error(`cost_components: ${componentError.message}`);
+      }
+      return { ...saved, components: sheet.components } as CostSheetVersion;
+    }
     const index = store.costSheets.findIndex((c) => c.id === sheet.id);
     if (index >= 0) {
       store.costSheets[index] = sheet;
@@ -482,10 +613,102 @@ export const repository = {
   async getIndustrialCostInputs(): Promise<IndustrialProductCostInput[]> {
     return [...store.industrialCostInputs];
   },
-  async getIndustrialCostInput(sku: string): Promise<IndustrialProductCostInput | undefined> {
-    return store.industrialCostInputs.find((i) => i.sku === sku);
+  async getCostV1Configuration(sku: string, organizationId?: string): Promise<CostV1Configuration | undefined> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('cost_v1_configurations')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .eq('sku', sku)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (error) throw new Error(`cost_v1_configurations: ${error.message}`);
+      if (!data) return undefined;
+      return {
+        id: data.id,
+        organization_id: data.organization_id,
+        product_id: data.product_id,
+        sku: data.sku,
+        input: data.input_json as IndustrialProductCostInput,
+        version: Number(data.version),
+        is_active: Boolean(data.is_active),
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+      };
+    }
+
+    const input = store.industrialCostInputs.find((candidate) => candidate.sku === sku);
+    return input
+      ? { sku, input, version: 1, is_active: true }
+      : undefined;
   },
-  async saveIndustrialCostInput(input: IndustrialProductCostInput): Promise<IndustrialProductCostInput> {
+  async getIndustrialCostInput(sku: string, organizationId?: string): Promise<IndustrialProductCostInput | undefined> {
+    const configuration = await this.getCostV1Configuration(sku, organizationId);
+    return configuration?.input;
+  },
+  async saveCostV1Configuration(
+    configuration: CostV1Configuration,
+    organizationId?: string,
+    actorId?: string
+  ): Promise<CostV1Configuration> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const skuRecord = (await this.getSKUs(organizationId)).find((candidate) => candidate.sku === configuration.sku);
+      if (!skuRecord?.product_id) throw new Error(`SKU ${configuration.sku} is not present in the product master`);
+
+      const record = {
+        organization_id: organizationId,
+        product_id: configuration.product_id || skuRecord.product_id,
+        sku: configuration.sku,
+        input_json: configuration.input,
+        version: configuration.version || 1,
+        is_active: true,
+        created_by: actorId,
+        updated_at: new Date().toISOString(),
+      };
+      const { data, error } = await supabaseAdmin
+        .from('cost_v1_configurations')
+        .upsert(record, { onConflict: 'organization_id,sku' })
+        .select('*')
+        .single();
+      if (error) throw new Error(`cost_v1_configurations: ${error.message}`);
+      const { error: auditError } = await supabaseAdmin.from('audit_events').insert({
+        organization_id: organizationId,
+        actor_id: actorId,
+        event_type: 'cost_edit',
+        target_entity: 'cost_v1_configurations',
+        entity_id: data.id,
+        metadata_json: { sku: configuration.sku, version: configuration.version || 1 },
+      });
+      if (auditError) throw new Error(`audit_events: ${auditError.message}`);
+      return {
+        id: data.id,
+        organization_id: data.organization_id,
+        product_id: data.product_id,
+        sku: data.sku,
+        input: data.input_json as IndustrialProductCostInput,
+        version: Number(data.version),
+        is_active: Boolean(data.is_active),
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+      };
+    }
+
+    await this.saveIndustrialCostInput(configuration.input);
+    return configuration;
+  },
+  async getIndustrialCostInputForOrganization(sku: string, organizationId: string): Promise<IndustrialProductCostInput | undefined> {
+    return this.getIndustrialCostInput(sku, organizationId);
+  },
+  async saveIndustrialCostInput(input: IndustrialProductCostInput, organizationId?: string, actorId?: string): Promise<IndustrialProductCostInput> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      await this.saveCostV1Configuration({
+        sku: input.sku,
+        input,
+        version: 1,
+        is_active: true,
+      }, organizationId, actorId);
+      return input;
+    }
     const index = store.industrialCostInputs.findIndex((i) => i.sku === input.sku);
     if (index >= 0) {
       store.industrialCostInputs[index] = input;

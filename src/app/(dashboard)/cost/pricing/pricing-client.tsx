@@ -143,7 +143,6 @@ export function PricingClient({ initialUnitCost, initialBenchmark }: Props) {
 
       {/* Industrial Interactive Cost Calculator */}
       <IndustrialCostCalculator
-        initialSku="CUP-12OZ-SW"
         marketBenchmarkUSD={benchmarkPrice}
         onCostUpdated={(newCost) => setUnitCost(newCost)}
       />

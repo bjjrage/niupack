@@ -9,7 +9,7 @@ import { ScenarioEngine } from '@/lib/engines/scenario-engine';
 export const revalidate = 0;
 
 export default async function EfficiencyPage() {
-  const sheet = await repository.getActiveCostSheetForSKU('CUP-12OZ-SW');
+  const sheet = (await repository.getCostSheets()).find((candidate) => candidate.status === 'ACTIVE');
   const components = sheet?.components || [];
   const opportunities = ScenarioEngine.detectEfficiencyOpportunities(components, 20000000);
 

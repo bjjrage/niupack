@@ -1,101 +1,88 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { repository } from '@/lib/db/repository';
 import { IndustrialCostEngine } from '@/lib/engines/industrial-cost-engine';
-import { IndustrialProductCostInput } from '@/types';
+import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
+import { CostSheetVersion, IndustrialProductCostInput } from '@/types';
+
+function isCostInput(value: unknown): value is IndustrialProductCostInput {
+  if (!value || typeof value !== 'object') return false;
+  const input = value as Partial<IndustrialProductCostInput>;
+  return Boolean(input.sku && input.paper_formula && input.printing_cost_mode);
+}
 
 export async function GET(req: NextRequest) {
   try {
+    const identity = await requireNiuIdentity();
     const { searchParams } = new URL(req.url);
-    const sku = searchParams.get('sku') || 'CUP-12OZ-SW';
+    const sku = searchParams.get('sku')?.trim();
+    if (!sku) return NextResponse.json({ error: 'SKU is required' }, { status: 400 });
 
-    let input = await repository.getIndustrialCostInput(sku);
+    const skuMaster = (await repository.getSKUs(identity.organizationId)).find((candidate) => candidate.sku === sku);
+    if (!skuMaster) return NextResponse.json({ error: 'SKU_NOT_IN_PRODUCT_MASTER' }, { status: 404 });
+
+    const input = await repository.getIndustrialCostInput(sku, identity.organizationId);
     if (!input) {
-      // Default fallback
-      input = {
-        sku,
-        paper_formula: {
-          cif_price_ton_usd: 1250,
-          customs_dispatch_percent: 13,
-          customs_dispatch_ton_usd: 162.50,
-          financial_cost_percent: 6,
-          financial_cost_ton_usd: 75.00,
-          printing_method: 'OFFSET',
-          sheet_width_mm: 700,
-          sheet_height_mm: 1000,
-          gsm: 260,
-          coating_gsm: 18,
-          units_per_sheet: 11,
-          paper_yield_units_per_ton: 56500,
-        },
-        bottom_paper_cost_ton_usd: 1350,
-        bottom_yield_units_per_ton: 350000,
-        bottom_formula: {
-          cif_price_ton_usd: 1350,
-          customs_dispatch_percent: 13,
-          customs_dispatch_ton_usd: 175.50,
-          financial_cost_percent: 6,
-          financial_cost_ton_usd: 81.00,
-          total_ton_cost_usd: 1606.50,
-          gsm: 210,
-          coating_gsm: 18,
-          sheet_width_mm: 1000,
-          sheet_height_mm: 1000,
-          units_per_m2: 200,
-          units_per_sheet: 200,
-        },
-        printing_cost_mode: 'PER_THOUSAND',
-        quoted_printing_rate_usd: 4.50,
-        operational_cost_per_thousand_usd: 5.40,
-        machine_depreciation_per_thousand_usd: 3.50,
-        scrap_rate_percent: 6.5,
-        packaging_cost_per_thousand_usd: 2.20,
-        batch_size: 300000,
-      };
+      return NextResponse.json({ success: true, configured: false, sku, input: null, breakdown: null });
     }
 
     const breakdown = IndustrialCostEngine.calculateCost(input);
-
-    return NextResponse.json({
-      success: true,
-      input,
-      breakdown,
-    });
-  } catch {
-    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
+    return NextResponse.json({ success: true, configured: Boolean(breakdown.configured), sku, input, breakdown });
+  } catch (error) {
+    return authErrorResponse(error);
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const input: IndustrialProductCostInput = await req.json();
-
-    if (!input.sku) {
-      return NextResponse.json({ error: 'SKU is required' }, { status: 400 });
+    const identity = await requireNiuIdentity();
+    const input: unknown = await req.json();
+    if (!isCostInput(input)) {
+      return NextResponse.json({ error: 'INVALID_COST_CONFIGURATION' }, { status: 400 });
     }
 
-    // Calculate industrial cost breakdown
+    const skuMaster = (await repository.getSKUs(identity.organizationId)).find((candidate) => candidate.sku === input.sku);
+    if (!skuMaster) return NextResponse.json({ error: 'SKU_NOT_IN_PRODUCT_MASTER' }, { status: 404 });
+
     const breakdown = IndustrialCostEngine.calculateCost(input);
+    await repository.saveIndustrialCostInput(input, identity.organizationId, identity.profileId);
 
-    // Save input in repository
-    await repository.saveIndustrialCostInput(input);
-
-    // Synchronize with active CostSheetVersion
-    const sheet = await repository.getActiveCostSheetForSKU(input.sku);
-    if (sheet) {
+    let sheet: CostSheetVersion | undefined;
+    if (breakdown.configured) {
+      sheet = await repository.getActiveCostSheetForSKU(input.sku, identity.organizationId);
+      if (!sheet) {
+        sheet = {
+          id: crypto.randomUUID(),
+          organization_id: identity.organizationId,
+          product_id: skuMaster.product_id,
+          sku: input.sku,
+          version: 1,
+          name: `Hoja de costo V1 · ${input.sku}`,
+          batch_size: input.batch_size,
+          effective_date: new Date().toISOString().split('T')[0],
+          status: 'ACTIVE',
+          true_unit_cost_usd: breakdown.true_unit_cost_usd,
+          minimum_sustainable_price_usd: breakdown.true_unit_cost_usd,
+          break_even_units: 0,
+          components: [],
+        };
+      }
       sheet.true_unit_cost_usd = breakdown.true_unit_cost_usd;
       sheet.batch_size = input.batch_size;
-      sheet.minimum_sustainable_price_usd = Number((breakdown.true_unit_cost_usd * 1.10).toFixed(5));
-      sheet.components = IndustrialCostEngine.toCostComponents(breakdown, sheet.id);
-      await repository.saveCostSheet(sheet);
+      sheet.minimum_sustainable_price_usd = breakdown.true_unit_cost_usd;
+      sheet.components = IndustrialCostEngine.toV1CostComponents(breakdown, sheet.id);
+      sheet.notes = 'Cost Intelligence V1: seis rubros configurables por SKU.';
+      await repository.saveCostSheet(sheet, identity.organizationId);
     }
 
     return NextResponse.json({
       success: true,
+      configured: Boolean(breakdown.configured),
+      missing_configuration: breakdown.missing_configuration,
       input,
       breakdown,
       sheet,
     });
-  } catch {
-    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
+  } catch (error) {
+    return authErrorResponse(error);
   }
 }
