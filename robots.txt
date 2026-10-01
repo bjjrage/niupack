@@ -7,4 +7,4 @@ Allow: /
 User-agent: *
 Allow: /
 
-Sitemap: https://www.niupack.com.py/sitemap.xml
+Sitemap: https://bjjrage.github.io/niupack/sitemap.xml
