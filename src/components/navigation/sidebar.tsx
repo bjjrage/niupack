@@ -72,6 +72,7 @@ export const Sidebar: React.FC = () => {
       items: [
         { name: 'Productos & SKUs', href: '/cost/skus', icon: Database },
         { name: 'Hojas de Costo Real', href: '/cost/cost-sheets', icon: Calculator },
+        { name: 'Procesos Industriales', href: '/cost/processes', icon: Factory, badge: 'PREVIEW' },
         { name: 'Export Logistics', href: '/cost/logistics', icon: Truck, badge: 'NEW' },
         { name: 'Simulador de Escenarios', href: '/cost/scenarios', icon: Compass },
         { name: 'Oportunidades de Eficiencia', href: '/cost/efficiency', icon: TrendingUp },
@@ -162,7 +163,9 @@ export const Sidebar: React.FC = () => {
                       className={`text-[10px] font-mono px-1 py-0.2 rounded font-semibold ${
                         item.badge === 'CORE'
                           ? 'bg-brand-950 text-brand-400 border border-brand-800/60'
-                          : 'bg-slate-800 text-slate-300'
+                          : item.badge === 'PREVIEW'
+                            ? 'bg-amber-950/50 text-amber-300 border border-amber-800/60'
+                            : 'bg-slate-800 text-slate-300'
                       }`}
                     >
                       {item.badge}
