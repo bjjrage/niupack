@@ -421,15 +421,16 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
         <div className="rounded-xl border border-slate-800 bg-[#141820] p-5 text-sm text-slate-400">Cargando hoja de costo…</div>
       ) : input && breakdown && (
         <>
-          <section aria-label="Resumen de costos">
+          <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_19rem] 2xl:grid-cols-[minmax(0,1fr)_21rem]">
+          <section aria-label="Resumen de costos" className="min-w-0 rounded-xl border border-slate-800 bg-[#141820] p-5 xl:col-start-2 xl:row-start-1 xl:sticky xl:top-4">
             <div className="mb-3 flex items-end justify-between gap-3">
               <div>
                 <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-white">Resumen de costos</h2>
                 <p className="mt-1 text-xs text-slate-500">Impacto unitario según el breakdown actual</p>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-              <article className="relative overflow-hidden rounded-xl border border-brand-500/40 bg-[#191b22] p-4 shadow-sm sm:p-5">
+            <div className="divide-y divide-slate-800">
+              <article className="relative overflow-hidden rounded-lg border border-brand-500/40 bg-[#191b22] p-4">
                 <span className="absolute inset-x-0 top-0 h-0.5 bg-brand-500" />
                 <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-200">True Cost</div>
                 <div className="mt-2 whitespace-nowrap font-mono text-xl font-bold tabular-nums text-white sm:text-2xl">
@@ -445,17 +446,30 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                 { label: 'Impresión + troquelado', value: rubricValues.printing_die_cut },
                 { label: 'Costos operativos', value: rubricValues.operational },
                 { label: 'Merma', value: rubricValues.scrap },
-                { label: 'Otros', value: rubricValues.depreciation + rubricValues.packaging, hint: 'Depreciación + embalaje' },
+                { label: 'Depreciación', value: rubricValues.depreciation },
+                { label: 'Embalaje', value: rubricValues.packaging },
               ].map((metric) => (
-                <article key={metric.label} className="min-w-0 rounded-xl border border-slate-800 bg-[#141820] p-4 sm:p-5">
-                  <div className="min-h-7 text-[10px] font-bold uppercase leading-4 tracking-[0.1em] text-slate-400">{metric.label}</div>
-                  <div className="mt-2 whitespace-nowrap font-mono text-lg font-semibold tabular-nums text-slate-100 sm:text-xl">${metric.value.toFixed(5)}</div>
-                  <div className="mt-1 text-[11px] text-slate-500">{metric.hint || 'USD / unidad'}</div>
-                </article>
+                <div key={metric.label} className="flex min-w-0 items-center justify-between gap-3 py-3">
+                  <span className="text-xs font-medium text-slate-400">{metric.label}</span>
+                  <span className="shrink-0 font-mono text-sm font-semibold tabular-nums text-slate-100">${metric.value.toFixed(5)}</span>
+                </div>
               ))}
             </div>
+            <div className="mt-4 rounded-lg border border-slate-800 bg-[#0c0f14] px-3 py-3">
+              <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
+                <span>Total del lote</span>
+                <span className="font-mono font-semibold tabular-nums text-white">${breakdown.batch_total_cost_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+              <div className="mt-1 text-[11px] text-slate-500">{input.batch_size.toLocaleString('es-PY')} unidades</div>
+            </div>
+            <Button variant="primary" size="md" onClick={save} disabled={saving || !input} className="mt-4 min-h-11 w-full justify-center font-bold uppercase tracking-wide">
+              <Save className="h-4 w-4" />{saving ? 'Guardando…' : 'Guardar hoja de costo'}
+            </Button>
+            {configured && <div className="mt-3 flex items-center gap-2 text-xs text-emerald-300"><CheckCircle2 className="h-4 w-4" /> Hoja activa y trazable en seis rubros.</div>}
+            {marketBenchmarkUSD && marketBenchmarkUSD > 0 && <div className="mt-3 text-xs text-slate-500">Benchmark real: <span className="font-mono">${marketBenchmarkUSD.toFixed(4)} USD/u</span>.</div>}
           </section>
 
+          <div className="min-w-0 space-y-5 xl:col-start-1 xl:row-start-1">
           <section className="flex flex-col gap-4 rounded-xl border border-slate-800 bg-[#11161d] p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div>
               <h2 className="text-sm font-bold text-white">Parámetros de cotización</h2>
@@ -559,7 +573,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
               <h2 id="direct-cost-heading" className="text-sm font-bold uppercase tracking-[0.12em] text-white">Costos directos</h2>
               <p className="mt-1 text-xs text-slate-500">Cada rubro conserva su fuente, estado e impacto independiente</p>
             </div>
-            <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+            <div className="grid gap-4 lg:grid-cols-2">
               <RubricCard
                 title="Impresión + troquelado"
                 config={printingConfig}
@@ -640,31 +654,8 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
             </div>
           </section>
 
-          <footer className="rounded-xl border border-brand-500/40 bg-[#171a21] p-5 sm:p-6">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-brand-200">True Cost final</div>
-                {configured ? (
-                  <>
-                    <div className="mt-2 font-mono text-3xl font-bold tracking-tight tabular-nums text-white sm:text-4xl">${breakdown.true_unit_cost_usd.toFixed(5)} <span className="text-base font-medium text-slate-400">USD / unidad</span></div>
-                    {fxRate !== null && <div className="mt-1 font-mono text-sm tabular-nums text-slate-300">Gs. {(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY', { maximumFractionDigits: 0 })} / unidad</div>}
-                    <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-400">
-                      <span>Lote: <strong className="font-mono font-semibold text-slate-200">${breakdown.batch_total_cost_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</strong></span>
-                      <span>{input.batch_size.toLocaleString('es-PY')} unidades</span>
-                    </div>
-                  </>
-                ) : (
-                  <div className="mt-2 text-lg font-semibold text-amber-200">Pendiente de configuración</div>
-                )}
-              </div>
-              <Button variant="primary" size="md" onClick={save} disabled={saving || !input} className="min-h-11 shrink-0 px-5 font-bold uppercase tracking-wide">
-                <Save className="h-4 w-4" />{saving ? 'Guardando…' : 'Guardar hoja de costo'}
-              </Button>
-            </div>
-          </footer>
-
-          {configured && <div className="flex items-center gap-2 text-xs text-emerald-300"><CheckCircle2 className="h-4 w-4" /> Hoja activa y trazable en seis rubros.</div>}
-          {marketBenchmarkUSD && marketBenchmarkUSD > 0 && <div className="text-xs text-slate-500">Benchmark real disponible: <span className="font-mono">${marketBenchmarkUSD.toFixed(4)} USD/u</span>.</div>}
+          </div>
+          </div>
         </>
       )}
     </div>
