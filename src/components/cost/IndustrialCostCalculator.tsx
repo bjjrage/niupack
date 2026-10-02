@@ -305,7 +305,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
 
   if (!sku && !loading) {
     return (
-      <div style={{ zoom: 0.8, width: '125%' }} className="rounded-lg border border-amber-800/70 bg-amber-950/20 p-5 text-sm text-amber-200">
+      <div style={{ zoom: 0.8 }} className="rounded-lg border border-amber-800/70 bg-amber-950/20 p-5 text-sm text-amber-200">
         No hay SKUs activos en el Maestro de Productos & SKUs.
       </div>
     );
@@ -344,7 +344,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
   const emptyValues = !configured;
 
   return (
-    <div style={{ zoom: 0.8, width: '125%' }} className="space-y-6">
+    <div style={{ zoom: 0.8 }} className="space-y-6">
       <header className="rounded-xl border border-slate-800 bg-[#141820] p-5 sm:p-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-start gap-3">
