@@ -13,16 +13,30 @@ const lidSize = productsSection?.querySelector('[data-lid-size]');
 const customSelects = productsSection?.querySelectorAll('[data-custom-select]') || [];
 
 if (navToggle && nav) {
+  const setNavOpen = (isOpen) => {
+    if (window.NiuMotion) window.NiuMotion.setMenuOpen(nav, navToggle, isOpen);
+    else {
+      nav.classList.toggle('is-open', isOpen);
+      navToggle.setAttribute('aria-expanded', String(isOpen));
+    }
+  };
   navToggle.addEventListener('click', () => {
-    const isOpen = nav.classList.toggle('is-open');
-    navToggle.setAttribute('aria-expanded', String(isOpen));
+    setNavOpen(navToggle.getAttribute('aria-expanded') !== 'true');
   });
 
   nav.addEventListener('click', (event) => {
     if (event.target.tagName === 'A') {
-      nav.classList.remove('is-open');
-      navToggle.setAttribute('aria-expanded', 'false');
+      setNavOpen(false);
     }
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && navToggle.getAttribute('aria-expanded') === 'true') {
+      setNavOpen(false);
+      navToggle.focus();
+    }
+  });
+  document.addEventListener('click', (event) => {
+    if (navToggle.getAttribute('aria-expanded') === 'true' && !nav.contains(event.target) && !navToggle.contains(event.target)) setNavOpen(false);
   });
 }
 
@@ -30,16 +44,18 @@ window.addEventListener('scroll', () => {
   header?.classList.toggle('is-scrolled', window.scrollY > 24);
 }, { passive: true });
 
-const revealObserver = new IntersectionObserver((entries) => {
-  entries.forEach((entry) => {
-    if (entry.isIntersecting) {
-      entry.target.classList.add('is-visible');
-      revealObserver.unobserve(entry.target);
-    }
-  });
-}, { threshold: 0.16 });
+if (!window.NiuMotion) {
+  const revealObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('is-visible');
+        revealObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.16 });
 
-reveals.forEach((element) => revealObserver.observe(element));
+  reveals.forEach((element) => revealObserver.observe(element));
+}
 
 function rotateElement(event, wrapper, target, maxRotate = 10) {
   const rect = wrapper.getBoundingClientRect();
@@ -49,9 +65,12 @@ function rotateElement(event, wrapper, target, maxRotate = 10) {
 }
 
 tiltCards.forEach((card) => {
-  card.addEventListener('mousemove', (event) => rotateElement(event, card, card, 6));
+  const target = card.querySelector('.hero-product-image') || card;
+  card.addEventListener('mousemove', (event) => {
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) rotateElement(event, card, target, 6);
+  });
   card.addEventListener('mouseleave', () => {
-    card.style.transform = '';
+    target.style.transform = '';
   });
 });
 
@@ -305,3 +324,5 @@ if (whatsappForm) {
     window.open(`https://wa.me/595971350619?text=${encodeURIComponent(lines.join('\n'))}`, '_blank', 'noopener');
   });
 }
+
+window.NiuMotion?.init();

@@ -855,6 +855,7 @@ window.setupProductShowroom = function (carousel) {
   });
   window.addEventListener('resize', () => measurementRefreshers.forEach(refresh => refresh()), { passive: true });
   function show(index) {
+    const previousActive = active;
     const nextActive = (index + cards.length) % cards.length;
     if (nextActive !== active) {
       leaveNestedCarousel();
@@ -876,6 +877,7 @@ window.setupProductShowroom = function (carousel) {
       select.classList.remove('is-open');
       select.querySelector('button').setAttribute('aria-expanded', 'false');
     });
+    if (active !== previousActive) window.NiuMotion?.productChange(panels[active]);
   }
   carousel.querySelectorAll('[data-step]').forEach(button => button.addEventListener('click', () => navigateStage(Number(button.dataset.step))));
   let start = null;
