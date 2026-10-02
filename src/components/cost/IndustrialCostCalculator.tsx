@@ -39,6 +39,8 @@ const rubricDefaults: Record<CostV1RubricKey, CostV1RubricConfig> = {
 };
 
 const sourceOptions: CostInputSource[] = ['MANUAL', 'FORMULA', 'QUOTE'];
+type SummaryCurrency = 'USD' | 'PYG' | 'BOTH';
+
 const unitLabels: Record<CostV1RubricConfig['unit'], string> = {
   PER_UNIT: 'USD / unidad',
   PER_1000: 'USD / 1.000',
@@ -199,6 +201,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
   const [configured, setConfigured] = useState(false);
   const [missing, setMissing] = useState<string[]>([]);
   const [fxRate, setFxRate] = useState<number | null>(null);
+  const [summaryCurrency, setSummaryCurrency] = useState<SummaryCurrency>('BOTH');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -423,22 +426,49 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
         <>
           <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_19rem] 2xl:grid-cols-[minmax(0,1fr)_21rem]">
           <section aria-label="Resumen de costos" className="min-w-0 rounded-xl border border-slate-800 bg-[#141820] p-5 xl:col-start-2 xl:row-start-1 xl:sticky xl:top-4">
-            <div className="mb-3 flex items-end justify-between gap-3">
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-white">Resumen de costos</h2>
                 <p className="mt-1 text-xs text-slate-500">Impacto unitario según el breakdown actual</p>
               </div>
             </div>
+            <div aria-label="Conversor de moneda del resumen" className="mb-2 flex flex-wrap items-center justify-end gap-1 rounded-lg border border-slate-700 bg-[#0c0f14] p-1">
+              {([
+                ['USD', 'USD'],
+                ['PYG', 'Gs.'],
+                ['BOTH', 'Ambos'],
+              ] as const).map(([currency, label]) => (
+                <button
+                  key={currency}
+                  type="button"
+                  aria-pressed={summaryCurrency === currency}
+                  disabled={currency !== 'USD' && fxRate === null}
+                  title={currency !== 'USD' && fxRate === null ? 'Cotización USD/guaraní no disponible' : undefined}
+                  onClick={() => setSummaryCurrency(currency)}
+                  className={`min-h-8 rounded-md px-2.5 text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${summaryCurrency === currency ? 'bg-brand-500 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {fxRate !== null && <div className="mb-3 text-right text-[10px] text-slate-500">Conversión: Gs. {fxRate.toLocaleString('es-PY')} = USD 1</div>}
             <div className="divide-y divide-slate-800">
               <article className="relative overflow-hidden rounded-lg border border-brand-500/40 bg-[#191b22] p-4">
                 <span className="absolute inset-x-0 top-0 h-0.5 bg-brand-500" />
                 <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-200">True Cost</div>
                 <div className="mt-2 whitespace-nowrap font-mono text-xl font-bold tabular-nums text-white sm:text-2xl">
-                  {configured ? `$${breakdown.true_unit_cost_usd.toFixed(5)}` : 'Pendiente'}
+                  {configured
+                    ? summaryCurrency === 'PYG' && fxRate !== null
+                      ? `Gs. ${Math.round(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY')}`
+                      : `$${breakdown.true_unit_cost_usd.toFixed(5)}`
+                    : 'Pendiente'}
                 </div>
-                <div className="mt-1 text-[11px] text-slate-500">{configured ? 'USD / unidad' : 'Faltan datos requeridos'}</div>
-                {configured && fxRate !== null && (
-                  <div className="mt-2 font-mono text-xs tabular-nums text-slate-300">Gs. {(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY', { maximumFractionDigits: 0 })} /u</div>
+                <div className="mt-1 text-[11px] text-slate-500">{configured ? summaryCurrency === 'PYG' && fxRate !== null ? 'Gs. / unidad' : 'USD / unidad' : 'Faltan datos requeridos'}</div>
+                {configured && summaryCurrency === 'BOTH' && fxRate !== null && (
+                  <div className="mt-2 font-mono text-xs tabular-nums text-slate-300">Gs. {Math.round(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY')} /u</div>
+                )}
+                {configured && summaryCurrency === 'BOTH' && fxRate !== null && (
+                  <div className="mt-1 font-sans text-[10px] text-slate-500">Tasa aplicada: Gs. {fxRate.toLocaleString('es-PY')} / USD</div>
                 )}
               </article>
               {[
@@ -451,17 +481,24 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
               ].map((metric) => (
                 <div key={metric.label} className="flex min-w-0 items-center justify-between gap-3 py-3">
                   <span className="text-xs font-medium text-slate-400">{metric.label}</span>
-                  <span className="shrink-0 font-mono text-sm font-semibold tabular-nums text-slate-100">${metric.value.toFixed(5)}</span>
+                  <span className="flex shrink-0 flex-col items-end font-mono text-xs font-semibold tabular-nums text-slate-100">
+                    {(summaryCurrency !== 'PYG' || fxRate === null) && <span>${metric.value.toFixed(5)} /u</span>}
+                    {summaryCurrency !== 'USD' && fxRate !== null && <span className="text-[10px] text-slate-400">Gs. {Math.round(metric.value * fxRate).toLocaleString('es-PY')} /u</span>}
+                  </span>
                 </div>
               ))}
             </div>
             <div className="mt-4 rounded-lg border border-slate-800 bg-[#0c0f14] px-3 py-3">
               <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
                 <span>Total del lote</span>
-                <span className="font-mono font-semibold tabular-nums text-white">${breakdown.batch_total_cost_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span className="text-right font-mono font-semibold tabular-nums text-white">
+                  {(summaryCurrency !== 'PYG' || fxRate === null) && <span className="block">${breakdown.batch_total_cost_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>}
+                  {summaryCurrency !== 'USD' && fxRate !== null && <span className="block text-[10px] text-slate-400">Gs. {Math.round(breakdown.batch_total_cost_usd * fxRate).toLocaleString('es-PY')}</span>}
+                </span>
               </div>
               <div className="mt-1 text-[11px] text-slate-500">{input.batch_size.toLocaleString('es-PY')} unidades</div>
             </div>
+            {fxRate === null && <div className="mt-3 rounded-md border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-200">Cotización USD/guaraní no disponible; se muestran valores en USD.</div>}
             <Button variant="primary" size="md" onClick={save} disabled={saving || !input} className="mt-4 min-h-11 w-full justify-center font-bold uppercase tracking-wide">
               <Save className="h-4 w-4" />{saving ? 'Guardando…' : 'Guardar hoja de costo'}
             </Button>
