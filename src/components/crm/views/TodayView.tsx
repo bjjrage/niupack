@@ -22,6 +22,7 @@ import {
   label,
 } from '../commercial-ui';
 import { ColumnChart, monthLabel } from '../charts';
+import { conversationState } from './inbox-state';
 import { repurchaseKeyPrefix, type CrmActions, type CrmData, type RepurchaseAlert, type TaskRow } from '../types';
 
 
@@ -69,7 +70,7 @@ export function TodayView({ data, actions, onGo }: { data: CrmData; actions: Crm
       items.push({ kind: 'repurchase', key: `r-${a.company_id}-${a.sku}`, alert: a });
     }
     for (const c of data.inbox) {
-      if (c.conversation.control_mode !== 'HUMAN' || c.conversation.status === 'CLOSED') continue;
+      if (conversationState(c) !== 'WAITING_SELLER') continue;
       items.push({ kind: 'chat', key: `c-${c.conversation.id}`, convId: c.conversation.id, leadId: c.conversation.lead_id });
     }
     for (const o of data.opps) {

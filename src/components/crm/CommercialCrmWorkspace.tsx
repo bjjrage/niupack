@@ -12,6 +12,7 @@ import { PipelineView } from './views/PipelineView';
 import { AccountsView } from './views/AccountsView';
 import { InboxView } from './views/InboxView';
 import { CampaignsView } from './views/CampaignsView';
+import { conversationState } from './views/inbox-state';
 import type { Product, ProductAttribute } from '@/types';
 import type {
   CatalogSku,
@@ -135,7 +136,8 @@ export function CommercialCrmWorkspace() {
   // Contadores de las pestañas: lo que exige acción, no totales decorativos.
   const dueNow = data.tasks.filter((t) => t.status !== 'DONE' && t.status !== 'CANCELLED' && t.due_at && (daysFromToday(t.due_at) ?? 1) <= 0).length;
   const openOpps = data.opps.filter((o) => o.stage !== 'GANADO' && o.stage !== 'PERDIDO');
-  const humanPending = data.inbox.filter((i) => i.conversation.control_mode === 'HUMAN' && i.conversation.status !== 'CLOSED').length;
+  // Solo cuenta lo que espera respuesta de un vendedor (no los chats que ya atendió).
+  const humanPending = data.inbox.filter((i) => conversationState(i) === 'WAITING_SELLER').length;
   const overdueCount = data.tasks.filter((t) => t.status !== 'DONE' && t.status !== 'CANCELLED' && isOverdue(t.due_at)).length;
 
   const tabs: Array<{ key: View; label: string; icon: typeof Columns3; count?: number; alert?: boolean }> = [

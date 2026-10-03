@@ -107,6 +107,32 @@ export const niupackbotRepository = {
     return { message: record, duplicate: false };
   },
 
+  /**
+   * Último mensaje de cada conversación (para el listado de Conversaciones).
+   * Lee los mensajes más recientes de la organización y se queda con el último por conversación:
+   * evita una consulta por chat. Una conversación sin actividad reciente puede quedar sin dato.
+   */
+  async lastMessages(organizationId: string, conversationIds: string[], scan = 3000): Promise<Map<string, BotMessage>> {
+    const out = new Map<string, BotMessage>();
+    if (conversationIds.length === 0) return out;
+    const wanted = new Set(conversationIds);
+    let rows: BotMessage[];
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('niupackbot_messages')
+        .select('id,organization_id,conversation_id,direction,channel,provider,external_message_id,author_role,body,occurred_at,created_at')
+        .eq('organization_id', organizationId)
+        .order('occurred_at', { ascending: false })
+        .limit(scan);
+      if (error) throw new Error(`niupackbot_messages: ${error.message}`);
+      rows = (data ?? []) as BotMessage[];
+    } else {
+      rows = [...mem().messages].filter((m) => m.organization_id === organizationId).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at));
+    }
+    for (const m of rows) if (wanted.has(m.conversation_id) && !out.has(m.conversation_id)) out.set(m.conversation_id, m);
+    return out;
+  },
+
   async listMessages(conversationId: string, organizationId: string, limit = 50): Promise<BotMessage[]> {
     if (mode() === 'SUPABASE' && supabaseAdmin) {
       const { data, error } = await supabaseAdmin

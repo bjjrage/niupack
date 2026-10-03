@@ -87,6 +87,7 @@ export interface InboxItem {
   conversation: ConvRow;
   lead?: { product_interest?: string; qualification?: string } | null;
   campaign?: ConversationCampaign | null;
+  last_message?: { direction: 'INBOUND' | 'OUTBOUND'; author_role: string; preview: string; at: string } | null;
 }
 
 export interface CompanyRow {

@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Bot, MessageSquareText, UserRound } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Bot, MessageSquareText, Search, UserRound } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import {
   Card,
+  Drawer,
+  DrawerClose,
   Empty,
   fmtDateLabel,
   fmtVolume,
@@ -21,8 +23,20 @@ import {
 import type { ConversationCampaign, ConvRow, CrmActions, CrmData, LeadRow } from '../types';
 import { callApi } from '../campaigns/api';
 import { errorMessage } from '../campaigns/labels';
-
-type Seg = 'all' | 'human' | 'bot';
+import {
+  conversationStage,
+  conversationState,
+  countByState,
+  EMPTY_FILTERS,
+  filterRows,
+  sortRows,
+  STAGE_META,
+  STAGE_ORDER,
+  STATE_META,
+  STATE_ORDER,
+  type InboxFilters,
+  type InboxRow,
+} from './inbox-state';
 
 interface Detail {
   conversation: ConvRow;
@@ -33,17 +47,56 @@ interface Detail {
 
 const phoneOf = (c: ConvRow) => c.external_conversation_id.replace('whatsapp:', '');
 
+const PAGE_SIZE = 50;
+
+/**
+ * Conversaciones: tablero con estado, avance y origen (como la Mesa de Entrada de AutoLead, sin KPIs).
+ * Escala a cientos de chats: filtros, búsqueda, los que esperan vendedor primero y paginado.
+ * El chat completo se abre como detalle.
+ */
 export function InboxView({ data, actions, focus }: { data: CrmData; actions: CrmActions; focus: { id: string; n: number } | null }) {
-  const [seg, setSeg] = useState<Seg>('all');
+  const [filters, setFilters] = useState<InboxFilters>(EMPTY_FILTERS);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [shown, setShown] = useState(PAGE_SIZE);
 
-  const items = useMemo(
+  const nameFor = (c: ConvRow): string => {
+    const lead = c.lead_id ? data.leadById.get(c.lead_id) : null;
+    const contact = lead?.contact_id ? data.contactById.get(lead.contact_id) : null;
+    return contact?.full_name || phoneOf(c);
+  };
+
+  const rows: InboxRow[] = useMemo(
     () =>
-      data.inbox.filter((i) => (seg === 'human' ? i.conversation.control_mode === 'HUMAN' : seg === 'bot' ? i.conversation.control_mode !== 'HUMAN' : true)),
-    [data.inbox, seg],
+      data.inbox.map((item) => {
+        const c = item.conversation;
+        const lead = c.lead_id ? data.leadById.get(c.lead_id) : undefined;
+        const contact = lead?.contact_id ? data.contactById.get(lead.contact_id) : undefined;
+        return {
+          item,
+          state: conversationState(item),
+          stage: conversationStage(item, data.oppById, data.leadById),
+          name: contact?.full_name || phoneOf(c),
+          phone: phoneOf(c),
+          product: [lead?.product_interest, lead?.capacity].filter(Boolean).join(' · '),
+          ownerId: lead?.owner_profile_id ?? null,
+        };
+      }),
+    [data.inbox, data.leadById, data.contactById, data.oppById],
   );
+  const counts = useMemo(() => countByState(rows), [rows]);
+  const visible = useMemo(() => sortRows(filterRows(rows, filters)), [rows, filters]);
+  const campaigns = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of rows) if (r.item.campaign) m.set(r.item.campaign.campaign_id, r.item.campaign.campaign_name);
+    return [...m.entries()];
+  }, [rows]);
+  const active = filters.state !== 'ALL' || filters.stage !== 'ALL' || filters.origin !== 'ALL' || filters.owner !== '' || filters.q !== '';
+  const set = (patch: Partial<InboxFilters>) => {
+    setFilters((f) => ({ ...f, ...patch }));
+    setShown(PAGE_SIZE);
+  };
 
   async function load(id: string) {
     setSelected(id);
@@ -58,31 +111,13 @@ export function InboxView({ data, actions, focus }: { data: CrmData; actions: Cr
     }
   }
 
-  // Llegar desde una campaña: abre ese chat, o filtra los que esperan vendedor si no hay uno puntual.
+  // Llegar desde una campaña u "Hoy": abre ese chat; sin chat puntual, filtra los que esperan vendedor.
   useEffect(() => {
     if (!focus) return;
-    if (focus.id) {
-      setSeg('all');
-      void load(focus.id);
-    } else {
-      setSeg('human');
-    }
+    if (focus.id) void load(focus.id);
+    else set({ ...EMPTY_FILTERS, state: 'WAITING_SELLER' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.n]);
-
-  // Abre la primera conversación que espera a un vendedor (o la primera) al entrar.
-  useEffect(() => {
-    if (selected || focus?.id || data.inbox.length === 0) return;
-    const first = data.inbox.find((i) => i.conversation.control_mode === 'HUMAN') ?? data.inbox[0];
-    void load(first.conversation.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.inbox.length]);
-
-  const nameFor = (c: ConvRow): string => {
-    const lead = c.lead_id ? data.leadById.get(c.lead_id) : null;
-    const contact = lead?.contact_id ? data.contactById.get(lead.contact_id) : null;
-    return contact?.full_name || phoneOf(c);
-  };
 
   if (data.inbox.length === 0) {
     return (
@@ -92,54 +127,135 @@ export function InboxView({ data, actions, focus }: { data: CrmData; actions: Cr
     );
   }
 
+  const stateOptions = [
+    { key: 'ALL' as const, label: 'Todas', count: rows.length },
+    ...STATE_ORDER.filter((s) => counts[s] > 0 || s === 'WAITING_SELLER' || s === 'WITH_BOT').map((s) => ({ key: s, label: STATE_META[s].label, count: counts[s] })),
+  ];
+  const selectCls = 'rounded-lg border border-slate-800 bg-[#0c0f14] px-3 py-2 text-sm text-slate-300 focus:border-brand-500 focus:outline-none';
+  const selectedRow = rows.find((r) => r.item.conversation.id === selected);
+  const closeDetail = () => {
+    setSelected(null);
+    setDetail(null);
+  };
+
   return (
-    <div className="grid gap-4 lg:h-[calc(100vh-240px)] lg:min-h-[560px] lg:grid-cols-[300px_minmax(0,1fr)_320px]">
-      <Card className="flex min-h-0 flex-col overflow-hidden">
-        <div className="border-b border-slate-800 p-3">
-          <Segmented<Seg>
-            value={seg}
-            onChange={setSeg}
-            options={[
-              { key: 'all', label: 'Todas' },
-              { key: 'human', label: 'Vendedor', count: data.inbox.filter((i) => i.conversation.control_mode === 'HUMAN').length },
-              { key: 'bot', label: 'Bot' },
-            ]}
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <Segmented<InboxFilters['state']> value={filters.state} onChange={(state) => set({ state })} options={stateOptions} />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <input
+            value={filters.q}
+            onChange={(e) => set({ q: e.target.value })}
+            placeholder="Buscar por cliente, teléfono, producto o mensaje"
+            className="w-full rounded-lg border border-slate-800 bg-[#0c0f14] py-2 pl-9 pr-3 text-sm text-white placeholder-slate-600 focus:border-brand-500 focus:outline-none"
           />
         </div>
-        <ul className="min-h-0 flex-1 divide-y divide-slate-800/60 overflow-y-auto">
-          {items.map(({ conversation: c, lead: l, campaign }) => {
-            const human = c.control_mode === 'HUMAN';
-            return (
-              <li key={c.id}>
-                <button
-                  onClick={() => void load(c.id)}
-                  className={`flex w-full gap-3 px-4 py-3 text-left transition ${selected === c.id ? 'bg-slate-800/50' : 'hover:bg-slate-800/20'}`}
-                >
-                  <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${human ? 'bg-amber-400' : 'bg-emerald-500'}`} />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-sm font-medium text-slate-100">{nameFor(c)}</span>
-                      <span className="shrink-0 text-[11px] text-slate-500">{timeAgo(c.last_message_at)}</span>
-                    </span>
-                    <span className="block truncate text-xs text-slate-500">
-                      {l?.product_interest || 'Consulta general'}
-                      {l?.qualification ? ` · interés ${label(QUALIFICATION_LABEL, l.qualification).toLowerCase()}` : ''}
-                    </span>
-                    {campaign && <span className="mt-0.5 block truncate text-[11px] text-slate-600">Campaña: {campaign.campaign_name}</span>}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        <select value={filters.stage} onChange={(e) => set({ stage: e.target.value as InboxFilters['stage'] })} className={selectCls} aria-label="Filtrar por avance">
+          <option value="ALL">Todos los avances</option>
+          {STAGE_ORDER.map((s) => <option key={s} value={s}>{STAGE_META[s].label}</option>)}
+        </select>
+        <select value={filters.origin} onChange={(e) => set({ origin: e.target.value })} className={selectCls} aria-label="Filtrar por origen">
+          <option value="ALL">Cualquier origen</option>
+          <option value="DIRECT">Mensaje directo</option>
+          {campaigns.map(([id, name]) => <option key={id} value={id}>Campaña: {name}</option>)}
+        </select>
+        <select value={filters.owner} onChange={(e) => set({ owner: e.target.value })} className={selectCls} aria-label="Filtrar por responsable">
+          <option value="">Todo el equipo</option>
+          {data.owners.map((o) => <option key={o.id} value={o.id}>{o.full_name}</option>)}
+        </select>
+        {active && (
+          <button onClick={() => set(EMPTY_FILTERS)} className="text-sm font-medium text-slate-400 hover:text-white">
+            Limpiar
+          </button>
+        )}
+      </div>
+
+      <Card className="overflow-hidden">
+        {visible.length === 0 ? (
+          <Empty title="Ninguna conversación con estos filtros" action={<Button variant="outline" size="sm" onClick={() => set(EMPTY_FILTERS)}>Limpiar filtros</Button>} />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-800 text-xs text-slate-500">
+                  <th className="px-5 py-3 font-medium">Cliente</th>
+                  <th className="px-3 py-3 font-medium">Último mensaje</th>
+                  <th className="px-3 py-3 font-medium">Producto</th>
+                  <th className="px-3 py-3 font-medium">Avance</th>
+                  <th className="px-3 py-3 font-medium">Estado</th>
+                  <th className="px-3 py-3 font-medium">Origen</th>
+                  <th className="px-5 py-3 text-right font-medium">Actividad</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/70">
+                {visible.slice(0, shown).map((r) => {
+                  const c = r.item.conversation;
+                  const st = STATE_META[r.state];
+                  const sg = STAGE_META[r.stage];
+                  const waiting = r.state === 'WAITING_SELLER';
+                  const last = r.item.last_message;
+                  return (
+                    <tr
+                      key={c.id}
+                      onClick={() => void load(c.id)}
+                      className={`cursor-pointer hover:bg-slate-800/20 ${selected === c.id ? 'bg-slate-800/40' : ''} ${waiting ? 'shadow-[inset_3px_0_0_#f59e0b]' : ''}`}
+                    >
+                      <td className="px-5 py-3">
+                        <p className="font-medium text-slate-100">{r.name}</p>
+                        {r.name !== r.phone && <p className="text-xs tabular-nums text-slate-500">{r.phone}</p>}
+                      </td>
+                      <td className="max-w-[280px] px-3 py-3">
+                        <p className="truncate text-slate-300">
+                          {last ? <span className="text-slate-500">{last.direction === 'INBOUND' ? 'Cliente: ' : last.author_role === 'HUMAN_AGENT' ? 'Vos: ' : 'Bot: '}</span> : null}
+                          {last?.preview ?? <span className="text-slate-600">Sin mensajes recientes</span>}
+                        </p>
+                      </td>
+                      <td className="max-w-[180px] truncate px-3 py-3 text-slate-300">{r.product || <span className="text-slate-600">—</span>}</td>
+                      <td className="px-3 py-3"><Pill tone={sg.tone}>{sg.label}</Pill></td>
+                      <td className="px-3 py-3"><Pill tone={st.tone} dot>{st.label}</Pill></td>
+                      <td className="max-w-[170px] truncate px-3 py-3 text-xs text-slate-400">{r.item.campaign ? r.item.campaign.campaign_name : 'Directo'}</td>
+                      <td className={`px-5 py-3 text-right text-xs tabular-nums ${waiting ? 'font-semibold text-amber-400' : 'text-slate-500'}`}>{timeAgo(last?.at ?? c.last_message_at)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {visible.length > shown && (
+          <button onClick={() => setShown((n) => n + PAGE_SIZE)} className="w-full border-t border-slate-800 px-5 py-3 text-sm font-medium text-slate-400 hover:text-white">
+            Mostrar más ({visible.length - shown} restantes)
+          </button>
+        )}
       </Card>
+      <p className="text-xs text-slate-600">
+        {visible.length} {visible.length === 1 ? 'conversación' : 'conversaciones'}
+        {active ? ` de ${rows.length}` : ''} · las que esperan vendedor van primero
+      </p>
 
-      <Chat detail={selected === detail?.conversation.id ? detail : null} loading={loading} data={data} actions={actions} nameFor={nameFor} onRefresh={() => selected && void load(selected)} />
-
-      <LeadPanel detail={selected === detail?.conversation.id ? detail : null} data={data} actions={actions} onRefresh={() => selected && void load(selected)} />
+      {selected && (
+        <Drawer width="max-w-6xl" onClose={closeDetail}>
+          <header className="flex items-center justify-between gap-4 border-b border-slate-800 px-6 py-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <h2 className="truncate text-lg font-semibold text-white">{selectedRow?.name ?? 'Conversación'}</h2>
+              {selectedRow && <Pill tone={STATE_META[selectedRow.state].tone} dot>{STATE_META[selectedRow.state].label}</Pill>}
+            </div>
+            <DrawerClose onClose={closeDetail} />
+          </header>
+          <div className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <Chat detail={selected === detail?.conversation.id ? detail : null} loading={loading} data={data} actions={actions} nameFor={nameFor} onRefresh={() => void load(selected)} />
+            <LeadPanel detail={selected === detail?.conversation.id ? detail : null} data={data} actions={actions} onRefresh={() => void load(selected)} />
+          </div>
+        </Drawer>
+      )}
     </div>
   );
 }
+
 
 function Chat({
   detail,
@@ -157,6 +273,11 @@ function Chat({
   onRefresh: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+  const lastId = detail?.messages[detail.messages.length - 1]?.id;
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: 'end' });
+  }, [detail?.conversation.id, lastId]);
   if (!detail) {
     return (
       <Card className="grid place-items-center p-8 text-center">
@@ -186,7 +307,7 @@ function Chat({
   }
 
   return (
-    <Card className="flex min-h-[480px] flex-col overflow-hidden">
+    <Card className="flex h-full min-h-0 flex-col overflow-hidden">
       <header className="flex items-center gap-3 border-b border-slate-800 px-5 py-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-white">{nameFor(c)}</p>
@@ -230,6 +351,7 @@ function Chat({
             </div>
           );
         })}
+        <div ref={endRef} />
       </div>
       {human ? (
         <ReplyBox conversationId={c.id} messages={detail.messages} actions={actions} onSent={onRefresh} />

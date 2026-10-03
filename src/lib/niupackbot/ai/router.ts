@@ -6,6 +6,7 @@ import { OpenAIService } from '@/lib/openai/openai-service';
 import type { CrmIntent, Qualification } from '@/lib/crm/types';
 import { detectLanguageStrict, extractCommercial } from '../qualification/extractor';
 import { qualify } from '../qualification/rules';
+import { normalizePhone } from '../outreach/phone';
 import { templateReply, type ReplyKind } from './prompts';
 import type { BotContext, BotLanguage, BotTurnResult, ExtractedCommercial } from '../types';
 
@@ -104,6 +105,16 @@ export async function runBotTurn(input: { text: string; context: BotContext }): 
   const fromNumber: BotLanguage = context.externalConversationId.replace(/[^0-9]/g, '').startsWith('55') ? 'pt-BR' : 'es';
   const language: BotLanguage = detectLanguageStrict(text) ?? (context.state.language === 'pt-BR' || context.state.language === 'es' ? context.state.language : fromNumber);
   extracted.language = language;
+  // Sin ciudad de destino dicha por el cliente, el país es el de su número (no el del idioma: un paraguayo
+  // que escribe en portugués sigue siendo PY, y uno que dice "Hola" no es BR por un empate de idioma).
+  if (!extracted.destination_city) {
+    const phone = normalizePhone(context.externalConversationId);
+    const country = phone.ok ? phone.country : null;
+    if (country) {
+      extracted.country = country;
+      extracted.destination_country = country;
+    }
+  }
   const decision = decideTurn({ text, intent, extracted, turnCount: context.state.turn_count });
 
   return {
