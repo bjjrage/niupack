@@ -1,61 +1,31 @@
-# NIUPACK Commercial CRM + NIUPACKBOT V1 — Execution Status
+# NIUPACK Commercial CRM + NIUPACKBOT V1 — Execution Status (HARDENING FINAL)
 
-> Fuente de continuidad multiagente. Otro agente debe poder continuar sin contexto de chat.
+> Fuente de continuidad multiagente. Estado real final, sin texto viejo de pendientes.
 
-## CURRENT BATCH
-- BATCH 08/09 — Vertical slice DONE en tests + QA DONE (114 tests, typecheck clean, build OK). Pendiente: commits + reporte final.
-
-## STATUS
+## HEAD
 - Branch: `feature/commercial-crm-autolead`
-- Base SHA (original): `4061d1f03ca9f2321b6922057257f52c0b670ba8`
-- Feature tip al iniciar: `08a2c057ec019fc641bc40355e745ecf3879ce88`
-- main: NO MODIFICADA (dirty local en main stasheado como `wip-main-dirty-before-crm-work`, no commiteado a main)
-- AutoLead: NO TOCADO (privado/404; reuse solo patrones, sin clonar)
+- Previous SHA (pre-hardening): `8dd5baf5ce8540c3e121f460c9e6afa554456a43`
+- Final SHA: (ver `git rev-parse HEAD` tras commits hardening)
+- Base original: `4061d1f03ca9f2321b6922057257f52c0b670ba8`
+- main: NO MODIFICADA. AutoLead: NO TOCADO.
 
-## LAST COMMIT
-- Pendiente de crear en este batch (ver git log). Último preexistente: `08a2c05 docs(crm): pivot blueprint to embedded NIUPACKBOT`.
+## HARDENING APLICADO (sin features, sin rediseño UI)
+1. **Twilio strict (route-level)**: sin `TWILIO_AUTH_TOKEN` => TwiML vacío, cero writes, cero OpenAI. Firma ausente/inválida => TwiML vacío, cero writes. Tests en `tests/niupackbot-webhook-hardening.test.ts` (ruta POST, no solo helper).
+2. **Tenant resolver estricto**: eliminado `organizations.select('id').limit(1)`. `resolveOrganizationIdStrict()` en `src/lib/niupackbot/whatsapp/webhook.ts`: test => org test explícita; resto => exige `NIUPACKBOT_ORGANIZATION_ID` y verifica existencia en `organizations`. Sin crear orgs. Tests en `tests/niupackbot-tenant-resolver.test.ts`.
+3. **Single outbound**: inbound V1 responde SOLO vía TwiML `<Message>`. Eliminado `sendWhatsapp()` REST del flujo inbound (`src/lib/niupackbot/service.ts`); sender REST movido a `src/lib/niupackbot/whatsapp/sender.ts` reservado, sin ejecutarse. Test espía `fetch` => 0 llamadas a `api.twilio.com`.
+4. **Cross-tenant FK validation**: `crmService` valida `company_id/contact_id/lead_id/opportunity_id/conversation_id/assigned_to/owner_profile_id` contra el mismo `organizationId` (`CROSS_TENANT_REFERENCE` => 403). Perfiles: DB en SUPABASE, binding en memoria para tests. Rutas CRM usan `crmService`, no `repository` directo para mutaciones. Tests en `tests/crm-cross-tenant-refs.test.ts` (forged company/contact/lead/opp/owner/assigned).
+5. **Migrations**: `20261003000001_crm_v1` + `20261003000002_niupackbot_v1` revisadas (orden FK, `private.current_organization_id()`, RLS, índices, aditivas, sin DROP de datos). **NO aplicadas a Supabase vivo desde este entorno**: `.env.local` tiene URL real pero `SUPABASE_SERVICE_ROLE_KEY`/`DATABASE_URL`/`ANON` placeholders (dry-run falla con `ENOTFOUND db.your-project`). Bloqueador externo, no se finge aplicación.
+6. **Env**: `.env.example` con sección SERVER ONLY (`NIUPACKBOT_ORGANIZATION_ID`, `TWILIO_*`, `TWILIO_WEBHOOK_URL`), marcadas obligatorias en producción, sin secretos reales.
+7. **QA**: scenarios cubiertos (sin secret/inválida/válida/sin org/org inválida/forged FK/retry/HUMAN/CRM operativo).
 
-## COMPLETED
-- [x] BATCH 01 Discovery + baseline (96 tests, typecheck clean, sidebar 1 entrada, UI audit misma identidad)
-- [x] BATCH 01 AutoLead archaeology (`NIUPACKBOT_AUTOLEAD_REUSE_MAP.md`, sin modificar AutoLead)
-- [x] BATCH 02 CRM DB (`20261003000001_crm_v1.sql`: 7 tablas + RLS + idempotencia) + BOT runtime (`20261003000002_niupackbot_v1.sql`: 3 tablas, reusa `crm_conversations`)
-- [x] BATCH 03 `src/lib/crm/{types,validation,repository,service}` (field authority, no-regress BOT, idempotencia, Lead360, handoff)
-- [x] BATCH 04 API `/api/crm/*` (dashboard, leads, leads/[id], leads/[id]/360, opportunities, opportunities/[id], opportunities/[id]/stage, tasks, tasks/[id], companies, contacts, inbox, inbox/[id]) con `requireNiuIdentity()`, org server-side
-- [x] BATCH 05 UI real (`CommercialCrmWorkspace` conectado a datos, mismos tokens, 5 vistas locales, Lead360 contextual, empty states reales, sin rediseño)
-- [x] BATCH 06 NIUPACKBOT core (`types, conversation/context+engine, ai/router+prompts+schemas, qualification/extractor+rules, tools/crm+catalog+pricing+logistics, repository, service`, ES/PT-BR, 9 intents, LOW/MEDIUM/HIGH, sin true cost)
-- [x] BATCH 07 Webhook `POST /api/niupackbot/whatsapp` (firma HMAC-SHA1, normalize, idempotencia MessageSid, fail-open TwiML) + handoff (`BOT→HUMAN`, activity+task, pausa auto-reply)
-- [x] BATCH 08 Vertical slice en tests: ejemplo `copos 12 oz / 500 mil / Curitiba` → BR/pt-BR/RFQ/HIGH/lead+opp+timeline+task, sin duplicar en reintento
-- [x] Docs: `NIUPACKBOT_ARCHITECTURE.md` creado
+## NO CAMBIADO (verificado)
+- UI intacta este batch (`CommercialCrmWorkspace`, sidebar 1 entrada, 5 vistas). Cost Intelligence intacto (preview/inactive, sin true cost). Sin pricing/logistics reales. Sin tabs nuevos.
 
-## IN PROGRESS
-- [ ] Commits pequeños por batch en `feature/commercial-crm-autolead` (no main)
-- [ ] Verificación final: `git status`, tests, typecheck, build, RLS, secrets, dead code, UI/sidebar, AutoLead untouched, main untouched
+## QA FINAL
+- `npm run test`: 32 files / 128 passed
+- `npm run typecheck`: clean
+- `npm run build`: OK (13 `/api/crm/*` + `/api/niupackbot/whatsapp` + `/commercial`)
 
-## BLOCKERS
-- Ningún bloqueo externo real. Externo potencial (no bloquea): `TWILIO_*`, `OPENAI_API_KEY`, Supabase prod, Railway. Todo con `NOT_CONFIGURED`/`UNAVAILABLE`/`STUB` sin inventar datos.
-
-## TEST STATUS
-- 29 files / 114 tests passed (96 baseline + 18 nuevos: `crm-tenant-isolation` 6, `niupackbot-inbound` 7, `niupackbot-security` 5)
-- Regresión: Auth/Logistics/Pricing/Cost/Visibility/RFQ intactos (suite verde)
-
-## TYPECHECK STATUS
-- Clean (`tsc --noEmit`)
-
-## BUILD STATUS
-- OK (`next build` verde, incluye `/api/crm/*` 13 rutas + `/api/niupackbot/whatsapp` + `/commercial`)
-
-## NEXT BATCH
-1. `git add` + commits por scope (db, crm domain, api, bot, ui, tests, docs)
-2. `git log --oneline -10` + `git status` para reporte final (branch, base, final SHA, total commits)
-3. Auditoría visual final + confirm single visual system + single sidebar entry
-4. Reporte DONE (sección 83 del prompt)
-
-## REGLAS ACTIVAS (no violar)
-- Sidebar global = módulos (1 entrada CRM). Local max 5 vistas. Detalles = contexto/drawer.
-- NO nueva librería UI/paleta/tipografía/spacing, NO rediseñar NIUPACK.
-- BOT → CRM solo vía `crmService.*`. Nunca insert directo a `crm_*` fuera de repository.
-- NO exponer true cost. Tools no configuradas => `NOT_CONFIGURED`/`UNAVAILABLE`.
-- NO mocks en producción. Solo empty state / not configured / unavailable.
-- NO DROP/DELETE masivo. Solo additive + nullable.
-- NO tocar `main`. NO mergear a `main`. Todo en `feature/commercial-crm-autolead`.
-- NO modificar AutoLead.
+## PENDIENTE EXTERNO (no código)
+- Setear en producción: `NIUPACKBOT_ORGANIZATION_ID` (UUID real verificado), `TWILIO_*`, `TWILIO_WEBHOOK_URL`, `SUPABASE_SERVICE_ROLE_KEY`/`DATABASE_URL` reales.
+- Aplicar migrations aditivas al proyecto NIUPACK existente y verificar tablas/RLS/policies/FK/indexes/history/advisors.
