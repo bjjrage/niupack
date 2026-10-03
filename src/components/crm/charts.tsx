@@ -37,24 +37,23 @@ export function StageBars({ data }: { data: Array<{ stage: string; count: number
   );
 }
 
-export function Funnel({ steps }: { steps: Array<{ label: string; value: number; sub?: string }> }) {
+export function Funnel({ steps }: { steps: Array<{ label: string; value: number }> }) {
   const max = Math.max(1, ...steps.map((s) => s.value));
   return (
     <div className="space-y-1.5">
       {steps.map((s, i) => (
         <div key={s.label} className="flex items-center gap-2">
           <span className="w-24 shrink-0 truncate text-[11px] text-slate-400">{s.label}</span>
-          <div className="h-8 flex-1 overflow-hidden rounded" style={{ background: TRACK }}>
+          <div className="h-6 flex-1 overflow-hidden rounded" style={{ background: TRACK }}>
             <div
-              className="flex h-full items-center justify-between rounded px-2"
+              className="flex h-full items-center justify-end rounded px-1.5"
               style={{
-                width: `${Math.max(s.value > 0 ? 18 : 6, (s.value / max) * 100)}%`,
+                width: `${Math.max(s.value > 0 ? 12 : 4, (s.value / max) * 100)}%`,
                 background: i === 0 ? SLATE : RED_DIM[Math.min(i - 1, RED_DIM.length - 1)],
                 opacity: 0.55 + (0.45 * (steps.length - i)) / steps.length,
               }}
             >
-              <span className="text-[11px] font-bold tabular-nums text-white">{s.value}</span>
-              {s.sub && <span className="truncate text-[10px] tabular-nums text-white/80">{s.sub}</span>}
+              <span className="text-[10px] font-semibold tabular-nums text-white">{s.value}</span>
             </div>
           </div>
         </div>
