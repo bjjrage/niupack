@@ -117,7 +117,7 @@ SELECT
   SUM(quantity) FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '180 days') AS total_quantity_180d,
   SUM(quantity) FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '365 days') AS total_quantity_365d,
   AVG(COALESCE(total_value, quantity * COALESCE(unit_price, 0)))::NUMERIC AS average_order_value,
-  SUM(COALESCE(total_value, quantity * COALESCE(unit_price, 0)) FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '365 days'))::NUMERIC AS total_value_365d,
+  SUM(COALESCE(total_value, quantity * COALESCE(unit_price, 0))) FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '365 days') AS total_value_365d,
   COUNT(*) FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '365 days')::INTEGER AS purchases_365d
 FROM public.crm_customer_purchases
 GROUP BY organization_id, company_id, sku;
