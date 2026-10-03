@@ -24,6 +24,7 @@ import {
   Search,
   Factory,
   Truck,
+  Users,
 } from 'lucide-react';
 
 interface NavSection {
@@ -101,6 +102,12 @@ export const Sidebar: React.FC = () => {
         { name: 'Terrestre', href: '/logistics/road', icon: Truck },
         { name: 'Transportistas', href: '/logistics/providers', icon: Factory },
         { name: 'Histórico', href: '/logistics/history', icon: Database },
+      ],
+    },
+    {
+      title: '7. COMMERCIAL CRM',
+      items: [
+        { name: 'CRM Comercial', href: '/commercial', icon: Users, badge: 'NEW' },
       ],
     },
     {
