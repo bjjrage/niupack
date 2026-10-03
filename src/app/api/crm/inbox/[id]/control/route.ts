@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
 import { crmService } from '@/lib/crm/service';
+import { markRecipientsHuman } from '@/lib/niupackbot/outreach/inbound';
 
 /** Cambia el control BOT/HUMAN/PAUSED de una conversación (vendedor toma / devuelve). */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -10,6 +11,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { id } = await params;
     const input = z.object({ control: z.enum(['BOT', 'HUMAN', 'PAUSED']) }).parse(await request.json());
     const conversation = await crmService.setConversationControl(identity.organizationId, id, input.control, identity.profileId);
+    // Si la conversación venía de una campaña, el destinatario pasa a "requiere vendedor".
+    if (input.control === 'HUMAN') await markRecipientsHuman(identity.organizationId, id).catch(() => 0);
     return NextResponse.json({ conversation });
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 });

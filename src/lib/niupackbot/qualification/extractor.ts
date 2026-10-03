@@ -16,6 +16,20 @@ export function detectLanguage(text: string): BotLanguage {
   return pt >= es ? 'pt-BR' : 'es';
 }
 
+/** Idioma solo si hay señal clara; null en empate (mensajes cortos como "Hola"). El caller decide el default. */
+export function detectLanguageStrict(text: string): BotLanguage | null {
+  const t = ` ${text.toLowerCase()} `;
+  let pt = 0;
+  let es = 0;
+  for (const h of PT_HINTS) if (t.includes(h)) pt += 1;
+  for (const h of ES_HINTS) if (t.includes(h)) es += 1;
+  if (/[ãõçâêô]/.test(t)) pt += 2;
+  if (/(quiero|necesito|usted|gracias|vasos|tienen|productos|hola|buenas)/.test(t)) es += 2;
+  if (/(ola|olá|bom dia|boa tarde|voces|vocês|tem)/.test(t)) pt += 2;
+  if (pt === es) return null;
+  return pt > es ? 'pt-BR' : 'es';
+}
+
 function norm(text: string): string {
   return text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }

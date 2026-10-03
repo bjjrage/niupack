@@ -30,7 +30,7 @@ export const crmTools = {
   },
 
   createOpportunityFromLead: (organizationId: string, leadId: string) =>
-    crmService.createOpportunityFromLead(organizationId, leadId, { stage: 'CALIFICADO' }),
+    crmService.createOpportunityFromLead(organizationId, leadId, { stage: 'NUEVO' }),
 
   addActivity: (
     organizationId: string,

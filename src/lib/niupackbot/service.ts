@@ -9,6 +9,8 @@ import { planEffects } from './conversation/engine';
 import { runBotTurn } from './ai/router';
 import { crmTools } from './tools/crm';
 import { requestHandoff } from './handoff/service';
+import { onCampaignInbound, markRecipientsHuman } from './outreach/inbound';
+import { templateReply } from './ai/prompts';
 import type { NormalizedInbound } from './types';
 
 export interface InboundResult {
@@ -20,6 +22,12 @@ export interface InboundResult {
   duplicate: boolean;
   intent?: string | null;
   qualification?: string | null;
+}
+
+/** Mensajes de una palabra (STOP/BAJA) no alcanzan para detectar idioma: se usa el país del número. */
+function replyLanguage(inbound: NormalizedInbound): 'es' | 'pt-BR' {
+  if (/[ãõç]|\b(nao|quero|obrigad[oa]|sair)\b/i.test(inbound.body)) return 'pt-BR';
+  return inbound.from.replace(/[^0-9]/g, '').startsWith('55') ? 'pt-BR' : 'es';
 }
 
 export const niupackbotService = {
@@ -83,8 +91,41 @@ export const niupackbotService = {
       duration_ms: Date.now() - started,
     });
 
-    // 3) Si humano tiene el control, persistir pero no auto-responder.
+    // 2b) Campañas: baja y rechazo se honran SIEMPRE; además se vincula la respuesta con su campaña.
     const freshConv = (await crmRepository.getConversation(conversationId, organizationId)) ?? conversation;
+    const campaign = await onCampaignInbound(organizationId, { from: inbound.from, conversationId, body: inbound.body });
+    if (campaign.optOut || campaign.noInterest) {
+      const humanHasChat = freshConv.control_mode === 'HUMAN' || freshConv.control_mode === 'PAUSED';
+      // La baja se confirma aunque haya un humano; el rechazo cortés solo si atiende el bot.
+      const reply = campaign.optOut || !humanHasChat ? templateReply(replyLanguage(inbound), campaign.optOut ? 'OPT_OUT' : 'NO_INTEREST') : null;
+      if (reply) {
+        await niupackbotRepository.appendMessage({
+          organization_id: organizationId,
+          conversation_id: conversationId,
+          direction: 'OUTBOUND',
+          channel: 'WHATSAPP',
+          provider: 'TWILIO',
+          external_message_id: null,
+          author_role: 'BOT',
+          body: reply,
+          intent: null,
+          language: null,
+          metadata: { campaign_id: campaign.campaignId ?? null, kind: campaign.optOut ? 'OPT_OUT' : 'NO_INTEREST' },
+        });
+      }
+      await crmRepository.updateConversation(conversationId, organizationId, { last_message_at: new Date().toISOString() });
+      await niupackbotRepository.logEvent({
+        organization_id: organizationId,
+        conversation_id: conversationId,
+        external_message_id: inbound.externalMessageId,
+        event_type: reply ? 'REPLY_SENT' : 'REPLY_SKIPPED_HUMAN',
+        duration_ms: Date.now() - started,
+        metadata: { mode: 'TWIML', kind: campaign.optOut ? 'OPT_OUT' : 'NO_INTEREST' },
+      });
+      return { conversationId, leadId: freshConv.lead_id ?? null, duplicate: false, reply, replySkipped: !reply };
+    }
+
+    // 3) Si humano tiene el control, persistir pero no auto-responder.
     if (freshConv.control_mode === 'HUMAN' || freshConv.control_mode === 'PAUSED') {
       await crmRepository.updateConversation(conversationId, organizationId, { last_message_at: new Date().toISOString() });
       await niupackbotRepository.logEvent({
@@ -167,13 +208,16 @@ export const niupackbotService = {
     const effects = planEffects({ context: { ...context, leadId: lead.id }, turn });
     let opportunityId: string | null = null;
 
-    if (turn.shouldRequestHandoff || effects.createTask) {
+    // Handoff solo por intención (precio, cotización, pedido, humano, dato que el bot no confirma),
+    // nunca por la calificación del lead.
+    if (effects.createTask) {
       await requestHandoff({
         organizationId,
         conversationId,
         leadId: lead.id,
-        reason: turn.shouldRequestHandoff ? 'Cliente solicitó humano.' : `Lead ${turn.qualification} requiere seguimiento humano.`,
+        reason: effects.createOpportunity ? 'Consulta comercial (precio/cotización/pedido): requiere vendedor.' : 'El cliente necesita atención de un asesor.',
       });
+      await markRecipientsHuman(organizationId, conversationId);
       await niupackbotRepository.logEvent({
         organization_id: organizationId,
         conversation_id: conversationId,

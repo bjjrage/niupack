@@ -1,9 +1,11 @@
 import type { BotContext, BotTurnResult } from '../types';
 
 /**
- * Conversation engine V1: decide efectos a partir del turno + contexto.
- * - Si control HUMAN/PAUSED => no auto-responder.
- * - Si HIGH => crear oportunidad (vía tools) + task solo si falta contacto humano.
+ * Conversation engine: decide efectos a partir del turno + contexto.
+ * - HUMAN/PAUSED => el bot no responde ni crea nada.
+ * - Handoff => task de seguimiento humano (la crea requestHandoff).
+ * - Oportunidad SOLO con señal comercial concreta (turn.shouldCreateOpportunity),
+ *   nunca por la calificación del lead ni por el solo hecho de responder.
  */
 export function planEffects(input: { context: BotContext; turn: BotTurnResult }): {
   autoReply: boolean;
@@ -14,9 +16,5 @@ export function planEffects(input: { context: BotContext; turn: BotTurnResult })
   if (context.controlMode === 'HUMAN' || context.controlMode === 'PAUSED') {
     return { autoReply: false, createOpportunity: false, createTask: false };
   }
-  if (turn.shouldRequestHandoff) return { autoReply: true, createOpportunity: false, createTask: true };
-  if (turn.shouldCreateOpportunity) {
-    return { autoReply: true, createOpportunity: true, createTask: turn.qualification === 'HIGH' };
-  }
-  return { autoReply: true, createOpportunity: false, createTask: false };
+  return { autoReply: true, createOpportunity: turn.shouldCreateOpportunity, createTask: turn.shouldRequestHandoff };
 }

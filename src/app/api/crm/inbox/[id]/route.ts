@@ -3,6 +3,7 @@ import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
 import { crmRepository } from '@/lib/crm/repository';
 import { crmService } from '@/lib/crm/service';
 import { niupackbotRepository } from '@/lib/niupackbot/repository';
+import { campaignsForConversations } from '@/lib/niupackbot/outreach/inbound';
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -15,7 +16,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       crmRepository.listActivities(identity.organizationId, { conversation_id: id }),
       conversation.lead_id ? crmService.getLead360(identity.organizationId, conversation.lead_id) : Promise.resolve(null),
     ]);
-    return NextResponse.json({ conversation, messages, activities, lead360 });
+    const campaign = (await campaignsForConversations(identity.organizationId, [id]).catch(() => new Map())).get(id) ?? null;
+    return NextResponse.json({ conversation, messages, activities, lead360, campaign });
   } catch (error) {
     return authErrorResponse(error);
   }
