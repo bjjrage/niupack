@@ -520,6 +520,18 @@ export const crmService = {
     return crmRepository.createCompany({ ...input, organization_id: organizationId });
   },
 
+  async updateCompany(
+    organizationId: string,
+    id: string,
+    updates: Partial<Omit<import('./types').CrmCompany, 'id' | 'organization_id' | 'created_at' | 'updated_at'>>,
+    actorProfileId?: string,
+  ) {
+    await assertCompanyInOrg(organizationId, id);
+    await assertProfileInOrg(organizationId, updates.owner_profile_id);
+    await assertProfileInOrg(organizationId, actorProfileId);
+    return crmRepository.updateCompany(id, organizationId, updates);
+  },
+
   async createContact(
     organizationId: string,
     input: Omit<import('./types').CrmContact, 'id' | 'organization_id' | 'created_at' | 'updated_at'>,
@@ -834,6 +846,39 @@ export const crmService = {
       if (o.organization_id === organizationId) out.push({ id, full_name: o.full_name, email: o.email ?? null });
     }
     return out.sort((a, b) => a.full_name.localeCompare(b.full_name));
+  },
+
+  /**
+   * Alta de un vendedor: crea su perfil en la organización. Si la persona luego
+   * inicia sesión con ese email, requireNiuIdentity vincula el perfil solo.
+   * Solo administradores.
+   */
+  async createOwner(
+    organizationId: string,
+    actorProfileId: string,
+    input: { full_name: string; email: string },
+  ): Promise<import('./types').OwnerProfile> {
+    if (!organizationId) throw new Error('ORGANIZATION_REQUIRED');
+    if (!isSupabaseAdminConfigured || !supabaseAdmin) throw new Error('PERSISTENCE_NOT_CONFIGURED');
+    const { data: actor, error: actorError } = await supabaseAdmin
+      .from('profiles')
+      .select('role')
+      .eq('id', actorProfileId)
+      .eq('organization_id', organizationId)
+      .maybeSingle();
+    if (actorError) throw new Error(`profiles: ${actorError.message}`);
+    if ((actor as { role?: string } | null)?.role !== 'admin') throw new Error('ADMIN_REQUIRED');
+    const email = input.email.trim().toLowerCase();
+    const { data: existing } = await supabaseAdmin.from('profiles').select('id, organization_id').ilike('email', email).maybeSingle();
+    if (existing) throw new Error((existing as { organization_id: string }).organization_id === organizationId ? 'OWNER_EXISTS' : 'EMAIL_IN_USE');
+    const { data, error } = await supabaseAdmin
+      .from('profiles')
+      .insert({ organization_id: organizationId, email, full_name: input.full_name.trim(), role: 'operator' })
+      .select('id, full_name, email')
+      .single();
+    if (error) throw new Error(`profiles: ${error.message}`);
+    const p = data as { id: string; full_name: string; email: string };
+    return { id: p.id, full_name: p.full_name, email: p.email };
   },
 
   // ---------- Control de conversación (vendedor toma / devuelve al bot) ----------

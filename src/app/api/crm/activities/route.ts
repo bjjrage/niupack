@@ -1,8 +1,29 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
+import { crmRepository } from '@/lib/crm/repository';
 import { crmService } from '@/lib/crm/service';
 import { activityCreateSchema } from '@/lib/crm/validation';
+
+/** Timeline filtrado por oportunidad, cuenta o lead (al menos un filtro es obligatorio). */
+export async function GET(request: Request) {
+  try {
+    const identity = await requireNiuIdentity();
+    const { searchParams } = new URL(request.url);
+    const filter = {
+      opportunity_id: searchParams.get('opportunity_id') ?? undefined,
+      company_id: searchParams.get('company_id') ?? undefined,
+      lead_id: searchParams.get('lead_id') ?? undefined,
+    };
+    if (!filter.opportunity_id && !filter.company_id && !filter.lead_id) {
+      return NextResponse.json({ error: 'FILTER_REQUIRED' }, { status: 400 });
+    }
+    const activities = await crmRepository.listActivities(identity.organizationId, filter);
+    return NextResponse.json({ activities: activities.slice(0, 50) });
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+}
 
 /** Crea una entrada de timeline (nota, mensaje humano, etc.) con validación cross-tenant. */
 export async function POST(request: Request) {

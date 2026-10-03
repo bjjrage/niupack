@@ -470,13 +470,14 @@ export const crmRepository = {
   },
 
   // ---------- Activities ----------
-  async listActivities(organizationId: string, filter: { lead_id?: string; opportunity_id?: string; conversation_id?: string } = {}): Promise<CrmActivity[]> {
+  async listActivities(organizationId: string, filter: { lead_id?: string; opportunity_id?: string; conversation_id?: string; company_id?: string } = {}): Promise<CrmActivity[]> {
     mustOrg(organizationId);
     if (mode() === 'SUPABASE' && supabaseAdmin) {
       let q = supabaseAdmin.from('crm_activities').select('*').eq('organization_id', organizationId).order('occurred_at', { ascending: false }).limit(300);
       if (filter.lead_id) q = q.eq('lead_id', filter.lead_id);
       if (filter.opportunity_id) q = q.eq('opportunity_id', filter.opportunity_id);
       if (filter.conversation_id) q = q.eq('conversation_id', filter.conversation_id);
+      if (filter.company_id) q = q.eq('company_id', filter.company_id);
       const { data, error } = await q;
       if (error) throw new Error(`crm_activities: ${error.message}`);
       return (data ?? []) as CrmActivity[];
@@ -488,7 +489,8 @@ export const crmRepository = {
           a.organization_id === organizationId &&
           (!filter.lead_id || a.lead_id === filter.lead_id) &&
           (!filter.opportunity_id || a.opportunity_id === filter.opportunity_id) &&
-          (!filter.conversation_id || a.conversation_id === filter.conversation_id),
+          (!filter.conversation_id || a.conversation_id === filter.conversation_id) &&
+          (!filter.company_id || a.company_id === filter.company_id),
       )
       .slice(0, 300);
   },

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -37,67 +37,103 @@ interface NavSection {
   }>;
 }
 
+/** Nombre completo + qué hace cada sección. Se muestra al pasar el mouse. */
+const HINTS: Record<string, [string, string]> = {
+  '/': ['Dashboard ejecutivo', 'Vista general del negocio: indicadores clave de todas las áreas.'],
+  '/strategy': ['Estrategia país × SKU', 'Qué producto empujar en qué mercado, cruzando costo, precio y demanda.'],
+  '/actions': ['Centro de acciones', 'Pendientes y recomendaciones que el sistema detectó para resolver.'],
+  '/visibility/generator': ['Generador de consultas', 'Crea las preguntas que se hacen a las IA para medir si recomiendan a NIUPACK.'],
+  '/visibility/batteries': ['Baterías y congelado', 'Conjuntos fijos de consultas para comparar resultados en el tiempo.'],
+  '/visibility/runs': ['Historial de ejecuciones', 'Cada corrida de consultas a las IA, con su costo y resultados.'],
+  '/visibility/competitors': ['Competidores', 'Qué marcas aparecen en las respuestas de las IA y con qué frecuencia.'],
+  '/visibility/sources': ['Fuentes y dominios', 'Sitios que las IA citan al responder sobre el rubro.'],
+  '/visibility/discovery': ['OpenAI discovery', 'Estado de indexación de NIUPACK en los buscadores de OpenAI.'],
+  '/market/prices': ['Precios regionales', 'Precios de mercado por producto y país (BR, AR, BO, PY).'],
+  '/market/suppliers': ['Maestro de fabricantes', 'Fabricantes y competidores de la región, con su oferta.'],
+  '/market/benchmarks': ['Benchmarks SKU × país', 'Compara precio NIUPACK contra el mercado por SKU y país.'],
+  '/cost/skus': ['Productos y SKUs', 'Maestro de productos: medidas, material, MOQ. El CRM toma los productos de acá.'],
+  '/cost/cost-sheets': ['Hojas de costo real', 'Costo unitario por SKU: materia prima, proceso y gastos.'],
+  '/cost/processes': ['Procesos industriales', 'Máquinas, velocidades y mermas que alimentan el costo.'],
+  '/cost/logistics': ['Costo de exportación', 'Flete y gastos de exportación sumados al costo del producto.'],
+  '/cost/scenarios': ['Simulador de escenarios', 'Qué pasa con el margen si cambia el papel, el dólar o el volumen.'],
+  '/cost/efficiency': ['Oportunidades de eficiencia', 'Dónde bajar costo: procesos, compras y mermas.'],
+  '/pricing/strategy': ['Estrategia de precios', 'Precio sugerido por SKU y mercado según costo y competencia.'],
+  '/rfq/discovery': ['Descubrimiento de RFQs', 'Busca con IA pedidos de cotización y compradores potenciales.'],
+  '/rfq/rfqs': ['Especificaciones RFQ', 'Pedidos de cotización recibidos, con sus especificaciones técnicas.'],
+  '/rfq/inbox': ['Bandeja Gmail corporativa', 'Correos de cotización detectados en la casilla de la empresa.'],
+  '/rfq/quotes': ['Extracción de cotizaciones', 'Lee cotizaciones de proveedores y las pasa a datos comparables.'],
+  '/logistics': ['Logística · resumen', 'Estado general de fletes, rutas y transportistas.'],
+  '/logistics/ocean': ['Flete marítimo', 'Cotizaciones y rutas de contenedores.'],
+  '/logistics/road': ['Flete terrestre', 'Cotizaciones de camión a la región.'],
+  '/logistics/providers': ['Transportistas', 'Proveedores de flete, contactos y rutas que cubren.'],
+  '/logistics/history': ['Histórico logístico', 'Cotizaciones y envíos anteriores para comparar.'],
+  '/commercial': ['CRM comercial', 'Agenda del día, pipeline de ventas, cuentas, recompras y WhatsApp.'],
+  '/reports': ['Reportes ejecutivos', 'Informes listos para compartir con la dirección.'],
+  '/settings': ['Ajustes del sistema', 'Bots, correo SMTP, claves de IA y configuración general.'],
+};
+
 export const Sidebar: React.FC = () => {
+  const [hint, setHint] = useState<{ href: string; top: number; left: number } | null>(null);
   const pathname = usePathname();
 
   const navigation: NavSection[] = [
     {
-      title: 'VISTA GENERAL',
+      title: 'General',
       items: [
-        { name: 'Dashboard Ejecutivo', href: '/', icon: LayoutDashboard },
-        { name: 'Estrategia País × SKU', href: '/strategy', icon: Compass, badge: 'CORE' },
-        { name: 'Centro de Acciones', href: '/actions', icon: CheckSquare, badge: '4' },
+        { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+        { name: 'Estrategia', href: '/strategy', icon: Compass, badge: 'CORE' },
+        { name: 'Acciones', href: '/actions', icon: CheckSquare, badge: '4' },
       ],
     },
     {
-      title: '1. AI VISIBILITY',
+      title: 'AI Visibility',
       items: [
-        { name: 'Generador de Consultas', href: '/visibility/generator', icon: Sparkles },
-        { name: 'Baterías & Congelado', href: '/visibility/batteries', icon: Layers },
-        { name: 'Historial de Ejecuciones', href: '/visibility/runs', icon: Target },
+        { name: 'Consultas', href: '/visibility/generator', icon: Sparkles },
+        { name: 'Baterías', href: '/visibility/batteries', icon: Layers },
+        { name: 'Ejecuciones', href: '/visibility/runs', icon: Target },
         { name: 'Competidores', href: '/visibility/competitors', icon: Eye },
-        { name: 'Fuentes & Dominios', href: '/visibility/sources', icon: Database },
-        { name: 'OpenAI Discovery Status', href: '/visibility/discovery', icon: ShieldCheck },
+        { name: 'Fuentes', href: '/visibility/sources', icon: Database },
+        { name: 'Discovery', href: '/visibility/discovery', icon: ShieldCheck },
       ],
     },
     {
-      title: '2. MARKET INTELLIGENCE',
+      title: 'Mercado',
       items: [
-        { name: 'Precios Regionales', href: '/market/prices', icon: DollarSign },
-        { name: 'Maestro de Fabricantes', href: '/market/suppliers', icon: Factory },
-        { name: 'Benchmarks SKU × País', href: '/market/benchmarks', icon: TrendingUp },
+        { name: 'Precios', href: '/market/prices', icon: DollarSign },
+        { name: 'Fabricantes', href: '/market/suppliers', icon: Factory },
+        { name: 'Benchmarks', href: '/market/benchmarks', icon: TrendingUp },
       ],
     },
     {
-      title: '3. COST INTELLIGENCE',
+      title: 'Costos',
       items: [
-        { name: 'Productos & SKUs', href: '/cost/skus', icon: Database },
-        { name: 'Hojas de Costo Real', href: '/cost/cost-sheets', icon: Calculator },
-        { name: 'Procesos Industriales', href: '/cost/processes', icon: Factory, badge: 'PREVIEW' },
-        { name: 'Export Logistics', href: '/cost/logistics', icon: Truck, badge: 'NEW' },
-        { name: 'Simulador de Escenarios', href: '/cost/scenarios', icon: Compass },
-        { name: 'Oportunidades de Eficiencia', href: '/cost/efficiency', icon: TrendingUp },
+        { name: 'Productos', href: '/cost/skus', icon: Database },
+        { name: 'Hojas de costo', href: '/cost/cost-sheets', icon: Calculator },
+        { name: 'Procesos', href: '/cost/processes', icon: Factory, badge: 'PREVIEW' },
+        { name: 'Export', href: '/cost/logistics', icon: Truck, badge: 'NEW' },
+        { name: 'Escenarios', href: '/cost/scenarios', icon: Compass },
+        { name: 'Eficiencia', href: '/cost/efficiency', icon: TrendingUp },
       ],
     },
     {
-      title: '4. PRICING STRATEGY',
+      title: 'Pricing',
       items: [
-        { name: 'Estrategias de Precio', href: '/pricing/strategy', icon: DollarSign, badge: 'CORE' },
+        { name: 'Estrategia de precio', href: '/pricing/strategy', icon: DollarSign, badge: 'CORE' },
       ],
     },
     {
-      title: '5. RFQ INTELLIGENCE',
+      title: 'RFQ',
       items: [
-        { name: 'Descubrimiento AI', href: '/rfq/discovery', icon: Search },
-        { name: 'Especificaciones RFQ', href: '/rfq/rfqs', icon: FileText },
-        { name: 'Bandeja Gmail Corporativa', href: '/rfq/inbox', icon: Inbox },
-        { name: 'Extracción de Cotizaciones', href: '/rfq/quotes', icon: CheckSquare },
+        { name: 'Descubrimiento', href: '/rfq/discovery', icon: Search },
+        { name: 'Especificaciones', href: '/rfq/rfqs', icon: FileText },
+        { name: 'Bandeja Gmail', href: '/rfq/inbox', icon: Inbox },
+        { name: 'Cotizaciones', href: '/rfq/quotes', icon: CheckSquare },
       ],
     },
     {
-      title: '6. LOGÍSTICA',
+      title: 'Logística',
       items: [
-        { name: 'Overview', href: '/logistics', icon: Truck, badge: 'NEW' },
+        { name: 'Resumen', href: '/logistics', icon: Truck, badge: 'NEW' },
         { name: 'Marítimo', href: '/logistics/ocean', icon: Compass },
         { name: 'Terrestre', href: '/logistics/road', icon: Truck },
         { name: 'Transportistas', href: '/logistics/providers', icon: Factory },
@@ -105,24 +141,24 @@ export const Sidebar: React.FC = () => {
       ],
     },
     {
-      title: '7. COMMERCIAL CRM',
+      title: 'Comercial',
       items: [
-        { name: 'CRM Comercial', href: '/commercial', icon: Users, badge: 'NEW' },
+        { name: 'CRM', href: '/commercial', icon: Users, badge: 'NEW' },
       ],
     },
     {
-      title: 'SISTEMA & REPORTES',
+      title: 'Sistema',
       items: [
-        { name: 'Reportes Ejecutivos', href: '/reports', icon: FileText },
-        { name: 'Ajustes del Sistema (Bots & SMTP)', href: '/settings', icon: Settings, badge: 'BOTS' },
+        { name: 'Reportes', href: '/reports', icon: FileText },
+        { name: 'Ajustes', href: '/settings', icon: Settings, badge: 'BOTS' },
       ],
     },
   ];
 
   return (
-    <aside className="w-64 bg-[#0a0d12] border-r border-slate-800 flex flex-col shrink-0 select-none">
+    <aside className="w-48 bg-[#0a0d12] border-r border-slate-800 flex flex-col shrink-0 select-none">
       {/* Brand Header */}
-      <div className="h-14 px-4 border-b border-slate-800 flex items-center justify-between">
+      <div className="h-14 px-3 border-b border-slate-800 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5">
           <div className="h-7 w-7 rounded bg-brand-500 flex items-center justify-center font-bold text-white text-xs tracking-wider shadow-sm">
             NIU
@@ -138,10 +174,10 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* Navigation Links */}
-      <div className="flex-1 overflow-y-auto py-3 px-2 space-y-5">
+      <div className="flex-1 overflow-y-auto py-2 px-1.5 space-y-3" onScroll={() => setHint(null)}>
         {navigation.map((section, idx) => (
           <div key={idx} className="space-y-0.5">
-            <h4 className="px-2 text-[10px] font-semibold text-slate-500 tracking-wider uppercase mb-1">
+            <h4 className="px-2 text-[10px] font-semibold text-slate-600 tracking-wider uppercase mb-0.5">
               {section.title}
             </h4>
             {section.items.map((item) => {
@@ -151,15 +187,21 @@ export const Sidebar: React.FC = () => {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`group flex items-center justify-between px-2.5 py-1.5 text-xs font-medium rounded transition-colors ${
+                  onMouseEnter={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setHint({ href: item.href, top: r.top + r.height / 2, left: r.right + 8 });
+                  }}
+                  onMouseLeave={() => setHint(null)}
+                  onClick={() => setHint(null)}
+                  className={`group flex items-center justify-between px-2 py-1 text-xs font-medium rounded transition-colors ${
                     isActive
                       ? 'bg-brand-500/10 text-white border-l-2 border-brand-500 rounded-l-none'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
                     <Icon
-                      className={`h-4 w-4 shrink-0 transition-colors ${
+                      className={`h-3.5 w-3.5 shrink-0 transition-colors ${
                         isActive ? 'text-brand-500' : 'text-slate-500 group-hover:text-slate-300'
                       }`}
                     />
@@ -193,6 +235,16 @@ export const Sidebar: React.FC = () => {
         </div>
         <span className="font-mono text-[10px] text-slate-400">FSSC 22000</span>
       </div>
+      {hint && HINTS[hint.href] && (
+        <div
+          role="tooltip"
+          className="pointer-events-none fixed z-[70] w-64 -translate-y-1/2 rounded-xl border border-white/10 bg-slate-900/60 px-3.5 py-2.5 shadow-2xl backdrop-blur-md"
+          style={{ top: hint.top, left: hint.left }}
+        >
+          <p className="text-xs font-semibold text-white/95">{HINTS[hint.href][0]}</p>
+          <p className="mt-0.5 text-[11px] leading-snug text-white/70">{HINTS[hint.href][1]}</p>
+        </div>
+      )}
     </aside>
   );
 };
