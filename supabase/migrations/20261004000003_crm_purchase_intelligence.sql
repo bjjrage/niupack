@@ -46,6 +46,8 @@ CREATE INDEX IF NOT EXISTS idx_crm_purchases_company_date ON public.crm_customer
 CREATE INDEX IF NOT EXISTS idx_crm_purchases_company_sku_date ON public.crm_customer_purchases (company_id, sku, purchase_date DESC);
 CREATE INDEX IF NOT EXISTS idx_crm_purchases_sku ON public.crm_customer_purchases (organization_id, sku);
 CREATE INDEX IF NOT EXISTS idx_crm_purchases_product ON public.crm_customer_purchases (organization_id, product_id);
+CREATE INDEX IF NOT EXISTS idx_crm_purchases_contact_fk ON public.crm_customer_purchases (contact_id, organization_id);
+CREATE INDEX IF NOT EXISTS idx_crm_purchases_product_fk ON public.crm_customer_purchases (product_id, organization_id);
 CREATE INDEX IF NOT EXISTS idx_crm_purchases_doc ON public.crm_customer_purchases (organization_id, external_document_id);
 
 -- -------------------------------------------------------------------
@@ -99,7 +101,8 @@ GRANT ALL ON public.crm_customer_purchases, public.crm_customer_aliases, public.
 -- -------------------------------------------------------------------
 -- 4. VIEW agregada por cliente x SKU ( двигатель TS calcula medianas/cadencia ).
 -- -------------------------------------------------------------------
-CREATE OR REPLACE VIEW public.customer_product_purchase_stats AS
+CREATE OR REPLACE VIEW public.customer_product_purchase_stats
+WITH (security_invoker = true) AS
 SELECT
   organization_id,
   company_id,
@@ -109,12 +112,16 @@ SELECT
   MAX(purchase_date) AS last_purchase_date,
   (ARRAY_AGG(quantity ORDER BY purchase_date DESC))[1] AS last_purchase_quantity,
   AVG(quantity)::NUMERIC AS average_order_quantity,
-  SUM(quantity FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '30 days'))::NUMERIC AS total_quantity_30d,
-  SUM(quantity FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '90 days'))::NUMERIC AS total_quantity_90d,
-  SUM(quantity FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '180 days'))::NUMERIC AS total_quantity_180d,
-  SUM(quantity FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '365 days'))::NUMERIC AS total_quantity_365d,
+  SUM(quantity) FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '30 days') AS total_quantity_30d,
+  SUM(quantity) FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '90 days') AS total_quantity_90d,
+  SUM(quantity) FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '180 days') AS total_quantity_180d,
+  SUM(quantity) FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '365 days') AS total_quantity_365d,
   AVG(COALESCE(total_value, quantity * COALESCE(unit_price, 0)))::NUMERIC AS average_order_value,
-  SUM(COALESCE(total_value, quantity * COALESCE(unit_price, 0)) FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '365 days'))::NUMERIC AS total_value_365d,
+  SUM(COALESCE(total_value, quantity * COALESCE(unit_price, 0))) FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '365 days') AS total_value_365d,
   COUNT(*) FILTER (WHERE purchase_date >= CURRENT_DATE - INTERVAL '365 days')::INTEGER AS purchases_365d
 FROM public.crm_customer_purchases
 GROUP BY organization_id, company_id, sku;
+
+
+REVOKE ALL ON public.customer_product_purchase_stats FROM anon;
+GRANT SELECT ON public.customer_product_purchase_stats TO authenticated, service_role;
