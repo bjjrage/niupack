@@ -1,5 +1,7 @@
--- Commercial CRM V1: tenant-scoped commercial truth (companies, contacts, leads, opportunities, tasks, activities, conversations).
--- Additive only. No DROP. No destructive changes. Follows NIUPACK RLS pattern via private.current_organization_id().
+-- Commercial CRM V1 additive: tenant-scoped commercial truth.
+-- Reconciliado con LIVE: 20261003163426 crm_v1_additive (proyecto tviuvfmhkatdplkisnta).
+-- Aditivo, sin DROP, sin destrucción. Reconstruye DB nueva desde cero.
+-- RLS real vía private.current_organization_id() (definida en migrations de seguridad previas).
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -206,7 +208,8 @@ CREATE INDEX IF NOT EXISTS idx_crm_convs_org_lead ON public.crm_conversations (o
 CREATE INDEX IF NOT EXISTS idx_crm_convs_control ON public.crm_conversations (organization_id, control_mode);
 
 -- -------------------------------------------------------------------
--- RLS: tenant isolation real (no confiar solo en TO authenticated)
+-- RLS: tenant isolation real (no confiar solo en TO authenticated).
+-- Aditivo y re-ejecutable: solo crea la policy si no existe (sin DROP).
 -- -------------------------------------------------------------------
 ALTER TABLE public.crm_companies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.crm_contacts ENABLE ROW LEVEL SECURITY;
@@ -220,11 +223,14 @@ DO $$
 DECLARE t TEXT;
 BEGIN
   FOREACH t IN ARRAY ARRAY['crm_companies','crm_contacts','crm_leads','crm_opportunities','crm_tasks','crm_activities','crm_conversations'] LOOP
-    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', 'tenant_isolation_' || t, t);
-    EXECUTE format(
-      'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (organization_id = (SELECT private.current_organization_id())) WITH CHECK (organization_id = (SELECT private.current_organization_id()))',
-      'tenant_isolation_' || t, t
-    );
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = t AND policyname = 'tenant_isolation_' || t
+    ) THEN
+      EXECUTE format(
+        'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (organization_id = (SELECT private.current_organization_id())) WITH CHECK (organization_id = (SELECT private.current_organization_id()))',
+        'tenant_isolation_' || t, t
+      );
+    END IF;
   END LOOP;
 END $$;
 

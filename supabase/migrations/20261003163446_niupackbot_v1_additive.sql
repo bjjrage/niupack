@@ -1,6 +1,7 @@
 -- NIUPACKBOT V1 runtime: verdad conversacional (CRM sigue siendo verdad comercial).
+-- Reconciliado con LIVE: 20261003163446 niupackbot_v1_additive (proyecto tviuvfmhkatdplkisnta).
 -- Reutiliza public.crm_conversations como ancla; no duplica Company/Contact/Lead/Opportunity.
--- Additive only.
+-- Aditivo, sin DROP, sin destrucción. Reconstruye DB nueva desde cero.
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -32,7 +33,7 @@ CREATE INDEX IF NOT EXISTS idx_bot_messages_org_conv
   ON public.niupackbot_messages (organization_id, conversation_id, occurred_at DESC);
 
 -- -------------------------------------------------------------------
--- 2. niupackbot_state (runtime por conversación)
+-- 2. niupackbot_state (runtime por conversación, PK = conversation_id)
 -- -------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.niupackbot_state (
   conversation_id UUID PRIMARY KEY REFERENCES public.crm_conversations(id) ON DELETE CASCADE,
@@ -73,7 +74,7 @@ CREATE INDEX IF NOT EXISTS idx_bot_events_org_type
   ON public.niupackbot_events (organization_id, event_type, created_at DESC);
 
 -- -------------------------------------------------------------------
--- RLS
+-- RLS: tenant isolation real. Aditivo y re-ejecutable (sin DROP).
 -- -------------------------------------------------------------------
 ALTER TABLE public.niupackbot_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.niupackbot_state ENABLE ROW LEVEL SECURITY;
@@ -83,13 +84,9 @@ DO $$
 DECLARE t TEXT;
 BEGIN
   FOREACH t IN ARRAY ARRAY['niupackbot_messages','niupackbot_state','niupackbot_events'] LOOP
-    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', 'tenant_isolation_' || t, t);
-    IF t = 'niupackbot_state' THEN
-      EXECUTE format(
-        'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (organization_id = (SELECT private.current_organization_id())) WITH CHECK (organization_id = (SELECT private.current_organization_id()))',
-        'tenant_isolation_' || t, t
-      );
-    ELSE
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = t AND policyname = 'tenant_isolation_' || t
+    ) THEN
       EXECUTE format(
         'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (organization_id = (SELECT private.current_organization_id())) WITH CHECK (organization_id = (SELECT private.current_organization_id()))',
         'tenant_isolation_' || t, t
@@ -101,7 +98,7 @@ END $$;
 REVOKE ALL ON public.niupackbot_messages, public.niupackbot_state, public.niupackbot_events FROM anon;
 GRANT ALL ON public.niupackbot_messages, public.niupackbot_state, public.niupackbot_events TO authenticated, service_role;
 
--- FK diferida: crm_activities.conversation_id -> crm_conversations(id) (no se pudo declarar inline por orden).
+-- FK diferida: crm_activities.conversation_id -> crm_conversations(id).
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'crm_activities_conversation_id_fkey'
