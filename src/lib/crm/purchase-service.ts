@@ -301,11 +301,18 @@ export const purchaseService = {
   },
 
   async getAlerts(organizationId: string, todayTs = Date.now()): Promise<RepurchaseAlert[]> {
-    const [companies, purchases] = await Promise.all([
+    const [companies, purchases, contacts] = await Promise.all([
       crmRepository.listCompanies(organizationId),
       crmRepository.listPurchases(organizationId, undefined, 5000),
+      crmRepository.listContacts(organizationId),
     ]);
     const byName = new Map(companies.map((c) => [c.id, c]));
+    const mainContact = new Map<string, { full_name: string; whatsapp_phone?: string | null }>();
+    for (const ct of contacts) {
+      if (ct.company_id && !mainContact.has(ct.company_id)) {
+        mainContact.set(ct.company_id, { full_name: ct.full_name, whatsapp_phone: ct.whatsapp_phone ?? null });
+      }
+    }
     const like: PurchaseLike[] = purchases.map((p) => toRows(p));
     return analyzeAll(like, todayTs)
       .filter((s) => s.repurchase_status === 'CONTACT_SOON' || s.repurchase_status === 'OVERDUE')
@@ -313,6 +320,8 @@ export const purchaseService = {
         ...s,
         company_name: byName.get(s.company_id)?.name ?? '—',
         owner_profile_id: byName.get(s.company_id)?.owner_profile_id ?? null,
+        contact_name: mainContact.get(s.company_id)?.full_name ?? null,
+        contact_whatsapp: mainContact.get(s.company_id)?.whatsapp_phone ?? null,
         expected_value: s.average_order_value,
       }))
       .sort((a, b) => (a.expected_next_purchase_at ?? '').localeCompare(b.expected_next_purchase_at ?? ''));

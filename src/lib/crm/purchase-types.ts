@@ -71,6 +71,8 @@ export interface CustomerTotals {
 export interface RepurchaseAlert extends SkuConsumption {
   company_name: string;
   owner_profile_id?: string | null;
+  contact_name?: string | null;
+  contact_whatsapp?: string | null;
   expected_value: number | null;
 }
 

@@ -5,7 +5,6 @@ import { X } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Avatar, fmtDateLabel, fmtMoney, ownerName, timeAgo, type OwnerRef } from './commercial-ui';
-import { MonthlyBars, ProductBars } from './charts';
 
 interface SkuStat {
   sku: string;
@@ -215,14 +214,11 @@ export function Account360({
                           <tr key={s.sku}>
                             <td className="py-1.5 pr-2">
                               <p className="font-medium text-slate-200">{s.product_name}</p>
-                              <p className="font-mono text-[10px] text-slate-500">{s.sku} · {s.purchases_365d} compras 12m</p>
+                              <p className="font-mono text-[10px] text-slate-500">{s.sku}</p>
                             </td>
-                            <td className="py-1.5 pr-2 tabular-nums text-slate-300">
-                              {fmtDateLabel(s.last_purchase_date)}
-                              <span className="block text-slate-500">{Math.round(s.last_purchase_quantity).toLocaleString('es-PY')} u.</span>
-                            </td>
+                            <td className="py-1.5 pr-2 tabular-nums text-slate-300">{fmtDateLabel(s.last_purchase_date)}</td>
                             <td className="py-1.5 pr-2 text-right tabular-nums text-slate-300">{Math.round(s.average_order_quantity).toLocaleString('es-PY')} u.</td>
-                            <td className="py-1.5 pr-2 text-right tabular-nums text-slate-300">{s.median_days_between_orders != null ? `${Math.round(s.median_days_between_orders)} d` : '—'}</td>
+                            <td className="py-1.5 pr-2 text-right tabular-nums text-slate-300">{s.median_days_between_orders != null ? `cada ${Math.round(s.median_days_between_orders)} días` : '—'}</td>
                             <td className="py-1.5 pr-2 text-right tabular-nums text-slate-300">{s.expected_next_purchase_at ? fmtDateLabel(s.expected_next_purchase_at) : '—'}</td>
                             <td className="py-1.5 text-right">
                               <Badge variant={s.repurchase_status === 'OVERDUE' ? 'danger' : s.repurchase_status === 'CONTACT_SOON' ? 'warning' : s.repurchase_status === 'ON_CYCLE' ? 'success' : 'neutral'} size="sm">
@@ -235,18 +231,6 @@ export function Account360({
                     </table>
                   </div>
                 )}
-              </section>
-
-              <section className="rounded-lg border border-slate-800 bg-[#0c0f14] p-3">
-                <h3 className="text-xs font-semibold text-white">Compras mensuales — últimos 12 meses</h3>
-                <div className="mt-2"><MonthlyBars data={consumption.monthly} /></div>
-              </section>
-
-              <section className="rounded-lg border border-slate-800 bg-[#0c0f14] p-3">
-                <h3 className="text-xs font-semibold text-white">Consumo por producto (12m)</h3>
-                <div className="mt-2">
-                  <ProductBars data={consumption.stats.map((s) => ({ label: `${s.product_name} (${s.sku})`, value: Math.round(s.total_quantity_365d), sub: `${s.purchases_365d} compras` }))} />
-                </div>
               </section>
 
               <section className="rounded-lg border border-slate-800 bg-[#0c0f14] p-3">
@@ -263,26 +247,6 @@ export function Account360({
                         {h.total_value != null && <span className="shrink-0 tabular-nums text-slate-500">{fmtMoney(Number(h.total_value), h.currency ?? 'USD')}</span>}
                       </li>
                     ))}
-                  </ul>
-                )}
-              </section>
-
-              <section className="rounded-lg border border-slate-800 bg-[#0c0f14] p-3">
-                <h3 className="text-xs font-semibold text-white">Recompra</h3>
-                {consumption.stats.filter((s) => s.repurchase_status === 'CONTACT_SOON' || s.repurchase_status === 'OVERDUE').length === 0 ? (
-                  <p className="mt-2 text-[11px] text-slate-600">Nada por vencer.</p>
-                ) : (
-                  <ul className="mt-2 space-y-1.5">
-                    {consumption.stats
-                      .filter((s) => s.repurchase_status === 'CONTACT_SOON' || s.repurchase_status === 'OVERDUE')
-                      .map((s) => (
-                        <li key={s.sku} className={`flex items-center gap-2 rounded border px-2.5 py-2 text-[11px] ${s.repurchase_status === 'OVERDUE' ? 'border-red-900/50 bg-red-950/10' : 'border-amber-900/40 bg-amber-950/10'}`}>
-                          <span className="min-w-0 flex-1 truncate text-slate-200">{s.product_name} · próxima {s.expected_next_purchase_at ? fmtDateLabel(s.expected_next_purchase_at) : '—'}</span>
-                          <Badge variant={s.repurchase_status === 'OVERDUE' ? 'danger' : 'warning'} size="sm">
-                            {s.repurchase_status === 'OVERDUE' ? 'VENCIDA' : 'PRONTO'}
-                          </Badge>
-                        </li>
-                      ))}
                   </ul>
                 )}
               </section>
