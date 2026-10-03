@@ -76,9 +76,17 @@ export interface ConvRow {
   last_message_at?: string | null;
 }
 
+/** Campaña de la que nació una conversación (si vino de outreach). */
+export interface ConversationCampaign {
+  campaign_id: string;
+  campaign_name: string;
+  recipient_status: string;
+}
+
 export interface InboxItem {
   conversation: ConvRow;
   lead?: { product_interest?: string; qualification?: string } | null;
+  campaign?: ConversationCampaign | null;
 }
 
 export interface CompanyRow {
@@ -100,6 +108,7 @@ export interface ContactRow {
   id: string;
   full_name: string;
   whatsapp_phone?: string | null;
+  phone?: string | null;
   email?: string | null;
   company_id?: string | null;
 }
@@ -183,6 +192,8 @@ export interface CrmActions {
   notify: (msg: string, tone?: 'ok' | 'error') => void;
   openOpp: (id: string) => void;
   openAccount: (id: string) => void;
+  /** Salta a Conversaciones con ese chat abierto. */
+  openConversation: (id: string) => void;
   newTask: (prefill?: Partial<TaskRow>) => void;
 }
 

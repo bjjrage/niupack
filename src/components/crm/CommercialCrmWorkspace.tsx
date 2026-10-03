@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Building2, CalendarCheck, ChevronDown, Columns3, MessagesSquare, Plus, RefreshCw, Users } from 'lucide-react';
+import { Building2, CalendarCheck, ChevronDown, Columns3, Megaphone, MessagesSquare, Plus, RefreshCw, Users } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { fmtMoneyShort, isOverdue, daysFromToday, useCrmFetch, type OwnerRef } from './commercial-ui';
 import { Account360 } from './Account360';
@@ -11,6 +11,7 @@ import { TodayView } from './views/TodayView';
 import { PipelineView } from './views/PipelineView';
 import { AccountsView } from './views/AccountsView';
 import { InboxView } from './views/InboxView';
+import { CampaignsView } from './views/CampaignsView';
 import type { Product, ProductAttribute } from '@/types';
 import type {
   CatalogSku,
@@ -27,8 +28,8 @@ import type {
   TaskRow,
 } from './types';
 
-type View = 'today' | 'pipeline' | 'accounts' | 'inbox';
-const VIEW_KEYS: View[] = ['today', 'pipeline', 'accounts', 'inbox'];
+type View = 'today' | 'pipeline' | 'accounts' | 'inbox' | 'campaigns';
+const VIEW_KEYS: View[] = ['today', 'pipeline', 'accounts', 'inbox', 'campaigns'];
 
 export function CommercialCrmWorkspace() {
   const [view, setViewState] = useState<View>('today');
@@ -39,6 +40,8 @@ export function CommercialCrmWorkspace() {
   const [newOpp, setNewOpp] = useState<{ companyId?: string } | null>(null);
   const [newAccount, setNewAccount] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
+  // Salto a un chat puntual (desde Campañas / Hoy). n cambia en cada pedido para re-disparar el efecto.
+  const [focus, setFocus] = useState<{ id: string; n: number } | null>(null);
   const [taskPrefill, setTaskPrefill] = useState<Partial<TaskRow> | null>(null);
 
   // La vista activa vive en el hash para que recargar o compartir el link no te devuelva a "Hoy".
@@ -116,9 +119,15 @@ export function CommercialCrmWorkspace() {
         setOppId(null);
         setAccountId(id);
       },
+      openConversation: (id) => {
+        setAccountId(null);
+        setOppId(null);
+        setView('inbox');
+        setFocus((f) => ({ id, n: (f?.n ?? 0) + 1 }));
+      },
       newTask: (prefill = {}) => setTaskPrefill(prefill),
     }),
-    [reload, notify],
+    [reload, notify, setView],
   );
 
   const failed = queries.some((q) => q.error === 'HTTP_401' || q.error === 'HTTP_403');
@@ -134,6 +143,7 @@ export function CommercialCrmWorkspace() {
     { key: 'pipeline', label: 'Pipeline', icon: Columns3, count: openOpps.length },
     { key: 'accounts', label: 'Cuentas', icon: Building2, count: data.companies.length },
     { key: 'inbox', label: 'Conversaciones', icon: MessagesSquare, count: humanPending, alert: humanPending > 0 },
+    { key: 'campaigns', label: 'Campañas', icon: Megaphone },
   ];
 
   const opp = oppId ? data.oppById.get(oppId) ?? null : null;
@@ -231,7 +241,8 @@ export function CommercialCrmWorkspace() {
           {view === 'today' && <TodayView data={data} actions={actions} onGo={setView} />}
           {view === 'pipeline' && <PipelineView data={data} actions={actions} onNew={() => setNewOpp({})} />}
           {view === 'accounts' && <AccountsView data={data} actions={actions} onNew={() => setNewAccount(true)} />}
-          {view === 'inbox' && <InboxView data={data} actions={actions} />}
+          {view === 'inbox' && <InboxView data={data} actions={actions} focus={focus} />}
+          {view === 'campaigns' && <CampaignsView data={data} actions={actions} />}
         </>
       )}
 

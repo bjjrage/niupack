@@ -359,12 +359,13 @@ function LooseRow({
     );
   } else {
     const lead = item.leadId ? data.leadById.get(item.leadId) : null;
-    const conv = data.inbox.find((i) => i.conversation.id === item.convId)?.conversation;
+    const entry = data.inbox.find((i) => i.conversation.id === item.convId);
+    const conv = entry?.conversation;
     icon = <MessageCircle className="h-4 w-4 text-emerald-400" />;
     title = conv?.external_conversation_id.replace('whatsapp:', '') ?? 'Conversación';
-    sub = `Espera respuesta de un vendedor${lead?.product_interest ? ` · ${lead.product_interest}` : ''}`;
+    sub = `Espera respuesta de un vendedor${lead?.product_interest ? ` · ${lead.product_interest}` : ''}${entry?.campaign ? ` · Campaña: ${entry.campaign.campaign_name}` : ''}`;
     cta = (
-      <Button variant="outline" size="sm" onClick={onGoInbox}>
+      <Button variant="outline" size="sm" onClick={() => actions.openConversation(item.convId)}>
         Responder
       </Button>
     );

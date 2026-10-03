@@ -18,7 +18,9 @@ import {
   STAGE_LABEL,
   timeAgo,
 } from '../commercial-ui';
-import type { ConvRow, CrmActions, CrmData, LeadRow } from '../types';
+import type { ConversationCampaign, ConvRow, CrmActions, CrmData, LeadRow } from '../types';
+import { callApi } from '../campaigns/api';
+import { errorMessage } from '../campaigns/labels';
 
 type Seg = 'all' | 'human' | 'bot';
 
@@ -26,11 +28,12 @@ interface Detail {
   conversation: ConvRow;
   messages: Array<{ id: string; direction: string; author_role: string; body: string; occurred_at: string }>;
   lead360?: { lead: LeadRow; company?: { id?: string; name?: string } | null; contact?: { full_name?: string; whatsapp_phone?: string } | null } | null;
+  campaign?: ConversationCampaign | null;
 }
 
 const phoneOf = (c: ConvRow) => c.external_conversation_id.replace('whatsapp:', '');
 
-export function InboxView({ data, actions }: { data: CrmData; actions: CrmActions }) {
+export function InboxView({ data, actions, focus }: { data: CrmData; actions: CrmActions; focus: { id: string; n: number } | null }) {
   const [seg, setSeg] = useState<Seg>('all');
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -55,9 +58,21 @@ export function InboxView({ data, actions }: { data: CrmData; actions: CrmAction
     }
   }
 
+  // Llegar desde una campaña: abre ese chat, o filtra los que esperan vendedor si no hay uno puntual.
+  useEffect(() => {
+    if (!focus) return;
+    if (focus.id) {
+      setSeg('all');
+      void load(focus.id);
+    } else {
+      setSeg('human');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.n]);
+
   // Abre la primera conversación que espera a un vendedor (o la primera) al entrar.
   useEffect(() => {
-    if (selected || data.inbox.length === 0) return;
+    if (selected || focus?.id || data.inbox.length === 0) return;
     const first = data.inbox.find((i) => i.conversation.control_mode === 'HUMAN') ?? data.inbox[0];
     void load(first.conversation.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -92,7 +107,7 @@ export function InboxView({ data, actions }: { data: CrmData; actions: CrmAction
           />
         </div>
         <ul className="min-h-0 flex-1 divide-y divide-slate-800/60 overflow-y-auto">
-          {items.map(({ conversation: c, lead: l }) => {
+          {items.map(({ conversation: c, lead: l, campaign }) => {
             const human = c.control_mode === 'HUMAN';
             return (
               <li key={c.id}>
@@ -110,6 +125,7 @@ export function InboxView({ data, actions }: { data: CrmData; actions: CrmAction
                       {l?.product_interest || 'Consulta general'}
                       {l?.qualification ? ` · interés ${label(QUALIFICATION_LABEL, l.qualification).toLowerCase()}` : ''}
                     </span>
+                    {campaign && <span className="mt-0.5 block truncate text-[11px] text-slate-600">Campaña: {campaign.campaign_name}</span>}
                   </span>
                 </button>
               </li>
@@ -175,7 +191,7 @@ function Chat({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-white">{nameFor(c)}</p>
           <p className="truncate text-xs text-slate-500">
-            {[nameFor(c) !== phoneOf(c) ? phoneOf(c) : null, company, human ? 'Atiende un vendedor' : 'Atiende NIUPACKBOT'].filter(Boolean).join(' · ')}
+            {[nameFor(c) !== phoneOf(c) ? phoneOf(c) : null, company, detail.campaign ? `Campaña: ${detail.campaign.campaign_name}` : null, human ? 'Atiende un vendedor' : 'Atiende NIUPACKBOT'].filter(Boolean).join(' · ')}
           </p>
         </div>
         {human ? (
@@ -193,6 +209,7 @@ function Chat({
         {detail.messages.map((m) => {
           const inbound = m.direction === 'INBOUND';
           const byHuman = m.author_role === 'HUMAN_AGENT';
+          const byCampaign = m.author_role === 'SYSTEM';
           return (
             <div key={m.id} className={`flex ${inbound ? 'justify-start' : 'justify-end'}`}>
               <div
@@ -201,10 +218,12 @@ function Chat({
                     ? 'rounded-bl-sm border border-slate-800 bg-[#141820]'
                     : byHuman
                       ? 'rounded-br-sm border border-amber-900/50 bg-amber-500/10'
-                      : 'rounded-br-sm border border-slate-700 bg-slate-800'
+                      : byCampaign
+                        ? 'rounded-br-sm border border-dashed border-slate-600 bg-slate-800/50'
+                        : 'rounded-br-sm border border-slate-700 bg-slate-800'
                 }`}
               >
-                {!inbound && <p className={`mb-0.5 text-[11px] font-medium ${byHuman ? 'text-amber-400' : 'text-slate-400'}`}>{byHuman ? 'Vendedor' : 'NIUPACKBOT'}</p>}
+                {!inbound && <p className={`mb-0.5 text-[11px] font-medium ${byHuman ? 'text-amber-400' : 'text-slate-400'}`}>{byHuman ? 'Vendedor' : byCampaign ? 'Campaña (template enviado)' : 'NIUPACKBOT'}</p>}
                 <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-100">{m.body}</p>
                 <p className="mt-1 text-right text-[10px] text-slate-500">{timeAgo(m.occurred_at)}</p>
               </div>
@@ -212,12 +231,63 @@ function Chat({
           );
         })}
       </div>
-      <footer className="border-t border-slate-800 px-5 py-3 text-xs text-slate-500">
-        {human
-          ? 'Respondé desde el teléfono de WhatsApp vinculado: el envío desde el CRM todavía no está habilitado.'
-          : 'NIUPACKBOT está atendiendo. Tomá la conversación si el cliente necesita a una persona.'}
-      </footer>
+      {human ? (
+        <ReplyBox conversationId={c.id} messages={detail.messages} actions={actions} onSent={onRefresh} />
+      ) : (
+        <footer className="border-t border-slate-800 px-5 py-3 text-xs text-slate-500">NIUPACKBOT está atendiendo. Tomá la conversación si el cliente necesita a una persona.</footer>
+      )}
     </Card>
+  );
+}
+
+const WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** Respuesta manual por WhatsApp. Texto libre solo dentro de las 24 h del último mensaje del cliente. */
+function ReplyBox({ conversationId, messages, actions, onSent }: { conversationId: string; messages: Detail['messages']; actions: CrmActions; onSent: () => void }) {
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const lastInbound = [...messages].reverse().find((m) => m.direction === 'INBOUND');
+  const open = Boolean(lastInbound) && Date.now() - new Date(lastInbound!.occurred_at).getTime() <= WINDOW_MS;
+
+  async function send() {
+    if (!text.trim()) return;
+    setSending(true);
+    const r = await callApi(`/api/crm/inbox/${conversationId}/reply`, 'POST', { body: text.trim() });
+    setSending(false);
+    if (!r.ok) return actions.notify(errorMessage(r.error), 'error');
+    setText('');
+    onSent();
+  }
+
+  if (!open) {
+    return (
+      <footer className="border-t border-slate-800 px-5 py-3 text-xs text-amber-400">
+        Pasaron más de 24 h desde el último mensaje del cliente: WhatsApp solo permite enviar un template aprobado, no texto libre.
+      </footer>
+    );
+  }
+  return (
+    <footer className="border-t border-slate-800 px-5 py-3">
+      <div className="flex items-end gap-2">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              void send();
+            }
+          }}
+          rows={2}
+          maxLength={1000}
+          placeholder="Escribí tu respuesta… (Enter envía, Shift+Enter nueva línea)"
+          className="min-h-[44px] flex-1 resize-none rounded-lg border border-slate-700 bg-[#0c0f14] px-3 py-2 text-sm text-white placeholder-slate-600 focus:border-brand-500 focus:outline-none"
+        />
+        <Button variant="primary" size="md" isLoading={sending} disabled={!text.trim()} onClick={() => void send()}>
+          Enviar
+        </Button>
+      </div>
+    </footer>
   );
 }
 
@@ -261,6 +331,7 @@ function LeadPanel({ detail, data, actions, onRefresh }: { detail: Detail | null
   }
 
   const facts: Array<[string, string]> = [
+    ['Origen', detail.campaign ? `Campaña “${detail.campaign.campaign_name}”` : 'Mensaje directo por WhatsApp'],
     ['Producto', [lead.product_interest, lead.capacity].filter(Boolean).join(' · ') || '—'],
     ['Volumen', fmtVolume(lead.estimated_volume, lead.volume_period)],
     ['Destino', [lead.destination_city, lead.destination_country].filter(Boolean).join(', ') || '—'],

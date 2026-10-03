@@ -3,22 +3,13 @@
 
 import { outreachRepository } from './repository';
 import { createContent, fetchApproval, requestApproval } from './twilio-content';
+import { placeholders, renderTemplate, TEMPLATE_BODY_MAX, TEMPLATE_NAME_RE } from './template-text';
 import type { OutreachTemplate, TemplateCategory, TemplateLanguage } from './types';
 
-export const TEMPLATE_NAME_RE = /^[a-z0-9_]{3,64}$/;
 export const TEMPLATE_LANGUAGES: TemplateLanguage[] = ['es', 'es_AR', 'pt_BR', 'en'];
 export const TEMPLATE_CATEGORIES: TemplateCategory[] = ['MARKETING', 'UTILITY'];
-export const TEMPLATE_BODY_MAX = 1024;
 
-/** Números de variable usados en el cuerpo: "Hola {{1}}" → [1]. */
-export function placeholders(body: string): number[] {
-  return [...new Set([...body.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((m) => Number(m[1])))].sort((a, b) => a - b);
-}
-
-/** Reemplaza {{1}} por su valor. Variables faltantes quedan vacías (el caller valida antes de enviar). */
-export function renderTemplate(body: string, variables: Record<string, string>): string {
-  return body.replace(/\{\{\s*(\d+)\s*\}\}/g, (_, n: string) => variables[n] ?? '');
-}
+export { placeholders, renderTemplate, TEMPLATE_BODY_MAX, TEMPLATE_NAME_RE };
 
 export interface TemplateInput {
   name: string;
