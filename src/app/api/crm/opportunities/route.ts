@@ -55,6 +55,8 @@ export async function POST(request: Request) {
       owner_profile_id: input.owner_profile_id ?? identity.profileId,
       next_action: input.next_action ?? null,
       next_action_at: input.next_action_at ?? null,
+      expected_close_at: input.expected_close_at ?? null,
+      probability: input.probability ?? null,
       won_at: null,
       lost_at: null,
       lost_reason: null,

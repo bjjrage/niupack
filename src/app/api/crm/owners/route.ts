@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
 import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
+import { crmRepository } from '@/lib/crm/repository';
 import { crmService } from '@/lib/crm/service';
 
-/** Dashboard comercial monetario: todo calculado de DB, sin inventar. */
+/** Lista tenant-safe de vendedores (perfiles de la organización). Nunca expone otra org. */
 export async function GET() {
   try {
     const identity = await requireNiuIdentity();
-    const dashboard = await crmService.getSalesDashboard(identity.organizationId);
-    return NextResponse.json(dashboard);
+    const owners = await crmService.listOwners(identity.organizationId);
+    return NextResponse.json({ owners, persistence: crmRepository.persistenceMode() });
   } catch (error) {
     return authErrorResponse(error);
   }

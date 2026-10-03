@@ -32,6 +32,7 @@ export async function POST(request: Request) {
         assigned_to: input.assigned_to ?? identity.profileId,
         due_at: input.due_at ?? null,
         priority: input.priority ?? 'MEDIUM',
+        task_type: input.task_type ?? 'FOLLOW_UP',
         source: input.source ?? 'CRM_UI',
         external_key: input.external_key ?? null,
       },

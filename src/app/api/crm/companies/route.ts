@@ -57,6 +57,7 @@ export async function POST(request: Request) {
         source: input.source ?? 'MANUAL',
         notes: input.notes ?? null,
         owner_profile_id: input.owner_profile_id ?? identity.profileId,
+        lifecycle_stage: input.lifecycle_stage ?? 'PROSPECT',
       },
       identity.profileId,
     );
