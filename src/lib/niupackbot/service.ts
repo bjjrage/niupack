@@ -1,5 +1,6 @@
 // NIUPACKBOT Service: orquesta inbound -> contexto -> bot -> CRM -> outbound.
-// Diseñado para extraerse a worker/service sin reescribir dominio (solo inyectar sender).
+// V1 INBOUND USA UNA SOLA VÍA OUTBOUND: persistir OUTBOUND + retornar reply para TwiML.
+// Prohibido REST send en este flujo (ver whatsapp/sender.ts reservado a futuro).
 
 import { crmRepository } from '@/lib/crm/repository';
 import { niupackbotRepository } from './repository';
@@ -19,25 +20,6 @@ export interface InboundResult {
   duplicate: boolean;
   intent?: string | null;
   qualification?: string | null;
-}
-
-async function sendWhatsapp(to: string, body: string): Promise<{ sent: boolean; mode: 'TWILIO' | 'STUB' }> {
-  const sid = process.env.TWILIO_ACCOUNT_SID || '';
-  const token = process.env.TWILIO_AUTH_TOKEN || '';
-  const from = process.env.TWILIO_WHATSAPP_FROM || '';
-  if (!sid || !token || !from) return { sent: false, mode: 'STUB' };
-  try {
-    const url = `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`;
-    const params = new URLSearchParams({ From: from, To: to.startsWith('whatsapp:') ? to : `whatsapp:${to}`, Body: body });
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString(),
-    });
-    return { sent: res.ok, mode: 'TWILIO' };
-  } catch {
-    return { sent: false, mode: 'STUB' };
-  }
 }
 
 export const niupackbotService = {
@@ -245,7 +227,7 @@ export const niupackbotService = {
       metadata: {},
     });
     void outbound;
-    const send = await sendWhatsapp(inbound.from, turn.reply);
+    // SINGLE OUTBOUND PATH V1: solo TwiML vía route. Sin REST aquí.
     await niupackbotRepository.upsertState({
       conversation_id: conversationId,
       organization_id: organizationId,
@@ -263,7 +245,7 @@ export const niupackbotService = {
       external_message_id: inbound.externalMessageId,
       event_type: 'REPLY_SENT',
       duration_ms: Date.now() - started,
-      metadata: { mode: send.mode, sent: send.sent },
+      metadata: { mode: 'TWIML' },
     });
 
     return {

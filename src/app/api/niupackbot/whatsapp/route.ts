@@ -1,37 +1,8 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin, isSupabaseAdminConfigured } from '@/lib/db/supabase';
 import { validateTwilioSignature } from '@/lib/niupackbot/whatsapp/twilio';
 import { normalizeTwilioParams } from '@/lib/niupackbot/whatsapp/normalize';
+import { resolveOrganizationIdStrict, twiml } from '@/lib/niupackbot/whatsapp/webhook';
 import { niupackbotService } from '@/lib/niupackbot/service';
-
-const TEST_ORG = '00000000-0000-0000-0000-000000000001';
-
-async function resolveOrganizationId(): Promise<string> {
-  if (process.env.NIUPACKBOT_ORGANIZATION_ID) return process.env.NIUPACKBOT_ORGANIZATION_ID;
-  if (process.env.NODE_ENV === 'test') return TEST_ORG;
-  if (isSupabaseAdminConfigured && supabaseAdmin) {
-    try {
-      const { data } = await supabaseAdmin.from('organizations').select('id').limit(1).maybeSingle();
-      if (data?.id) return data.id as string;
-    } catch {
-      // fallthrough a NOT_CONFIGURED controlado
-    }
-  }
-  // Dev con memoria: usar org de test para no tumbar el webhook.
-  if (process.env.NODE_ENV === 'development') return TEST_ORG;
-  throw new Error('ORGANIZATION_NOT_RESOLVED');
-}
-
-function twiml(message: string | null): NextResponse {
-  const body = message
-    ? `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(message)}</Message></Response>`
-    : `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`;
-  return new NextResponse(body, { status: 200, headers: { 'Content-Type': 'text/xml' } });
-}
-
-function escapeXml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
 
 export async function GET() {
   const configured = Boolean(process.env.TWILIO_AUTH_TOKEN);
@@ -39,6 +10,10 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  // HARDENING: en TODOS los envs, sin token no se procesa. Cero writes, cero OpenAI.
+  const token = process.env.TWILIO_AUTH_TOKEN || '';
+  if (!token) return twiml(null);
+
   try {
     const contentType = request.headers.get('content-type') || '';
     let params: Record<string, string> = {};
@@ -46,21 +21,18 @@ export async function POST(request: Request) {
       const form = await request.formData();
       for (const [k, v] of form.entries()) params[k] = String(v);
     } else {
-      // Soportar JSON en tests/dev sin Twilio real.
       try {
         params = (await request.json()) as Record<string, string>;
       } catch {
-        params = {};
+        return twiml(null);
       }
     }
 
-    // Validar firma Twilio cuando hay secreto configurado.
+    // Firma ausente o inválida => NO procesar. Cero writes.
     const signature = request.headers.get('x-twilio-signature');
     const url = process.env.TWILIO_WEBHOOK_URL || new URL(request.url).toString().split('?')[0];
     const check = validateTwilioSignature({ url, params, signature });
-    if (check.configured && !check.valid) {
-      return twiml(null);
-    }
+    if (!check.valid) return twiml(null);
 
     const inbound = normalizeTwilioParams(params);
     if (!inbound.body || !inbound.from || !inbound.externalMessageId) {
@@ -69,15 +41,15 @@ export async function POST(request: Request) {
 
     let organizationId: string;
     try {
-      organizationId = await resolveOrganizationId();
+      organizationId = await resolveOrganizationIdStrict();
     } catch {
       return twiml(null);
     }
 
+    // ÚNICA vía outbound V1: TwiML <Message>. Sin REST send aquí (ver sender.ts reservado).
     const result = await niupackbotService.handleInbound(organizationId, inbound);
     return twiml(result.replySkipped ? null : result.reply);
   } catch {
-    // Fail-closed para Twilio (200 vacío) pero CRM ya registró FAILURE_HANDLED; nunca exponer stack.
     return twiml(null);
   }
 }
