@@ -179,16 +179,15 @@ export function InboxView({ data, actions, focus }: { data: CrmData; actions: Cr
           <Empty title="Ninguna conversación con estos filtros" action={<Button variant="outline" size="sm" onClick={() => set(EMPTY_FILTERS)}>Limpiar filtros</Button>} />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-left text-sm">
+            <table className="w-full min-w-[820px] text-sm">
               <thead>
                 <tr className="border-b border-slate-800 text-xs text-slate-500">
-                  <th className="px-5 py-3 font-medium">Cliente</th>
-                  <th className="px-3 py-3 font-medium">Último mensaje</th>
-                  <th className="px-3 py-3 font-medium">Producto</th>
-                  <th className="px-3 py-3 font-medium">Avance</th>
-                  <th className="px-3 py-3 font-medium">Estado</th>
-                  <th className="px-3 py-3 font-medium">Origen</th>
-                  <th className="px-5 py-3 text-right font-medium">Actividad</th>
+                  <th className="px-5 py-3 text-left font-medium">Cliente</th>
+                  <th className="px-3 py-3 text-center font-medium">Producto</th>
+                  <th className="px-3 py-3 text-center font-medium">Avance</th>
+                  <th className="px-3 py-3 text-center font-medium">Estado</th>
+                  <th className="px-3 py-3 text-center font-medium">Origen</th>
+                  <th className="px-5 py-3 text-center font-medium">Actividad</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/70">
@@ -208,17 +207,11 @@ export function InboxView({ data, actions, focus }: { data: CrmData; actions: Cr
                         <p className="font-medium text-slate-100">{r.name}</p>
                         {r.name !== r.phone && <p className="text-xs tabular-nums text-slate-500">{r.phone}</p>}
                       </td>
-                      <td className="max-w-[280px] px-3 py-3">
-                        <p className="truncate text-slate-300">
-                          {last ? <span className="text-slate-500">{last.direction === 'INBOUND' ? 'Cliente: ' : last.author_role === 'HUMAN_AGENT' ? 'Vos: ' : 'Bot: '}</span> : null}
-                          {last?.preview ?? <span className="text-slate-600">Sin mensajes recientes</span>}
-                        </p>
-                      </td>
-                      <td className="max-w-[180px] truncate px-3 py-3 text-slate-300">{r.product || <span className="text-slate-600">—</span>}</td>
-                      <td className="px-3 py-3"><Pill tone={sg.tone}>{sg.label}</Pill></td>
-                      <td className="px-3 py-3"><Pill tone={st.tone} dot>{st.label}</Pill></td>
-                      <td className="max-w-[170px] truncate px-3 py-3 text-xs text-slate-400">{r.item.campaign ? r.item.campaign.campaign_name : 'Directo'}</td>
-                      <td className={`px-5 py-3 text-right text-xs tabular-nums ${waiting ? 'font-semibold text-amber-400' : 'text-slate-500'}`}>{timeAgo(last?.at ?? c.last_message_at)}</td>
+                      <td className="max-w-[180px] truncate px-3 py-3 text-center text-slate-300">{r.product || <span className="text-slate-600">—</span>}</td>
+                      <td className="px-3 py-3 text-center"><Pill tone={sg.tone}>{sg.label}</Pill></td>
+                      <td className="px-3 py-3 text-center"><Pill tone={st.tone} dot>{st.label}</Pill></td>
+                      <td className="max-w-[170px] truncate px-3 py-3 text-center text-xs text-slate-400">{r.item.campaign ? r.item.campaign.campaign_name : 'Directo'}</td>
+                      <td className={`px-5 py-3 text-center text-xs tabular-nums ${waiting ? 'font-semibold text-amber-400' : 'text-slate-500'}`}>{timeAgo(last?.at ?? c.last_message_at)}</td>
                     </tr>
                   );
                 })}
