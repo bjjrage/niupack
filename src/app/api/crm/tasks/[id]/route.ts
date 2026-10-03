@@ -13,6 +13,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ task });
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 });
+    if (error instanceof Error && error.message === 'CROSS_TENANT_REFERENCE') return NextResponse.json({ error: error.message }, { status: 403 });
     if (error instanceof Error && error.message === 'TASK_NOT_FOUND') return NextResponse.json({ error: error.message }, { status: 404 });
     return authErrorResponse(error);
   }

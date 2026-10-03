@@ -32,13 +32,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ opportunity: opp }, { status: 201 });
     }
     const input = opportunityCreateSchema.parse(raw);
-    const opp = await crmRepository.createOpportunity({
-      organization_id: identity.organizationId,
-      company_id: input.company_id ?? null,
-      contact_id: input.contact_id ?? null,
-      lead_id: input.lead_id ?? null,
-      title: input.title,
-      stage: input.stage ?? 'NUEVO',
+    const opp = await crmService.createOpportunityManual(
+      identity.organizationId,
+      {
+        company_id: input.company_id ?? null,
+        contact_id: input.contact_id ?? null,
+        lead_id: input.lead_id ?? null,
+        title: input.title,
+        stage: input.stage ?? 'NUEVO',
       product_interest: input.product_interest ?? null,
       sku: input.sku ?? null,
       capacity: input.capacity ?? null,
@@ -57,10 +58,13 @@ export async function POST(request: Request) {
       won_at: null,
       lost_at: null,
       lost_reason: null,
-    });
+    }, identity.profileId);
     return NextResponse.json({ opportunity: opp }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 });
+    if (error instanceof Error && error.message === 'CROSS_TENANT_REFERENCE') {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
     if (error instanceof Error && ['LEAD_NOT_FOUND', 'CRM_PERSISTENCE_NOT_CONFIGURED'].includes(error.message)) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }

@@ -43,11 +43,12 @@ export async function POST(request: Request) {
       // Aplicar campos humanos permitidos sin pisar reglas BOT (owner/next_action solo vía PATCH humano).
       return NextResponse.json({ lead }, { status: 201 });
     }
-    const lead = await crmRepository.createLead({
-      organization_id: identity.organizationId,
-      company_id: input.company_id ?? null,
-      contact_id: input.contact_id ?? null,
-      source: input.source ?? 'MANUAL',
+    const lead = await crmService.createLeadManual(
+      identity.organizationId,
+      {
+        company_id: input.company_id ?? null,
+        contact_id: input.contact_id ?? null,
+        source: input.source ?? 'MANUAL',
       source_channel: input.source_channel ?? 'WEB',
       external_source: input.external_source ?? null,
       external_id: input.external_id ?? null,
@@ -67,17 +68,15 @@ export async function POST(request: Request) {
       owner_profile_id: input.owner_profile_id ?? identity.profileId,
       next_action: input.next_action ?? null,
       next_action_at: input.next_action_at ?? null,
-    });
-    await crmService.addActivity(
-      identity.organizationId,
-      { lead_id: lead.id, type: 'LEAD_CREATED', source: 'CRM_UI', title: 'Lead creado manualmente' },
-      identity.profileId,
-    );
+    }, identity.profileId);
     return NextResponse.json({ lead }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: 'INVALID_REQUEST', details: error.flatten() }, { status: 400 });
     if (error instanceof Error && ['LEAD_DUPLICATE_EXTERNAL', 'CRM_PERSISTENCE_NOT_CONFIGURED'].includes(error.message)) {
       return NextResponse.json({ error: error.message }, { status: error.message === 'LEAD_DUPLICATE_EXTERNAL' ? 409 : 503 });
+    }
+    if (error instanceof Error && error.message === 'CROSS_TENANT_REFERENCE') {
+      return NextResponse.json({ error: error.message }, { status: 403 });
     }
     return authErrorResponse(error);
   }

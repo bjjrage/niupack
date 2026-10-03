@@ -40,6 +40,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ task }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 });
+    if (error instanceof Error && error.message === 'CROSS_TENANT_REFERENCE') return NextResponse.json({ error: error.message }, { status: 403 });
     return authErrorResponse(error);
   }
 }

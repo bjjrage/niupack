@@ -2,6 +2,7 @@
 // NIUPACKBOT debe usar exclusivamente este servicio. Prohibido `supabase.from('crm_*')` fuera del repository.
 
 import { crmRepository } from './repository';
+import { supabaseAdmin, isSupabaseAdminConfigured } from '@/lib/db/supabase';
 import type {
   ActivityType,
   CrmLead,
@@ -31,6 +32,112 @@ function rankQualification(q?: Qualification | null): number {
   return 0;
 }
 
+// ---------- Cross-tenant reference validation (server-side, supabaseAdmin bypassa RLS) ----------
+// Toda FK externa debe pertenecer al mismo organizationId. Si no es visible en el tenant
+// pero existe en otro, se rechaza con CROSS_TENANT_REFERENCE (no se filtra existencia).
+
+const profileOrgBinding = new Map<string, string>();
+
+export function __resetProfileBindings(): void {
+  profileOrgBinding.clear();
+}
+
+async function assertProfileInOrg(organizationId: string, profileId: string | null | undefined): Promise<void> {
+  if (!profileId) return;
+  if (isSupabaseAdminConfigured && supabaseAdmin) {
+    const { data, error } = await supabaseAdmin.from('profiles').select('id, organization_id').eq('id', profileId).maybeSingle();
+    if (error || !data || (data as { organization_id: string }).organization_id !== organizationId) {
+      throw new Error('CROSS_TENANT_REFERENCE');
+    }
+    return;
+  }
+  const bound = profileOrgBinding.get(profileId);
+  if (bound && bound !== organizationId) throw new Error('CROSS_TENANT_REFERENCE');
+  if (!bound) profileOrgBinding.set(profileId, organizationId);
+}
+
+async function existsInOtherOrg(kind: 'company' | 'contact' | 'lead' | 'opportunity' | 'conversation' | 'task', id: string, organizationId: string): Promise<boolean> {
+  // MEMORY_FALLBACK: revisar store global sin filtro org.
+  const store = (global as unknown as { __niu_crm_store?: { companies: Array<{ id: string; organization_id: string }>; contacts: Array<{ id: string; organization_id: string }>; leads: Array<{ id: string; organization_id: string }>; opportunities: Array<{ id: string; organization_id: string }>; conversations: Array<{ id: string; organization_id: string }>; tasks: Array<{ id: string; organization_id: string }> } }).__niu_crm_store;
+  if (store) {
+    const lists: Record<string, Array<{ id: string; organization_id: string }> | undefined> = {
+      company: store.companies,
+      contact: store.contacts,
+      lead: store.leads,
+      opportunity: store.opportunities,
+      conversation: store.conversations,
+      task: store.tasks,
+    };
+    const list = lists[kind];
+    if (list?.some((e) => e.id === id && e.organization_id !== organizationId)) return true;
+  }
+  if (isSupabaseAdminConfigured && supabaseAdmin) {
+    const tables: Record<string, string> = {
+      company: 'crm_companies',
+      contact: 'crm_contacts',
+      lead: 'crm_leads',
+      opportunity: 'crm_opportunities',
+      conversation: 'crm_conversations',
+      task: 'crm_tasks',
+    };
+    try {
+      const { data } = await supabaseAdmin.from(tables[kind]).select('id, organization_id').eq('id', id).maybeSingle();
+      const row = data as { organization_id: string } | null;
+      if (row && row.organization_id !== organizationId) return true;
+    } catch {
+      // Si falla la verificación, no bloquear por oracle; el NOT_FOUND posterior ya rechaza.
+    }
+  }
+  return false;
+}
+
+async function assertCompanyInOrg(organizationId: string, companyId: string | null | undefined): Promise<void> {
+  if (!companyId) return;
+  const found = await crmRepository.getCompany(companyId, organizationId);
+  if (found) return;
+  if (await existsInOtherOrg('company', companyId, organizationId)) throw new Error('CROSS_TENANT_REFERENCE');
+  throw new Error('COMPANY_NOT_FOUND');
+}
+
+async function assertContactInOrg(organizationId: string, contactId: string | null | undefined): Promise<void> {
+  if (!contactId) return;
+  const found = await crmRepository.getContact(contactId, organizationId);
+  if (found) return;
+  if (await existsInOtherOrg('contact', contactId, organizationId)) throw new Error('CROSS_TENANT_REFERENCE');
+  throw new Error('CONTACT_NOT_FOUND');
+}
+
+async function assertLeadInOrg(organizationId: string, leadId: string | null | undefined): Promise<void> {
+  if (!leadId) return;
+  const found = await crmRepository.getLead(leadId, organizationId);
+  if (found) return;
+  if (await existsInOtherOrg('lead', leadId, organizationId)) throw new Error('CROSS_TENANT_REFERENCE');
+  throw new Error('LEAD_NOT_FOUND');
+}
+
+async function assertOpportunityInOrg(organizationId: string, opportunityId: string | null | undefined): Promise<void> {
+  if (!opportunityId) return;
+  const found = await crmRepository.getOpportunity(opportunityId, organizationId);
+  if (found) return;
+  if (await existsInOtherOrg('opportunity', opportunityId, organizationId)) throw new Error('CROSS_TENANT_REFERENCE');
+  throw new Error('OPPORTUNITY_NOT_FOUND');
+}
+
+async function assertConversationInOrg(organizationId: string, conversationId: string | null | undefined): Promise<void> {
+  if (!conversationId) return;
+  const found = await crmRepository.getConversation(conversationId, organizationId);
+  if (found) return;
+  if (await existsInOtherOrg('conversation', conversationId, organizationId)) throw new Error('CROSS_TENANT_REFERENCE');
+  throw new Error('CONVERSATION_NOT_FOUND');
+}
+
+async function assertTaskInOrg(organizationId: string, taskId: string): Promise<void> {
+  const found = await crmRepository.getTask(taskId, organizationId);
+  if (found) return;
+  if (await existsInOtherOrg('task', taskId, organizationId)) throw new Error('CROSS_TENANT_REFERENCE');
+  throw new Error('TASK_NOT_FOUND');
+}
+
 export const crmService = {
   // ---------- Companies / Contacts ----------
   async createOrUpdateCompany(
@@ -38,6 +145,7 @@ export const crmService = {
     input: { name: string; country_code?: string | null; phone?: string | null; email?: string | null; source?: string | null },
     actorProfileId?: string,
   ) {
+    await assertProfileInOrg(organizationId, actorProfileId);
     const existing = (await crmRepository.listCompanies(organizationId)).find(
       (c) => c.name.toLowerCase() === input.name.toLowerCase(),
     );
@@ -77,6 +185,8 @@ export const crmService = {
     },
     actorProfileId?: string,
   ) {
+    await assertCompanyInOrg(organizationId, input.company_id);
+    await assertProfileInOrg(organizationId, actorProfileId);
     if (input.whatsapp_phone) {
       const existing = await crmRepository.findContactByWhatsapp(organizationId, input.whatsapp_phone);
       if (existing) {
@@ -112,6 +222,11 @@ export const crmService = {
   getLead: (id: string, organizationId: string) => crmRepository.getLead(id, organizationId),
 
   async updateLead(id: string, organizationId: string, updates: Partial<CrmLead>, actorProfileId?: string) {
+    await assertLeadInOrg(organizationId, id);
+    await assertCompanyInOrg(organizationId, updates.company_id);
+    await assertContactInOrg(organizationId, updates.contact_id);
+    await assertProfileInOrg(organizationId, updates.owner_profile_id);
+    await assertProfileInOrg(organizationId, actorProfileId);
     const updated = await crmRepository.updateLead(id, organizationId, clean(updates as Record<string, unknown>) as Partial<CrmLead>);
     await crmRepository.createActivity({
       organization_id: organizationId,
@@ -281,6 +396,9 @@ export const crmService = {
     overrides: { title?: string; stage?: PipelineStage; owner_profile_id?: string | null } = {},
     actorProfileId?: string,
   ): Promise<CrmOpportunity> {
+    await assertLeadInOrg(organizationId, leadId);
+    await assertProfileInOrg(organizationId, overrides.owner_profile_id);
+    await assertProfileInOrg(organizationId, actorProfileId);
     const lead = await crmRepository.getLead(leadId, organizationId);
     if (!lead) throw new Error('LEAD_NOT_FOUND');
     const existing = await crmRepository.listOpportunitiesByLead(organizationId, leadId);
@@ -340,6 +458,64 @@ export const crmService = {
     return opp;
   },
 
+  async createLeadManual(
+    organizationId: string,
+    input: Omit<CrmLead, 'id' | 'organization_id' | 'created_at' | 'updated_at'>,
+    actorProfileId?: string,
+  ): Promise<CrmLead> {
+    await assertCompanyInOrg(organizationId, input.company_id);
+    await assertContactInOrg(organizationId, input.contact_id);
+    await assertProfileInOrg(organizationId, input.owner_profile_id);
+    await assertProfileInOrg(organizationId, actorProfileId);
+    const lead = await crmRepository.createLead({ ...input, organization_id: organizationId });
+    await this.addActivity(organizationId, { lead_id: lead.id, type: 'LEAD_CREATED', source: 'CRM_UI', title: 'Lead creado manualmente' }, actorProfileId);
+    return lead;
+  },
+
+  async createOpportunityManual(
+    organizationId: string,
+    input: Omit<CrmOpportunity, 'id' | 'organization_id' | 'created_at' | 'updated_at'>,
+    actorProfileId?: string,
+  ): Promise<CrmOpportunity> {
+    await assertCompanyInOrg(organizationId, input.company_id);
+    await assertContactInOrg(organizationId, input.contact_id);
+    await assertLeadInOrg(organizationId, input.lead_id);
+    await assertProfileInOrg(organizationId, input.owner_profile_id);
+    await assertProfileInOrg(organizationId, actorProfileId);
+    return crmRepository.createOpportunity({ ...input, organization_id: organizationId });
+  },
+
+  async updateOpportunity(id: string, organizationId: string, updates: Partial<CrmOpportunity>, actorProfileId?: string): Promise<CrmOpportunity> {
+    await assertOpportunityInOrg(organizationId, id);
+    await assertCompanyInOrg(organizationId, updates.company_id);
+    await assertContactInOrg(organizationId, updates.contact_id);
+    await assertLeadInOrg(organizationId, updates.lead_id);
+    await assertProfileInOrg(organizationId, updates.owner_profile_id);
+    await assertProfileInOrg(organizationId, actorProfileId);
+    return crmRepository.updateOpportunity(id, organizationId, clean(updates as Record<string, unknown>) as Partial<CrmOpportunity>);
+  },
+
+  async createCompany(
+    organizationId: string,
+    input: Omit<import('./types').CrmCompany, 'id' | 'organization_id' | 'created_at' | 'updated_at'>,
+    actorProfileId?: string,
+  ) {
+    await assertProfileInOrg(organizationId, input.owner_profile_id);
+    await assertProfileInOrg(organizationId, actorProfileId);
+    return crmRepository.createCompany({ ...input, organization_id: organizationId });
+  },
+
+  async createContact(
+    organizationId: string,
+    input: Omit<import('./types').CrmContact, 'id' | 'organization_id' | 'created_at' | 'updated_at'>,
+    actorProfileId?: string,
+  ) {
+    await assertCompanyInOrg(organizationId, input.company_id);
+    await assertProfileInOrg(organizationId, input.owner_profile_id);
+    await assertProfileInOrg(organizationId, actorProfileId);
+    return crmRepository.createContact({ ...input, organization_id: organizationId });
+  },
+
   async changeOpportunityStage(
     organizationId: string,
     opportunityId: string,
@@ -347,6 +523,8 @@ export const crmService = {
     opts: { actor?: 'BOT' | 'HUMAN'; actorProfileId?: string | null; lost_reason?: string | null } = {},
   ): Promise<CrmOpportunity> {
     const actor = opts.actor ?? 'HUMAN';
+    await assertOpportunityInOrg(organizationId, opportunityId);
+    await assertProfileInOrg(organizationId, opts.actorProfileId);
     const current = await crmRepository.getOpportunity(opportunityId, organizationId);
     if (!current) throw new Error('OPPORTUNITY_NOT_FOUND');
     if (actor === 'BOT' && !isBotStageTransitionAllowed(current.stage, to)) {
@@ -424,6 +602,11 @@ export const crmService = {
     },
     actorProfileId?: string,
   ) {
+    await assertLeadInOrg(organizationId, input.lead_id);
+    await assertOpportunityInOrg(organizationId, input.opportunity_id);
+    await assertCompanyInOrg(organizationId, input.company_id);
+    await assertProfileInOrg(organizationId, input.assigned_to);
+    await assertProfileInOrg(organizationId, actorProfileId);
     if (input.external_key) {
       const existing = await crmRepository.findTaskByExternal(organizationId, input.external_key);
       if (existing) return existing;
@@ -463,6 +646,9 @@ export const crmService = {
   },
 
   async updateTask(id: string, organizationId: string, updates: Partial<{ title: string; description: string | null; assigned_to: string | null; status: 'PENDING' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED'; priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'; due_at: string | null }>, actorProfileId?: string) {
+    await assertTaskInOrg(organizationId, id);
+    await assertProfileInOrg(organizationId, updates.assigned_to);
+    await assertProfileInOrg(organizationId, actorProfileId);
     const task = await crmRepository.updateTask(id, organizationId, clean(updates as Record<string, unknown>) as never);
     if (updates.status === 'DONE') {
       await crmRepository.updateTask(id, organizationId, { completed_at: now() } as never);
@@ -491,7 +677,7 @@ export const crmService = {
   },
 
   // ---------- Activities / Timeline ----------
-  addActivity: (
+  async addActivity(
     organizationId: string,
     input: {
       lead_id?: string | null;
@@ -507,8 +693,14 @@ export const crmService = {
       external_key?: string | null;
     },
     actorProfileId?: string,
-  ) =>
-    crmRepository.createActivity({
+  ) {
+    await assertLeadInOrg(organizationId, input.lead_id);
+    await assertOpportunityInOrg(organizationId, input.opportunity_id);
+    await assertCompanyInOrg(organizationId, input.company_id);
+    await assertContactInOrg(organizationId, input.contact_id);
+    await assertConversationInOrg(organizationId, input.conversation_id);
+    await assertProfileInOrg(organizationId, actorProfileId);
+    return crmRepository.createActivity({
       organization_id: organizationId,
       lead_id: input.lead_id ?? null,
       opportunity_id: input.opportunity_id ?? null,
@@ -523,7 +715,8 @@ export const crmService = {
       metadata: input.metadata ?? {},
       external_key: input.external_key ?? null,
       occurred_at: now(),
-    }),
+    });
+  },
 
   listActivities: (organizationId: string, filter?: { lead_id?: string; opportunity_id?: string; conversation_id?: string }) =>
     crmRepository.listActivities(organizationId, filter),
@@ -558,6 +751,9 @@ export const crmService = {
     input: { lead_id?: string | null; conversation_id: string; reason?: string | null; createTask?: boolean },
     actorProfileId?: string,
   ) {
+    await assertConversationInOrg(organizationId, input.conversation_id);
+    await assertLeadInOrg(organizationId, input.lead_id);
+    await assertProfileInOrg(organizationId, actorProfileId);
     const conv = await crmRepository.getConversation(input.conversation_id, organizationId);
     if (!conv) throw new Error('CONVERSATION_NOT_FOUND');
     const updated =
