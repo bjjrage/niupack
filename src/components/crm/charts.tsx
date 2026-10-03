@@ -117,8 +117,7 @@ export function MarketDonut({ data }: { data: Array<{ market: string; count: num
   );
 }
 
-export function WonLost({ won, lost }: { won: number; lost: number }) {
-  const total = won + lost;
+export function WonLost({ won, lost }: { won: number; lost: number }) {  const total = won + lost;
   const wonPct = total > 0 ? (won / total) * 100 : 50;
   return (
     <div>
@@ -135,6 +134,49 @@ export function WonLost({ won, lost }: { won: number; lost: number }) {
           Perdidas <strong className="tabular-nums">{lost}</strong>
         </span>
       </div>
+    </div>
+  );
+}
+
+export function MonthlyBars({ data, money = false }: { data: Array<{ month: string; quantity: number; value: number }>; money?: boolean }) {
+  const max = Math.max(1, ...data.map((d) => (money ? d.value : d.quantity)));
+  if (data.length === 0) return <p className="py-4 text-center text-[11px] text-slate-600">Sin compras en los últimos 12 meses.</p>;
+  return (
+    <div className="flex h-28 items-end gap-1.5">
+      {data.map((d) => {
+        const v = money ? d.value : d.quantity;
+        return (
+          <div key={d.month} className="flex min-w-0 flex-1 flex-col items-center gap-1" title={`${d.month}: ${money ? fmtMoney(d.value) : d.quantity.toLocaleString('es-PY')}`}>
+            <span className="text-[9px] tabular-nums text-slate-500">{v > 0 ? (money && v >= 1000 ? `${Math.round(v / 100) / 10}k` : v.toLocaleString('es-PY')) : ''}</span>
+            <div className="flex h-16 w-full items-end rounded-sm" style={{ background: TRACK }}>
+              <div className="w-full rounded-sm" style={{ height: `${Math.max(v > 0 ? 6 : 0, (v / max) * 100)}%`, background: RED, opacity: 0.85 }} />
+            </div>
+            <span className="text-[9px] text-slate-600">{d.month.slice(5)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function ProductBars({ data }: { data: Array<{ label: string; value: number; sub?: string }> }) {
+  const max = Math.max(1, ...data.map((d) => d.value));
+  if (data.length === 0) return <p className="py-4 text-center text-[11px] text-slate-600">Sin consumo registrado.</p>;
+  return (
+    <div className="space-y-2">
+      {data.slice(0, 8).map((d, i) => (
+        <div key={d.label}>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="truncate text-[11px] font-medium text-slate-300">{d.label}</span>
+            <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
+              {d.value.toLocaleString('es-PY')}{d.sub ? ` · ${d.sub}` : ''}
+            </span>
+          </div>
+          <div className="mt-1 h-2 overflow-hidden rounded-full" style={{ background: TRACK }}>
+            <div className="h-full rounded-full" style={{ width: `${Math.max(d.value > 0 ? 4 : 0, (d.value / max) * 100)}%`, background: RED_DIM[i % RED_DIM.length] }} />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -18,10 +18,35 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { DataTable } from '@/components/ui/DataTable';
 import { Modal } from '@/components/ui/Modal';
-import { Funnel, MarketDonut, StageBars, WonLost } from './charts';
+import { Funnel, MarketDonut, MonthlyBars, ProductBars, StageBars, WonLost } from './charts';
 import { Avatar, fmtDateLabel, fmtMoney, isOverdue, ownerName, timeAgo, type OwnerRef } from './commercial-ui';
 import { Account360, type AccountInfo } from './Account360';
 import { Opportunity360, type Opp360 } from './Opportunity360';
+import { PurchaseImporter } from './PurchaseImporter';
+
+const ACCOUNT_FILTERS = [
+  { key: 'all', label: 'Todos' },
+  { key: 'prospects', label: 'Prospectos' },
+  { key: 'customers', label: 'Clientes' },
+  { key: 'soon', label: 'Contactar pronto' },
+  { key: 'overdue', label: 'Recompras vencidas' },
+  { key: 'no30', label: 'Sin compras 30 días' },
+  { key: 'no60', label: 'Sin compras 60 días' },
+  { key: 'no90', label: 'Sin compras 90 días' },
+] as const;
+
+interface CompanyHealth {
+  company_id: string;
+  company_name: string;
+  last_purchase_date: string | null;
+  active_skus: number;
+  soon_count: number;
+  overdue_count: number;
+  worst_status: string | null;
+  next_repurchase_at: string | null;
+  next_repurchase_sku: string | null;
+  owner_profile_id?: string | null;
+}
 
 type View = 'dashboard' | 'pipeline' | 'accounts' | 'inbox' | 'tasks';
 
@@ -203,7 +228,7 @@ export function CommercialCrmWorkspace() {
       </nav>
 
       {view === 'dashboard' && (
-        <DashboardView dash={dash.data} loading={dash.loading} onGoPipeline={() => setView('pipeline')} />
+        <DashboardView dash={dash.data} loading={dash.loading} onGoPipeline={() => setView('pipeline')} owners={owners} onChanged={reloadAll} />
       )}
 
       {view === 'pipeline' && (
@@ -227,7 +252,6 @@ export function CommercialCrmWorkspace() {
           contacts={contacts}
           opps={opps}
           leads={leads}
-          tasks={tasks}
           owners={owners}
           loading={companiesQ.loading}
           onOpenAccount={setAccountId}
@@ -320,7 +344,29 @@ function Panel({ title, sub, children, className = '' }: { title: string; sub?: 
   );
 }
 
-function DashboardView({ dash, loading, onGoPipeline }: { dash: SalesDash | null; loading: boolean; onGoPipeline: () => void }) {
+function DashboardView({ dash, loading, onGoPipeline, owners, onChanged }: { dash: SalesDash | null; loading: boolean; onGoPipeline: () => void; owners: OwnerRef[]; onChanged: () => void }) {
+  const alertsQ = useCrmFetch<{ alerts: Array<{ company_id: string; company_name: string; sku: string; product_name: string; last_purchase_date: string; median_days_between_orders: number | null; expected_next_purchase_at: string | null; days_until_expected_purchase: number | null; average_order_quantity: number; average_order_value: number | null; repurchase_status: string; owner_profile_id?: string | null }> }>('/api/crm/repurchase/alerts');
+  const alerts = alertsQ.data?.alerts ?? [];
+  const soon7 = alerts.filter((a) => (a.days_until_expected_purchase ?? 99) <= 7);
+  const overdue = alerts.filter((a) => a.repurchase_status === 'OVERDUE');
+  const value30 = alerts
+    .filter((a) => (a.days_until_expected_purchase ?? 99) <= 30)
+    .reduce((acc, a) => acc + (a.average_order_value ?? 0), 0);
+  const toContact = alerts.filter((a) => a.repurchase_status !== 'ON_CYCLE').length;
+
+  async function refreshAlerts() {
+    try {
+      await fetch('/api/crm/repurchase/generate-tasks', { method: 'POST' });
+      await alertsQ.reload();
+      onChanged();
+    } catch {
+      // Silencioso: el panel sigue mostrando el último estado.
+    }
+  }
+
+  async function createRepurchaseTask() {
+    await refreshAlerts();
+  }
   if (loading && !dash) return <p className="p-8 text-center text-xs text-slate-500">Cargando panel…</p>;
   const d = dash;
   const funnel = d
@@ -397,6 +443,77 @@ function DashboardView({ dash, loading, onGoPipeline }: { dash: SalesDash | null
           )}
         </Panel>
       </div>
+      <div className="rounded-lg border border-slate-800 bg-[#141820] p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <div>
+            <h2 className="text-sm font-semibold text-white">Recompra · a quién llamar hoy</h2>
+            <p className="mt-0.5 text-[11px] text-slate-500">Pronóstico por cadencia cliente × producto, separado del pipeline.</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => void refreshAlerts()} className="ml-auto">Actualizar alertas</Button>
+        </div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <Kpi label="Clientes a contactar" count={toContact} value={0} sub="CONTACT_SOON + OVERDUE" />
+          <Kpi label="Recompras próximos 7 días" count={soon7.length} value={soon7.reduce((a, x) => a + (x.average_order_value ?? 0), 0)} sub="Valor esperado" />
+          <Kpi label="Recompras vencidas" count={overdue.length} value={overdue.reduce((a, x) => a + (x.average_order_value ?? 0), 0)} sub="Pasaron su fecha estimada" />
+          <Kpi label="Valor recompra 30 días" count={alerts.filter((a) => (a.days_until_expected_purchase ?? 99) <= 30).length} value={value30} sub="Casos esperados" />
+        </div>
+        <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_1.4fr]">
+          <Panel title="Recompras esperadas · próximos 30 días" sub="Por semana">
+            <ThirtyDayChart alerts={alerts} />
+          </Panel>
+          <Panel title="Contactar ahora" sub="Cliente · producto · motivo · responsable">
+            {alerts.length === 0 ? (
+              <p className="py-4 text-center text-[11px] text-slate-600">Sin recompras próximas. Importá compras para activar el radar.</p>
+            ) : (
+              <ul className="max-h-64 space-y-2 overflow-y-auto">
+                {alerts.slice(0, 8).map((a) => (
+                  <li key={`${a.company_id}-${a.sku}`} className="flex flex-wrap items-center gap-2 rounded border border-slate-800 bg-[#0c0f14] px-2.5 py-2 text-[11px]">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium text-slate-200">{a.company_name} · {a.product_name}</span>
+                      <span className="block truncate text-slate-500">
+                        Última {a.last_purchase_date.slice(8, 10)}/{a.last_purchase_date.slice(5, 7)} · cada {a.median_days_between_orders ?? '?'} días · próx. {a.expected_next_purchase_at ? fmtDateLabel(a.expected_next_purchase_at) : '—'} · {ownerName(owners, a.owner_profile_id)}
+                      </span>
+                    </span>
+                    <Badge variant={a.repurchase_status === 'OVERDUE' ? 'danger' : 'warning'} size="sm">
+                      {a.repurchase_status === 'OVERDUE' ? 'VENCIDA' : 'PRONTO'}
+                    </Badge>
+                    <Button variant="outline" size="sm" onClick={() => void createRepurchaseTask()}>Crear tarea</Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ThirtyDayChart({ alerts }: { alerts: Array<{ days_until_expected_purchase: number | null; average_order_value: number | null }> }) {
+  const weeks = [
+    { label: 'Sem 1', min: 0, max: 7 },
+    { label: 'Sem 2', min: 8, max: 14 },
+    { label: 'Sem 3', min: 15, max: 21 },
+    { label: 'Sem 4', min: 22, max: 30 },
+  ].map((w) => {
+    const items = alerts.filter((a) => (a.days_until_expected_purchase ?? 99) >= w.min && (a.days_until_expected_purchase ?? 99) <= w.max);
+    return { ...w, count: items.length, value: items.reduce((acc, a) => acc + (a.average_order_value ?? 0), 0) };
+  });
+  const max = Math.max(1, ...weeks.map((w) => w.value));
+  return (
+    <div>
+      <div className="flex h-28 items-end gap-3">
+        {weeks.map((w) => (
+          <div key={w.label} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+            <span className="text-[10px] tabular-nums text-slate-400">{w.count} · {fmtMoney(w.value)}</span>
+            <div className="flex h-16 w-full items-end rounded-sm bg-[#1d232d]">
+              <div className="w-full rounded-sm" style={{ height: `${Math.max(w.value > 0 ? 6 : 0, (w.value / max) * 100)}%`, background: '#f53732', opacity: 0.85 }} />
+            </div>
+            <span className="text-[10px] text-slate-600">{w.label}</span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[10px] text-slate-600">Eje X: semana · Eje Y: valor esperado (promedio por pedido, nunca inventado).</p>
     </div>
   );
 }
@@ -671,7 +788,6 @@ function AccountsView({
   contacts,
   opps,
   leads,
-  tasks,
   owners,
   loading,
   onOpenAccount,
@@ -682,7 +798,6 @@ function AccountsView({
   contacts: ContactRow[];
   opps: Opp[];
   leads: LeadRow[];
-  tasks: TaskRow[];
   owners: OwnerRef[];
   loading: boolean;
   onOpenAccount: (id: string) => void;
@@ -696,6 +811,10 @@ function AccountsView({
   const [city, setCity] = useState('');
   const [phone, setPhone] = useState('');
   const [owner, setOwner] = useState('');
+  const [accFilter, setAccFilter] = useState<string>('all');
+  const [importOpen, setImportOpen] = useState(false);
+  const healthQ = useCrmFetch<{ health: CompanyHealth[] }>('/api/crm/customers/purchase-health');
+  const healthById = useMemo(() => new Map((healthQ.data?.health ?? []).map((h) => [h.company_id, h])), [healthQ.data]);
 
   const rows = useMemo(
     () =>
@@ -705,6 +824,7 @@ function AccountsView({
         const main = contacts.find((x) => x.company_id === c.id) ?? null;
         const lastAct = co.reduce((a, o) => (o.updated_at && o.updated_at > a ? o.updated_at : a), c.updated_at ?? '');
         const next = open.filter((o) => o.next_action).sort((a, b) => (a.next_action_at ?? '').localeCompare(b.next_action_at ?? ''))[0];
+        const h = healthById.get(c.id);
         return {
           ...c,
           contactName: main?.full_name ?? '—',
@@ -714,10 +834,32 @@ function AccountsView({
           ownerName: ownerName(owners, c.owner_profile_id),
           lastAct: lastAct || '—',
           nextLabel: next ? `${next.next_action} · ${fmtDateLabel(next.next_action_at)}` : '—',
+          lastPurchase: h?.last_purchase_date ?? null,
+          activeSkus: h?.active_skus ?? 0,
+          nextRepurchase: h?.next_repurchase_at ?? null,
+          nextRepurchaseSku: h?.next_repurchase_sku ?? null,
+          repStatus: h?.worst_status ?? null,
+          isCustomer: (c.lifecycle_stage ?? 'PROSPECT') === 'CUSTOMER' || (h?.active_skus ?? 0) > 0,
         };
       }),
-    [companies, contacts, opps, owners],
+    [companies, contacts, opps, owners, healthById],
   );
+
+  const filteredRows = useMemo(() => {
+    const nowTs = Date.now();
+    return rows.filter((r) => {
+      if (accFilter === 'prospects') return !r.isCustomer;
+      if (accFilter === 'customers') return r.isCustomer;
+      if (accFilter === 'soon') return r.repStatus === 'CONTACT_SOON';
+      if (accFilter === 'overdue') return r.repStatus === 'OVERDUE';
+      if (['no30', 'no60', 'no90'].includes(accFilter)) {
+        const days = accFilter === 'no30' ? 30 : accFilter === 'no60' ? 60 : 90;
+        if (!r.lastPurchase) return true;
+        return nowTs - new Date(r.lastPurchase).getTime() > days * 86400000;
+      }
+      return true;
+    });
+  }, [rows, accFilter]);
 
   const orphans = useMemo(() => leads.filter((l) => !l.company_id), [leads]);
 
@@ -758,12 +900,25 @@ function AccountsView({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] text-slate-500">{rows.length} cuentas · {orphans.length} prospectos de WhatsApp sin empresa</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="mr-auto text-[11px] text-slate-500">{filteredRows.length} cuentas · {orphans.length} prospectos de WhatsApp sin empresa</p>
+        <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>Importar compras</Button>
         <Button variant="primary" size="sm" onClick={() => setNewOpen(true)}>
           <Plus className="h-3.5 w-3.5" /> Nuevo cliente
         </Button>
       </div>
+      <div className="flex flex-wrap gap-2">
+        {ACCOUNT_FILTERS.map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setAccFilter(f.key)}
+            className={`rounded px-3 py-1.5 text-xs font-medium transition ${accFilter === f.key ? 'bg-brand-500/15 text-white ring-1 ring-brand-800/70' : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'}`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+      <PurchaseImporter open={importOpen} onClose={() => setImportOpen(false)} companies={companies.map((c) => ({ id: c.id, name: c.name }))} onImported={() => { onChanged(); void healthQ.reload(); }} />
 
       <section className="rounded-lg border border-slate-800 bg-[#141820]">
         <div className="p-3">
@@ -782,19 +937,35 @@ function AccountsView({
               { key: 'oppCount', header: 'Oportunidades', align: 'right', render: (r: { oppCount: number }) => <span className="tabular-nums">{r.oppCount}</span> },
               { key: 'pipeline', header: 'Pipeline', align: 'right', render: (r: { pipeline: number }) => <span className="tabular-nums text-white">{fmtMoney(r.pipeline)}</span> },
               { key: 'ownerName', header: 'Responsable', render: (r: { ownerName: string }) => <span className="inline-flex items-center gap-1.5"><Avatar name={r.ownerName} size="sm" />{r.ownerName}</span> },
+              { key: 'lastPurchase', header: 'Última compra', render: (r: { lastPurchase: string | null }) => (r.lastPurchase ? fmtDateLabel(r.lastPurchase) : '—') },
+              { key: 'activeSkus', header: 'Productos', align: 'right', render: (r: { activeSkus: number }) => <span className="tabular-nums">{r.activeSkus || '—'}</span> },
+              {
+                key: 'nextRepurchase',
+                header: 'Próxima recompra',
+                render: (r: { nextRepurchase: string | null; nextRepurchaseSku: string | null }) =>
+                  r.nextRepurchase ? `${r.nextRepurchaseSku ?? ''} · ${fmtDateLabel(r.nextRepurchase)}` : '—',
+              },
+              {
+                key: 'repStatus',
+                header: 'Recompra',
+                render: (r: { repStatus: string | null }) =>
+                  r.repStatus === 'OVERDUE' ? <Badge variant="danger" size="sm">VENCIDA</Badge>
+                  : r.repStatus === 'CONTACT_SOON' ? <Badge variant="warning" size="sm">CONTACTAR PRONTO</Badge>
+                  : r.repStatus === 'ON_CYCLE' ? <Badge variant="success" size="sm">EN CICLO</Badge> : <span className="text-slate-600">—</span>,
+              },
               { key: 'lastAct', header: 'Última actividad', render: (r: { lastAct: string }) => (r.lastAct.length > 10 ? timeAgo(r.lastAct) : r.lastAct) },
               { key: 'nextLabel', header: 'Próxima acción' },
             ]}
-            data={rows}
+            data={filteredRows}
             emptyMessage={loading ? 'Cargando…' : 'Sin clientes/prospectos'}
             actions={(row: { id: string }) => <Button variant="ghost" size="sm" onClick={() => onOpenAccount(row.id)}>Abrir</Button>}
           />
         </div>
-        {rows.length === 0 && !loading && (
-          <div className="flex justify-center border-t border-slate-800 p-4">
-            <Button variant="primary" size="sm" onClick={() => setNewOpen(true)}>+ Nuevo cliente</Button>
-          </div>
-        )}
+      {filteredRows.length === 0 && !loading && (
+        <div className="flex justify-center border-t border-slate-800 p-4">
+          <Button variant="primary" size="sm" onClick={() => setNewOpen(true)}>+ Nuevo cliente</Button>
+        </div>
+      )}
       </section>
 
       {orphans.length > 0 && (
@@ -809,7 +980,6 @@ function AccountsView({
           </ul>
         </section>
       )}
-      <TasksHiddenHelper tasks={tasks} />
 
       <Modal isOpen={newOpen} onClose={() => setNewOpen(false)} title="Nuevo cliente / prospecto" description="Cuenta comercial con responsable.">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre de la cuenta" className="w-full rounded border border-slate-700 bg-[#0c0f14] px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none" />
@@ -850,11 +1020,6 @@ function OrphanRow({ lead, companies, onAssign }: { lead: LeadRow; companies: Co
       <Button variant="outline" size="sm" disabled={!companyId} onClick={() => void onAssign(lead.id, companyId)}>Asignar</Button>
     </li>
   );
-}
-
-function TasksHiddenHelper({ tasks: _tasks }: { tasks: TaskRow[] }) {
-  void _tasks;
-  return null;
 }
 
 /* ================= TASKS ================= */
@@ -913,8 +1078,17 @@ function TasksView({
     });
   }, [tasks, filter, ownerF]);
 
-  async function complete(id: string) {
+  async function refreshRepurchase() {
     try {
+      await fetch('/api/crm/repurchase/generate-tasks', { method: 'POST' });
+      onChanged();
+      setMsg('Alertas de recompra actualizadas.');
+    } catch {
+      setMsg('No se pudieron actualizar las alertas.');
+    }
+  }
+
+  async function complete(id: string) {    try {
       const res = await fetch(`/api/crm/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'DONE' }) });
       if (!res.ok) throw new Error('UPDATE_FAILED');
       onChanged();
@@ -972,6 +1146,7 @@ function TasksView({
           <option value="">Todos los responsables</option>
           {owners.map((o) => <option key={o.id} value={o.id}>{o.full_name}</option>)}
         </select>
+        <Button variant="outline" size="sm" onClick={() => void refreshRepurchase()}>Actualizar alertas</Button>
         <Button variant="primary" size="sm" onClick={() => setModal(true)}>
           <Plus className="h-3.5 w-3.5" /> Nueva tarea
         </Button>
