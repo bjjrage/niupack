@@ -9,20 +9,31 @@ import {
   MessageSquareText,
   Phone,
   Plus,
-  RefreshCw,
   Search,
   Sparkles,
+  Trophy,
   Users,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { DataTable } from '@/components/ui/DataTable';
 import { Modal } from '@/components/ui/Modal';
-import { Funnel } from './charts';
+import { Funnel, MarketDonut, MonthlyBars, ProductBars, StageBars, WonLost } from './charts';
 import { Avatar, fmtDateLabel, fmtMoney, isOverdue, ownerName, timeAgo, type OwnerRef } from './commercial-ui';
 import { Account360, type AccountInfo } from './Account360';
 import { Opportunity360, type Opp360 } from './Opportunity360';
 import { PurchaseImporter } from './PurchaseImporter';
+
+const ACCOUNT_FILTERS = [
+  { key: 'all', label: 'Todos' },
+  { key: 'prospects', label: 'Prospectos' },
+  { key: 'customers', label: 'Clientes' },
+  { key: 'soon', label: 'Contactar pronto' },
+  { key: 'overdue', label: 'Recompras vencidas' },
+  { key: 'no30', label: 'Sin compras 30 días' },
+  { key: 'no60', label: 'Sin compras 60 días' },
+  { key: 'no90', label: 'Sin compras 90 días' },
+] as const;
 
 interface CompanyHealth {
   company_id: string;
@@ -115,7 +126,6 @@ interface SalesDash {
   won_month_count: number;
   won_month_value: number;
   weighted_forecast: number;
-  tasks_overdue: number;
   won_count: number;
   lost_count: number;
   leads_total: number;
@@ -189,8 +199,17 @@ export function CommercialCrmWorkspace() {
   const account: CompanyRow | null = accountId ? (companyById.get(accountId) ?? null) : null;
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-4">
-      <nav className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-800 bg-[#11161d] p-2">
+    <div className="mx-auto max-w-[1500px] space-y-5">
+      <header className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-800 pb-4">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-white">Ventas</h1>
+          <p className="mt-1 text-xs text-slate-400">Pipeline, clientes y conversaciones en un solo lugar.</p>
+          {msg && <p className="mt-2 text-[11px] text-amber-400">{msg}</p>}
+        </div>
+        <Button variant="outline" size="sm" onClick={reloadAll}>Actualizar</Button>
+      </header>
+
+      <nav className="flex flex-wrap gap-2 rounded-lg border border-slate-800 bg-[#11161d] p-2">
         {views.map(({ key, label, icon: Icon, hint }) => (
           <button
             key={key}
@@ -206,15 +225,7 @@ export function CommercialCrmWorkspace() {
             {hint && view !== key && <span className="hidden text-[10px] text-slate-600 xl:inline">{hint}</span>}
           </button>
         ))}
-        <button
-          onClick={reloadAll}
-          title="Actualizar"
-          className="ml-auto rounded p-2 text-slate-500 transition hover:bg-slate-800/60 hover:text-slate-200"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-        </button>
       </nav>
-      {msg && <p className="text-[11px] text-amber-400">{msg}</p>}
 
       {view === 'dashboard' && (
         <DashboardView dash={dash.data} loading={dash.loading} onGoPipeline={() => setView('pipeline')} owners={owners} onChanged={reloadAll} />
@@ -310,6 +321,19 @@ export function CommercialCrmWorkspace() {
 
 /* ================= DASHBOARD ================= */
 
+function Kpi({ label, count, value, sub }: { label: string; count: number; value: number; sub: string }) {
+  return (
+    <div className="rounded-lg border border-slate-800 bg-[#141820] p-4 md:p-5">
+      <p className="text-xs font-medium text-slate-400">{label}</p>
+      <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-3xl font-bold tabular-nums tracking-tight text-white">{count}</span>
+        <span className="text-sm font-semibold tabular-nums text-brand-400">{fmtMoney(value)}</span>
+      </div>
+      <p className="mt-2 text-[11px] text-slate-500">{sub}</p>
+    </div>
+  );
+}
+
 function Panel({ title, sub, children, className = '' }: { title: string; sub?: string; children: React.ReactNode; className?: string }) {
   return (
     <section className={`rounded-lg border border-slate-800 bg-[#141820] p-4 ${className}`}>
@@ -321,14 +345,14 @@ function Panel({ title, sub, children, className = '' }: { title: string; sub?: 
 }
 
 function DashboardView({ dash, loading, onGoPipeline, owners, onChanged }: { dash: SalesDash | null; loading: boolean; onGoPipeline: () => void; owners: OwnerRef[]; onChanged: () => void }) {
-  const alertsQ = useCrmFetch<{ alerts: Array<{ company_id: string; company_name: string; sku: string; product_name: string; contact_name?: string | null; contact_whatsapp?: string | null; last_purchase_date: string; median_days_between_orders: number | null; expected_next_purchase_at: string | null; days_until_expected_purchase: number | null; average_order_quantity: number; average_order_value: number | null; repurchase_status: string; owner_profile_id?: string | null }> }>('/api/crm/repurchase/alerts');
+  const alertsQ = useCrmFetch<{ alerts: Array<{ company_id: string; company_name: string; sku: string; product_name: string; last_purchase_date: string; median_days_between_orders: number | null; expected_next_purchase_at: string | null; days_until_expected_purchase: number | null; average_order_quantity: number; average_order_value: number | null; repurchase_status: string; owner_profile_id?: string | null }> }>('/api/crm/repurchase/alerts');
   const alerts = alertsQ.data?.alerts ?? [];
-  const contactToday = alerts
-    .filter((a) => a.repurchase_status === 'OVERDUE' || a.repurchase_status === 'CONTACT_SOON')
-    .sort((a, b) => {
-      const rank = (s: string): number => (s === 'OVERDUE' ? 0 : 1);
-      return rank(a.repurchase_status) - rank(b.repurchase_status) || (a.expected_next_purchase_at ?? '').localeCompare(b.expected_next_purchase_at ?? '');
-    });
+  const soon7 = alerts.filter((a) => (a.days_until_expected_purchase ?? 99) <= 7);
+  const overdue = alerts.filter((a) => a.repurchase_status === 'OVERDUE');
+  const value30 = alerts
+    .filter((a) => (a.days_until_expected_purchase ?? 99) <= 30)
+    .reduce((acc, a) => acc + (a.average_order_value ?? 0), 0);
+  const toContact = alerts.filter((a) => a.repurchase_status !== 'ON_CYCLE').length;
 
   async function refreshAlerts() {
     try {
@@ -345,116 +369,151 @@ function DashboardView({ dash, loading, onGoPipeline, owners, onChanged }: { das
   }
   if (loading && !dash) return <p className="p-8 text-center text-xs text-slate-500">Cargando panel…</p>;
   const d = dash;
-  const byStage = (s: string): { count: number; value: number } => {
-    const b = d?.stage_breakdown.find((x) => x.stage === s);
-    return { count: b?.count ?? 0, value: b?.value ?? 0 };
-  };
-  const funnel = [
-    { label: 'NUEVO', ...byStage('NUEVO') },
-    { label: 'CONTACTADO', ...byStage('CONTACTADO') },
-    { label: 'CALIFICADO', ...byStage('CALIFICADO') },
-    { label: 'COTIZACIÓN', ...byStage('COTIZACIÓN') },
-    { label: 'NEGOCIACIÓN', ...byStage('NEGOCIACIÓN') },
-    { label: 'GANADAS', count: d?.won_count ?? 0, value: 0 },
-  ].map((s) => ({ label: s.label, value: s.count, sub: fmtMoney(s.value) }));
+  const funnel = d
+    ? [
+        { label: 'Leads', value: d.leads_total },
+        { label: 'Contactados', value: d.stage_breakdown.find((s) => s.stage === 'CONTACTADO')?.count ?? 0 },
+        { label: 'Calificados', value: d.stage_breakdown.find((s) => s.stage === 'CALIFICADO')?.count ?? 0 },
+        { label: 'Cotizaciones', value: d.quotes_count },
+        { label: 'Negociación', value: d.negotiation_count },
+        { label: 'Ganadas', value: d.won_count },
+      ]
+    : [];
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-slate-800 bg-[#141820] px-4 py-3 text-xs">
-        <span className="text-slate-400">Pipeline abierto <strong className="ml-1 tabular-nums text-white">{fmtMoney(d?.pipeline_open_value ?? 0)}</strong></span>
-        <span className="text-slate-400">Forecast <strong className="ml-1 tabular-nums text-brand-400">{fmtMoney(d?.weighted_forecast ?? 0)}</strong></span>
-        <span className="text-slate-400">Ganadas mes <strong className="ml-1 tabular-nums text-white">{d?.won_month_count ?? 0} · {fmtMoney(d?.won_month_value ?? 0)}</strong></span>
-        <span className="text-slate-400">Tareas vencidas <strong className={`ml-1 tabular-nums ${(d?.tasks_overdue ?? 0) > 0 ? 'text-amber-400' : 'text-white'}`}>{d?.tasks_overdue ?? 0}</strong></span>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <Kpi label="Pipeline abierto" count={d?.pipeline_open_count ?? 0} value={d?.pipeline_open_value ?? 0} sub={`Pronóstico ponderado: ${fmtMoney(d?.weighted_forecast ?? 0)}`} />
+        <Kpi label="Cotizaciones abiertas" count={d?.quotes_count ?? 0} value={d?.quotes_value ?? 0} sub="Etapa COTIZACIÓN" />
+        <Kpi label="Negociaciones" count={d?.negotiation_count ?? 0} value={d?.negotiation_value ?? 0} sub="Etapa NEGOCIACIÓN" />
+        <Kpi label="Ganadas este mes" count={d?.won_month_count ?? 0} value={d?.won_month_value ?? 0} sub="Cierres del mes actual" />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[3fr_2fr]">
-        <Panel title="Embudo comercial" sub="Cantidad y valor por etapa">
-          <Funnel steps={funnel} />
+        <Panel title="Valor del pipeline por etapa" sub="Cantidad y monto por etapa activa">
+          <StageBars data={d?.stage_breakdown ?? []} />
           <button onClick={onGoPipeline} className="mt-3 text-[11px] font-medium text-brand-400 hover:text-brand-300">
             Ver pipeline →
           </button>
         </Panel>
-        <Panel title="Actividad y atención" sub="Movimientos y urgencias">
-          {(d?.activity_recent ?? []).length === 0 && (d?.attention_items ?? []).length === 0 ? (
-            <p className="py-4 text-center text-[11px] text-slate-600">Todavía no hay movimientos.</p>
-          ) : (
-            <div className="space-y-3">
-              <ul className="space-y-2">
-                {(d?.attention_items ?? []).slice(0, 4).map((a, i) => (
-                  <li key={`${a.kind}-${a.ref_id ?? i}`} className="flex items-center gap-2 rounded border border-amber-900/40 bg-amber-950/10 px-2.5 py-2 text-[11px]">
-                    <span className="shrink-0 rounded bg-amber-900/40 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">
-                      {a.kind === 'OVERDUE_TASK' ? 'VENCIDA' : a.kind === 'MISSING_NEXT_ACTION' ? 'SIN ACCIÓN' : a.kind === 'HUMAN_PENDING' ? 'HUMANO' : 'ESTANCADA'}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-slate-200">{a.label}</span>
-                  </li>
-                ))}
-              </ul>
-              <ul className="space-y-2">
-                {(d?.activity_recent ?? []).slice(0, 5).map((a) => (
-                  <li key={a.id} className="flex items-center gap-2 text-[11px]">
-                    <span className="shrink-0 rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-300">{a.type}</span>
-                    <span className="min-w-0 flex-1 truncate text-slate-300">{a.title || '—'}</span>
-                    <span className="shrink-0 text-slate-600">{timeAgo(a.occurred_at)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+        <Panel title="Embudo comercial" sub="De lead a cierre">
+          <Funnel steps={funnel} />
         </Panel>
       </div>
 
-      <section className="rounded-lg border border-slate-800 bg-[#141820] p-4">
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Panel title="Pipeline por mercado" sub="Oportunidades abiertas por destino">
+          <MarketDonut data={d?.market_breakdown ?? []} />
+        </Panel>
+        <Panel title="Ganadas vs perdidas" sub="Período actual">
+          <WonLost won={d?.won_count ?? 0} lost={d?.lost_count ?? 0} />
+        </Panel>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[3fr_2fr]">
+        <Panel title="Actividad comercial reciente" sub="Últimos movimientos del equipo">
+          {(d?.activity_recent ?? []).length === 0 ? (
+            <p className="py-4 text-center text-[11px] text-slate-600">Todavía no hay movimientos.</p>
+          ) : (
+            <ul className="space-y-2">
+              {(d?.activity_recent ?? []).map((a) => (
+                <li key={a.id} className="flex items-center gap-2 text-[11px]">
+                  <span className="shrink-0 rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-300">{a.type}</span>
+                  <span className="min-w-0 flex-1 truncate text-slate-300">{a.title || '—'}</span>
+                  <span className="shrink-0 text-slate-600">{timeAgo(a.occurred_at)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+        <Panel title="Requiere atención" sub="Lo urgente primero">
+          {(d?.attention_items ?? []).length === 0 ? (
+            <p className="py-4 text-center text-[11px] text-slate-600">Nada pendiente. Buen trabajo.</p>
+          ) : (
+            <ul className="space-y-2">
+              {(d?.attention_items ?? []).map((a, i) => (
+                <li key={`${a.kind}-${a.ref_id ?? i}`} className="flex items-center gap-2 rounded border border-amber-900/40 bg-amber-950/10 px-2.5 py-2 text-[11px]">
+                  <span className="shrink-0 rounded bg-amber-900/40 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">
+                    {a.kind === 'OVERDUE_TASK' ? 'VENCIDA' : a.kind === 'MISSING_NEXT_ACTION' ? 'SIN ACCIÓN' : a.kind === 'HUMAN_PENDING' ? 'HUMANO' : 'ESTANCADA'}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-slate-200">{a.label}</span>
+                  {a.detail && <span className="shrink-0 text-slate-500">{a.detail.length > 16 ? fmtDateLabel(a.detail) : a.detail}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      </div>
+      <div className="rounded-lg border border-slate-800 bg-[#141820] p-4">
         <div className="flex flex-wrap items-center gap-2">
           <div>
-            <h2 className="text-sm font-semibold text-white">Contactar hoy: {contactToday.length}</h2>
-            <p className="mt-0.5 text-[11px] text-slate-500">Recompras vencidas y próximas, ordenadas por urgencia.</p>
+            <h2 className="text-sm font-semibold text-white">Recompra · a quién llamar hoy</h2>
+            <p className="mt-0.5 text-[11px] text-slate-500">Pronóstico por cadencia cliente × producto, separado del pipeline.</p>
           </div>
           <Button variant="outline" size="sm" onClick={() => void refreshAlerts()} className="ml-auto">Actualizar alertas</Button>
         </div>
-        {contactToday.length === 0 ? (
-          <p className="py-6 text-center text-[11px] text-slate-600">Nada por contactar. Importá compras para activar el radar.</p>
-        ) : (
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-[11px]">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-500">
-                  <th className="py-2 pr-3 font-medium">Cliente</th>
-                  <th className="py-2 pr-3 font-medium">Producto</th>
-                  <th className="py-2 pr-3 font-medium">Contacto</th>
-                  <th className="py-2 pr-3 font-medium">Teléfono</th>
-                  <th className="py-2 pr-3 font-medium">Última compra</th>
-                  <th className="py-2 pr-3 font-medium">Frecuencia</th>
-                  <th className="py-2 pr-3 font-medium">Próxima</th>
-                  <th className="py-2 pr-3 font-medium">Estado</th>
-                  <th className="py-2 pr-3 font-medium">Responsable</th>
-                  <th className="py-2 text-right font-medium">Acción</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {contactToday.map((a) => (
-                  <tr key={`${a.company_id}-${a.sku}`} className="hover:bg-slate-800/20">
-                    <td className="py-2 pr-3 font-medium text-white">{a.company_name}</td>
-                    <td className="py-2 pr-3 text-slate-300">{a.product_name}</td>
-                    <td className="py-2 pr-3 text-slate-300">{a.contact_name || '—'}</td>
-                    <td className="py-2 pr-3 tabular-nums text-slate-300">{a.contact_whatsapp || '—'}</td>
-                    <td className="py-2 pr-3 tabular-nums text-slate-300">{a.last_purchase_date.slice(8, 10)}/{a.last_purchase_date.slice(5, 7)}</td>
-                    <td className="py-2 pr-3 tabular-nums text-slate-300">cada {a.median_days_between_orders ?? '?'} días</td>
-                    <td className="py-2 pr-3 tabular-nums text-slate-300">{a.expected_next_purchase_at ? fmtDateLabel(a.expected_next_purchase_at) : '—'}</td>
-                    <td className="py-2 pr-3">
-                      <Badge variant={a.repurchase_status === 'OVERDUE' ? 'danger' : 'warning'} size="sm">
-                        {a.repurchase_status === 'OVERDUE' ? 'VENCIDO' : 'CONTACTAR'}
-                      </Badge>
-                    </td>
-                    <td className="py-2 pr-3 text-slate-300">{ownerName(owners, a.owner_profile_id)}</td>
-                    <td className="py-2 text-right">
-                      <Button variant="outline" size="sm" onClick={() => void createRepurchaseTask()}>Crear tarea</Button>
-                    </td>
-                  </tr>
+        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <Kpi label="Clientes a contactar" count={toContact} value={0} sub="CONTACT_SOON + OVERDUE" />
+          <Kpi label="Recompras próximos 7 días" count={soon7.length} value={soon7.reduce((a, x) => a + (x.average_order_value ?? 0), 0)} sub="Valor esperado" />
+          <Kpi label="Recompras vencidas" count={overdue.length} value={overdue.reduce((a, x) => a + (x.average_order_value ?? 0), 0)} sub="Pasaron su fecha estimada" />
+          <Kpi label="Valor recompra 30 días" count={alerts.filter((a) => (a.days_until_expected_purchase ?? 99) <= 30).length} value={value30} sub="Casos esperados" />
+        </div>
+        <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_1.4fr]">
+          <Panel title="Recompras esperadas · próximos 30 días" sub="Por semana">
+            <ThirtyDayChart alerts={alerts} />
+          </Panel>
+          <Panel title="Contactar ahora" sub="Cliente · producto · motivo · responsable">
+            {alerts.length === 0 ? (
+              <p className="py-4 text-center text-[11px] text-slate-600">Sin recompras próximas. Importá compras para activar el radar.</p>
+            ) : (
+              <ul className="max-h-64 space-y-2 overflow-y-auto">
+                {alerts.slice(0, 8).map((a) => (
+                  <li key={`${a.company_id}-${a.sku}`} className="flex flex-wrap items-center gap-2 rounded border border-slate-800 bg-[#0c0f14] px-2.5 py-2 text-[11px]">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium text-slate-200">{a.company_name} · {a.product_name}</span>
+                      <span className="block truncate text-slate-500">
+                        Última {a.last_purchase_date.slice(8, 10)}/{a.last_purchase_date.slice(5, 7)} · cada {a.median_days_between_orders ?? '?'} días · próx. {a.expected_next_purchase_at ? fmtDateLabel(a.expected_next_purchase_at) : '—'} · {ownerName(owners, a.owner_profile_id)}
+                      </span>
+                    </span>
+                    <Badge variant={a.repurchase_status === 'OVERDUE' ? 'danger' : 'warning'} size="sm">
+                      {a.repurchase_status === 'OVERDUE' ? 'VENCIDA' : 'PRONTO'}
+                    </Badge>
+                    <Button variant="outline" size="sm" onClick={() => void createRepurchaseTask()}>Crear tarea</Button>
+                  </li>
                 ))}
-              </tbody>
-            </table>
+              </ul>
+            )}
+          </Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ThirtyDayChart({ alerts }: { alerts: Array<{ days_until_expected_purchase: number | null; average_order_value: number | null }> }) {
+  const weeks = [
+    { label: 'Sem 1', min: 0, max: 7 },
+    { label: 'Sem 2', min: 8, max: 14 },
+    { label: 'Sem 3', min: 15, max: 21 },
+    { label: 'Sem 4', min: 22, max: 30 },
+  ].map((w) => {
+    const items = alerts.filter((a) => (a.days_until_expected_purchase ?? 99) >= w.min && (a.days_until_expected_purchase ?? 99) <= w.max);
+    return { ...w, count: items.length, value: items.reduce((acc, a) => acc + (a.average_order_value ?? 0), 0) };
+  });
+  const max = Math.max(1, ...weeks.map((w) => w.value));
+  return (
+    <div>
+      <div className="flex h-28 items-end gap-3">
+        {weeks.map((w) => (
+          <div key={w.label} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+            <span className="text-[10px] tabular-nums text-slate-400">{w.count} · {fmtMoney(w.value)}</span>
+            <div className="flex h-16 w-full items-end rounded-sm bg-[#1d232d]">
+              <div className="w-full rounded-sm" style={{ height: `${Math.max(w.value > 0 ? 6 : 0, (w.value / max) * 100)}%`, background: '#f53732', opacity: 0.85 }} />
+            </div>
+            <span className="text-[10px] text-slate-600">{w.label}</span>
           </div>
-        )}
-      </section>
+        ))}
+      </div>
+      <p className="mt-2 text-[10px] text-slate-600">Eje X: semana · Eje Y: valor esperado (promedio por pedido, nunca inventado).</p>
     </div>
   );
 }
@@ -538,6 +597,7 @@ function PipelineView({
   const [ownerF, setOwnerF] = useState('');
   const [marketF, setMarketF] = useState('');
   const [productF, setProductF] = useState('');
+  const [historic, setHistoric] = useState<'GANADO' | 'PERDIDO' | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newCompany, setNewCompany] = useState('');
@@ -588,15 +648,26 @@ function PipelineView({
     }
   }
 
-  const list = active;
+  const list = historic ? filtered.filter((o) => o.stage === historic) : active;
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-slate-800 bg-[#141820] px-4 py-2.5 text-xs">
-        <span className="text-slate-400">Pipeline abierto <strong className="ml-1 tabular-nums text-white">{fmtMoney(openValue)}</strong></span>
-        <span className="text-slate-400">Forecast <strong className="ml-1 tabular-nums text-brand-400">{fmtMoney(forecast)}</strong></span>
-        <span className="text-slate-400">Ganadas <strong className="ml-1 tabular-nums text-white">{won.length} · {fmtMoney(won.reduce((a, o) => a + (o.estimated_value ?? 0), 0))}</strong></span>
-        <span className="text-slate-400">Perdidas <strong className="ml-1 tabular-nums text-white">{lost.length} · {fmtMoney(lost.reduce((a, o) => a + (o.estimated_value ?? 0), 0))}</strong></span>
+      <div className="grid gap-3 md:grid-cols-2">
+        <button
+          onClick={() => setHistoric(historic === 'GANADO' ? null : 'GANADO')}
+          className={`flex items-center gap-2 rounded-lg border p-3 text-left transition ${historic === 'GANADO' ? 'border-emerald-700 bg-emerald-950/20' : 'border-slate-800 bg-[#141820] hover:border-slate-600'}`}
+        >
+          <Trophy className="h-4 w-4 shrink-0 text-emerald-400" />
+          <span className="text-xs text-slate-300">Ganadas <strong className="tabular-nums text-white">{won.length}</strong></span>
+          <span className="ml-auto text-xs font-semibold tabular-nums text-emerald-400">{fmtMoney(won.reduce((a, o) => a + (o.estimated_value ?? 0), 0))}</span>
+        </button>
+        <button
+          onClick={() => setHistoric(historic === 'PERDIDO' ? null : 'PERDIDO')}
+          className={`flex items-center gap-2 rounded-lg border p-3 text-left transition ${historic === 'PERDIDO' ? 'border-red-800 bg-red-950/20' : 'border-slate-800 bg-[#141820] hover:border-slate-600'}`}
+        >
+          <span className="text-xs text-slate-300">Perdidas <strong className="tabular-nums text-white">{lost.length}</strong></span>
+          <span className="ml-auto text-xs font-semibold tabular-nums text-slate-400">{fmtMoney(lost.reduce((a, o) => a + (o.estimated_value ?? 0), 0))}</span>
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-800 bg-[#11161d] p-2">
@@ -626,36 +697,67 @@ function PipelineView({
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
-        {ACTIVE.map((stage) => {
-          const items = list.filter((o) => o.stage === stage);
-          const val = items.reduce((a, o) => a + (o.estimated_value ?? 0), 0);
-          return (
-            <section key={stage} className="min-w-0 rounded-lg border border-slate-800 bg-[#0f1319]">
-              <header className="border-b border-slate-800 px-2.5 py-2.5">
-                <p className="truncate text-[11px] font-semibold text-slate-200">{stage}</p>
-                <p className="mt-0.5 truncate text-[10px] tabular-nums text-slate-500">
-                  {items.length} oportunidades · {fmtMoney(val)}
-                </p>
-              </header>
-              <div className="max-h-[62vh] space-y-2 overflow-y-auto p-2">
-                {items.length === 0 && <p className="py-6 text-center text-[11px] text-slate-600">Sin oportunidades</p>}
-                {items.map((o) => (
-                  <OppCard
-                    key={o.id}
-                    opp={o}
-                    company={o.company_id ? companyById.get(o.company_id)?.name : null}
-                    contact={o.contact_id ? contactById.get(o.contact_id)?.full_name : null}
-                    qualification={o.lead_id ? leadById.get(o.lead_id)?.qualification : null}
-                    owners={owners}
-                    onOpen={() => onOpenOpp(o.id)}
-                  />
-                ))}
-              </div>
-            </section>
-          );
-        })}
-      </div>
+      <p className="text-[11px] tabular-nums text-slate-500">
+        Pipeline abierto: <span className="font-semibold text-slate-200">{fmtMoney(openValue)}</span>
+        {' · '}Pronóstico ponderado: <span className="font-semibold text-brand-400">{fmtMoney(forecast)}</span>
+      </p>
+
+      {historic ? (
+        <section className="rounded-lg border border-slate-800 bg-[#141820] p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-white">{historic === 'GANADO' ? 'Histórico ganado' : 'Histórico perdido'} ({list.length})</h2>
+            <Button variant="outline" size="sm" onClick={() => setHistoric(null)}>Volver al pipeline</Button>
+          </div>
+          {list.length === 0 ? (
+            <p className="py-6 text-center text-[11px] text-slate-600">Sin resultados.</p>
+          ) : (
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {list.map((o) => (
+                <OppCard
+                  key={o.id}
+                  opp={o}
+                  company={o.company_id ? companyById.get(o.company_id)?.name : null}
+                  contact={o.contact_id ? contactById.get(o.contact_id)?.full_name : null}
+                  qualification={o.lead_id ? leadById.get(o.lead_id)?.qualification : null}
+                  owners={owners}
+                  onOpen={() => onOpenOpp(o.id)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      ) : (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+          {ACTIVE.map((stage) => {
+            const items = list.filter((o) => o.stage === stage);
+            const val = items.reduce((a, o) => a + (o.estimated_value ?? 0), 0);
+            return (
+              <section key={stage} className="min-w-0 rounded-lg border border-slate-800 bg-[#0f1319]">
+                <header className="border-b border-slate-800 px-2.5 py-2.5">
+                  <p className="truncate text-[11px] font-semibold text-slate-200">{stage}</p>
+                  <p className="mt-0.5 truncate text-[10px] tabular-nums text-slate-500">
+                    {items.length} · {fmtMoney(val)}
+                  </p>
+                </header>
+                <div className="max-h-[62vh] space-y-2 overflow-y-auto p-2">
+                  {items.length === 0 && <p className="py-6 text-center text-[11px] text-slate-600">Sin oportunidades</p>}
+                  {items.map((o) => (
+                    <OppCard
+                      key={o.id}
+                      opp={o}
+                      company={o.company_id ? companyById.get(o.company_id)?.name : null}
+                      contact={o.contact_id ? contactById.get(o.contact_id)?.full_name : null}
+                      qualification={o.lead_id ? leadById.get(o.lead_id)?.qualification : null}
+                      owners={owners}
+                      onOpen={() => onOpenOpp(o.id)}
+                    />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
 
       <Modal isOpen={newOpen} onClose={() => setNewOpen(false)} title="Nueva oportunidad" description="Se crea en NUEVO.">
         <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Título (ej. Vasos 12 oz · Curitiba)" className="w-full rounded border border-slate-700 bg-[#0c0f14] px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none" />
@@ -710,7 +812,6 @@ function AccountsView({
   const [phone, setPhone] = useState('');
   const [owner, setOwner] = useState('');
   const [accFilter, setAccFilter] = useState<string>('all');
-  const [accSearch, setAccSearch] = useState('');
   const [importOpen, setImportOpen] = useState(false);
   const healthQ = useCrmFetch<{ health: CompanyHealth[] }>('/api/crm/customers/purchase-health');
   const healthById = useMemo(() => new Map((healthQ.data?.health ?? []).map((h) => [h.company_id, h])), [healthQ.data]);
@@ -727,8 +828,6 @@ function AccountsView({
         return {
           ...c,
           contactName: main?.full_name ?? '—',
-          contactPhone: main?.whatsapp_phone ?? null,
-          contactEmail: main?.email ?? null,
           market: [c.country_code, c.city].filter(Boolean).join(' · ') || '—',
           oppCount: co.length,
           pipeline: open.reduce((a, o) => a + (o.estimated_value ?? 0), 0),
@@ -748,19 +847,19 @@ function AccountsView({
 
   const filteredRows = useMemo(() => {
     const nowTs = Date.now();
-    const t = accSearch.trim().toLowerCase();
     return rows.filter((r) => {
-      if (t) {
-        const hay = `${r.name} ${r.contactName} ${r.contactPhone ?? ''} ${r.contactEmail ?? ''}`.toLowerCase();
-        if (!hay.includes(t)) return false;
-      }
       if (accFilter === 'prospects') return !r.isCustomer;
       if (accFilter === 'customers') return r.isCustomer;
       if (accFilter === 'soon') return r.repStatus === 'CONTACT_SOON';
       if (accFilter === 'overdue') return r.repStatus === 'OVERDUE';
+      if (['no30', 'no60', 'no90'].includes(accFilter)) {
+        const days = accFilter === 'no30' ? 30 : accFilter === 'no60' ? 60 : 90;
+        if (!r.lastPurchase) return true;
+        return nowTs - new Date(r.lastPurchase).getTime() > days * 86400000;
+      }
       return true;
     });
-  }, [rows, accFilter, accSearch]);
+  }, [rows, accFilter]);
 
   const orphans = useMemo(() => leads.filter((l) => !l.company_id), [leads]);
 
@@ -800,71 +899,73 @@ function AccountsView({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-800 bg-[#11161d] p-2">
-        <div className="relative min-w-[220px] flex-1">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
-          <input
-            value={accSearch}
-            onChange={(e) => setAccSearch(e.target.value)}
-            placeholder="Buscar cliente, contacto, teléfono o email…"
-            className="w-full rounded border border-slate-700/80 bg-[#0c0f14] py-1.5 pl-8 pr-3 text-xs text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none"
-          />
-        </div>
-        <select value={accFilter} onChange={(e) => setAccFilter(e.target.value)} className="rounded border border-slate-700/80 bg-[#0c0f14] px-2 py-1.5 text-xs text-slate-300 focus:border-brand-500 focus:outline-none">
-          <option value="all">Estado: Todos</option>
-          <option value="customers">Clientes</option>
-          <option value="prospects">Prospectos</option>
-          <option value="soon">Recompra próxima</option>
-          <option value="overdue">Recompra vencida</option>
-        </select>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="mr-auto text-[11px] text-slate-500">{filteredRows.length} cuentas · {orphans.length} prospectos de WhatsApp sin empresa</p>
         <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>Importar compras</Button>
         <Button variant="primary" size="sm" onClick={() => setNewOpen(true)}>
           <Plus className="h-3.5 w-3.5" /> Nuevo cliente
         </Button>
       </div>
+      <div className="flex flex-wrap gap-2">
+        {ACCOUNT_FILTERS.map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setAccFilter(f.key)}
+            className={`rounded px-3 py-1.5 text-xs font-medium transition ${accFilter === f.key ? 'bg-brand-500/15 text-white ring-1 ring-brand-800/70' : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'}`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
       <PurchaseImporter open={importOpen} onClose={() => setImportOpen(false)} companies={companies.map((c) => ({ id: c.id, name: c.name }))} onImported={() => { onChanged(); void healthQ.reload(); }} />
 
-      <section className="overflow-hidden rounded-lg border border-slate-800 bg-[#141820]">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-800 text-[11px] text-slate-500">
-                <th className="px-3 py-2.5 font-medium">Cliente</th>
-                <th className="px-3 py-2.5 font-medium">Contacto</th>
-                <th className="px-3 py-2.5 font-medium">Teléfono / WhatsApp</th>
-                <th className="px-3 py-2.5 font-medium">Email</th>
-                <th className="px-3 py-2.5 font-medium">Última compra</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60">
-              {filteredRows.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-3 py-8 text-center text-[11px] text-slate-500">
-                    {loading ? 'Cargando…' : 'Sin clientes/prospectos'}
-                  </td>
-                </tr>
-              )}
-              {filteredRows.map((r) => (
-                <tr key={r.id} onClick={() => onOpenAccount(r.id)} className="cursor-pointer transition-colors hover:bg-slate-800/30">
-                  <td className="px-3 py-2.5">
-                    <p className="font-medium text-white">{r.name}</p>
-                    {r.city && <p className="text-[11px] text-slate-500">{[r.city, r.country_code].filter(Boolean).join(' · ')}</p>}
-                  </td>
-                  <td className="px-3 py-2.5 text-slate-300">{r.contactName}</td>
-                  <td className="px-3 py-2.5 tabular-nums text-slate-300">{r.contactPhone || '—'}</td>
-                  <td className="px-3 py-2.5 text-slate-300">{r.contactEmail || '—'}</td>
-                  <td className="px-3 py-2.5 tabular-nums text-slate-300">{r.lastPurchase ? fmtDateLabel(r.lastPurchase) : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <section className="rounded-lg border border-slate-800 bg-[#141820]">
+        <div className="p-3">
+          <DataTable
+            columns={[
+              { key: 'name', header: 'Cuenta', render: (r: { name: string }) => <span className="font-medium text-white">{r.name}</span> },
+              {
+                key: 'lifecycle_stage',
+                header: 'Estado',
+                render: (r: { lifecycle_stage?: string | null }) => (
+                  <Badge variant={r.lifecycle_stage === 'CUSTOMER' ? 'success' : 'brand'} size="sm">{r.lifecycle_stage || 'PROSPECT'}</Badge>
+                ),
+              },
+              { key: 'contactName', header: 'Contacto principal' },
+              { key: 'market', header: 'Mercado' },
+              { key: 'oppCount', header: 'Oportunidades', align: 'right', render: (r: { oppCount: number }) => <span className="tabular-nums">{r.oppCount}</span> },
+              { key: 'pipeline', header: 'Pipeline', align: 'right', render: (r: { pipeline: number }) => <span className="tabular-nums text-white">{fmtMoney(r.pipeline)}</span> },
+              { key: 'ownerName', header: 'Responsable', render: (r: { ownerName: string }) => <span className="inline-flex items-center gap-1.5"><Avatar name={r.ownerName} size="sm" />{r.ownerName}</span> },
+              { key: 'lastPurchase', header: 'Última compra', render: (r: { lastPurchase: string | null }) => (r.lastPurchase ? fmtDateLabel(r.lastPurchase) : '—') },
+              { key: 'activeSkus', header: 'Productos', align: 'right', render: (r: { activeSkus: number }) => <span className="tabular-nums">{r.activeSkus || '—'}</span> },
+              {
+                key: 'nextRepurchase',
+                header: 'Próxima recompra',
+                render: (r: { nextRepurchase: string | null; nextRepurchaseSku: string | null }) =>
+                  r.nextRepurchase ? `${r.nextRepurchaseSku ?? ''} · ${fmtDateLabel(r.nextRepurchase)}` : '—',
+              },
+              {
+                key: 'repStatus',
+                header: 'Recompra',
+                render: (r: { repStatus: string | null }) =>
+                  r.repStatus === 'OVERDUE' ? <Badge variant="danger" size="sm">VENCIDA</Badge>
+                  : r.repStatus === 'CONTACT_SOON' ? <Badge variant="warning" size="sm">CONTACTAR PRONTO</Badge>
+                  : r.repStatus === 'ON_CYCLE' ? <Badge variant="success" size="sm">EN CICLO</Badge> : <span className="text-slate-600">—</span>,
+              },
+              { key: 'lastAct', header: 'Última actividad', render: (r: { lastAct: string }) => (r.lastAct.length > 10 ? timeAgo(r.lastAct) : r.lastAct) },
+              { key: 'nextLabel', header: 'Próxima acción' },
+            ]}
+            data={filteredRows}
+            emptyMessage={loading ? 'Cargando…' : 'Sin clientes/prospectos'}
+            actions={(row: { id: string }) => <Button variant="ghost" size="sm" onClick={() => onOpenAccount(row.id)}>Abrir</Button>}
+          />
         </div>
-        {filteredRows.length === 0 && !loading && (
-          <div className="flex justify-center border-t border-slate-800 p-4">
-            <Button variant="primary" size="sm" onClick={() => setNewOpen(true)}>+ Nuevo cliente</Button>
-          </div>
-        )}
+      {filteredRows.length === 0 && !loading && (
+        <div className="flex justify-center border-t border-slate-800 p-4">
+          <Button variant="primary" size="sm" onClick={() => setNewOpen(true)}>+ Nuevo cliente</Button>
+        </div>
+      )}
       </section>
 
       {orphans.length > 0 && (
@@ -1057,7 +1158,8 @@ function TasksView({
             columns={[
               { key: 'title', header: 'Tarea', render: (r: TaskRow) => <span className="font-medium text-white">{r.title}</span> },
               { key: 'task_type', header: 'Tipo', render: (r: TaskRow) => <Badge variant="neutral" size="sm">{r.task_type || '—'}</Badge> },
-              { key: 'company_id', header: 'Cliente', render: (r: TaskRow) => (r.company_id ? companyById.get(r.company_id)?.name ?? '—' : (r.opportunity_id ? oppById.get(r.opportunity_id)?.title ?? '—' : '—')) },
+              { key: 'company_id', header: 'Cliente', render: (r: TaskRow) => (r.company_id ? companyById.get(r.company_id)?.name ?? '—' : '—') },
+              { key: 'opportunity_id', header: 'Oportunidad', render: (r: TaskRow) => (r.opportunity_id ? oppById.get(r.opportunity_id)?.title ?? '—' : '—') },
               {
                 key: 'assigned_to',
                 header: 'Responsable',
@@ -1066,6 +1168,7 @@ function TasksView({
                   return <span className="inline-flex items-center gap-1.5"><Avatar name={n} size="sm" />{n}</span>;
                 },
               },
+              { key: 'priority', header: 'Prioridad', render: (r: TaskRow) => <Badge variant={r.priority === 'HIGH' || r.priority === 'URGENT' ? 'danger' : r.priority === 'MEDIUM' ? 'warning' : 'neutral'} size="sm">{r.priority}</Badge> },
               {
                 key: 'due_at',
                 header: 'Vence',
