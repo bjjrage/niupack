@@ -66,6 +66,7 @@ export interface CrmCompany {
   name: string;
   legal_name?: string | null;
   tax_id?: string | null;
+  external_id?: string | null;
   country_code?: string | null;
   city?: string | null;
   website?: string | null;

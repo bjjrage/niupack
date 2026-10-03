@@ -11,6 +11,7 @@ import type {
   CrmOpportunity,
   CrmTask,
 } from './types';
+import type { CustomerPurchase } from './purchase-types';
 
 interface CrmMemory {
   companies: CrmCompany[];
@@ -20,6 +21,9 @@ interface CrmMemory {
   tasks: CrmTask[];
   activities: CrmActivity[];
   conversations: CrmConversation[];
+  purchases: CustomerPurchase[];
+  customerAliases: Array<{ organization_id: string; alias_normalized: string; company_id: string }>;
+  productAliases: Array<{ organization_id: string; alias_normalized: string; sku: string }>;
 }
 
 declare global {
@@ -37,6 +41,9 @@ function mem(): CrmMemory {
       tasks: [],
       activities: [],
       conversations: [],
+      purchases: [],
+      customerAliases: [],
+      productAliases: [],
     };
   }
   return global.__niu_crm_store;
@@ -51,6 +58,9 @@ export function resetCrmMemory(): void {
     tasks: [],
     activities: [],
     conversations: [],
+    purchases: [],
+    customerAliases: [],
+    productAliases: [],
   };
 }
 
@@ -598,5 +608,127 @@ export const crmRepository = {
     if (idx < 0) throw new Error('CONVERSATION_NOT_FOUND');
     store.conversations[idx] = { ...store.conversations[idx], ...updates, updated_at: now() };
     return store.conversations[idx];
+  },
+
+  // ---------- Customer purchases ----------
+  async listPurchases(organizationId: string, companyId?: string, limit = 5000): Promise<CustomerPurchase[]> {
+    mustOrg(organizationId);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      let q = supabaseAdmin
+        .from('crm_customer_purchases')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .order('purchase_date', { ascending: false })
+        .limit(limit);
+      if (companyId) q = q.eq('company_id', companyId);
+      const { data, error } = await q;
+      if (error) throw new Error(`crm_customer_purchases: ${error.message}`);
+      return (data ?? []) as CustomerPurchase[];
+    }
+    if (mode() === 'NOT_CONFIGURED') return [];
+    return mem()
+      .purchases.filter((p) => p.organization_id === organizationId && (!companyId || p.company_id === companyId))
+      .sort((a, b) => b.purchase_date.localeCompare(a.purchase_date))
+      .slice(0, limit);
+  },
+
+  /** Inserta idempotente: doc+línea o fingerprint. Retorna {purchase, duplicate}. */
+  async insertPurchaseIdempotent(
+    input: Omit<CustomerPurchase, 'id' | 'created_at' | 'updated_at'>,
+  ): Promise<{ purchase: CustomerPurchase; duplicate: boolean }> {
+    this.assertWritable();
+    mustOrg(input.organization_id);
+    const record = { ...input, id: uid(), created_at: now(), updated_at: now() };
+    const isDoc = Boolean(record.external_document_id && record.line_number != null);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        // supabase typed via any
+        .from('crm_customer_purchases').insert(record).select().single();
+      if (error) {
+        if (error.code === '23505') {
+          let q = supabaseAdmin.from('crm_customer_purchases').select('*').eq('organization_id', record.organization_id);
+          q = isDoc
+            ? q.eq('external_document_id', record.external_document_id).eq('line_number', record.line_number)
+            : q.eq('fingerprint', record.fingerprint);
+          const { data: existing } = await q.maybeSingle();
+          if (existing) return { purchase: existing as CustomerPurchase, duplicate: true };
+          throw new Error('PURCHASE_DUPLICATE');
+        }
+        throw new Error(`crm_customer_purchases: ${error.message}`);
+      }
+      return { purchase: data as CustomerPurchase, duplicate: false };
+    }
+    const dup = mem().purchases.find((p) =>
+      p.organization_id === record.organization_id &&
+      (isDoc
+        ? p.external_document_id === record.external_document_id && p.line_number === record.line_number
+        : p.fingerprint != null && p.fingerprint === record.fingerprint),
+    );
+    if (dup) return { purchase: dup, duplicate: true };
+    mem().purchases.unshift(record as CustomerPurchase);
+    return { purchase: record as CustomerPurchase, duplicate: false };
+  },
+
+  // ---------- Import aliases ----------
+  async listCustomerAliases(organizationId: string): Promise<Array<{ alias_normalized: string; company_id: string }>> {
+    mustOrg(organizationId);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('crm_customer_aliases')
+        .select('alias_normalized, company_id')
+        .eq('organization_id', organizationId);
+      if (error) throw new Error(`crm_customer_aliases: ${error.message}`);
+      return (data ?? []) as Array<{ alias_normalized: string; company_id: string }>;
+    }
+    if (mode() === 'NOT_CONFIGURED') return [];
+    return mem().customerAliases.filter((a) => a.organization_id === organizationId);
+  },
+
+  async saveCustomerAlias(organizationId: string, alias_normalized: string, company_id: string): Promise<void> {
+    this.assertWritable();
+    mustOrg(organizationId);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { error } = await supabaseAdmin
+        // supabase typed via any
+        .from('crm_customer_aliases')
+        .upsert({ organization_id: organizationId, alias_normalized, company_id }, { onConflict: 'organization_id,alias_normalized' });
+      if (error) throw new Error(`crm_customer_aliases: ${error.message}`);
+      return;
+    }
+    const store = mem();
+    if (!store.customerAliases.some((a) => a.organization_id === organizationId && a.alias_normalized === alias_normalized)) {
+      store.customerAliases.push({ organization_id: organizationId, alias_normalized, company_id });
+    }
+  },
+
+  async listProductAliases(organizationId: string): Promise<Array<{ alias_normalized: string; sku: string }>> {
+    mustOrg(organizationId);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('crm_product_aliases')
+        .select('alias_normalized, sku')
+        .eq('organization_id', organizationId);
+      if (error) throw new Error(`crm_product_aliases: ${error.message}`);
+      return (data ?? []) as Array<{ alias_normalized: string; sku: string }>;
+    }
+    if (mode() === 'NOT_CONFIGURED') return [];
+    return mem().productAliases.filter((a) => a.organization_id === organizationId);
+  },
+
+  async saveProductAlias(organizationId: string, alias_normalized: string, sku: string): Promise<void> {
+    this.assertWritable();
+    mustOrg(organizationId);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { error } = await supabaseAdmin
+        // supabase typed via any
+        .from('crm_product_aliases')
+        .upsert({ organization_id: organizationId, alias_normalized, sku }, { onConflict: 'organization_id,alias_normalized' });
+      if (error) throw new Error(`crm_product_aliases: ${error.message}`);
+      return;
+    }
+    const store = mem();
+    if (!store.productAliases.some((a) => a.organization_id === organizationId && a.alias_normalized === alias_normalized)) {
+      store.productAliases.push({ organization_id: organizationId, alias_normalized, sku });
+    }
   },
 };
