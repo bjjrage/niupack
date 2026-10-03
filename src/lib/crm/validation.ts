@@ -3,6 +3,11 @@ import { z } from 'zod';
 const nullableText = (max = 500) =>
   z.preprocess((v) => (v === '' ? null : v), z.string().max(max).nullable().optional().transform((v) => v ?? null));
 
+const volumePeriod = z.enum(['ONE_OFF', 'WEEKLY', 'MONTHLY', 'ANNUAL']).nullable().optional();
+const lifecycleStage = z.enum(['PROSPECT', 'CUSTOMER', 'INACTIVE']).nullable().optional();
+const taskType = z.enum(['CALL', 'WHATSAPP', 'EMAIL', 'MEETING', 'FOLLOW_UP', 'QUOTE', 'OTHER']).nullable().optional();
+const probability = z.coerce.number().min(0).max(100).nullable().optional();
+
 export const companySchema = z.object({
   name: z.string().min(2).max(200),
   legal_name: nullableText(200),
@@ -15,6 +20,7 @@ export const companySchema = z.object({
   source: nullableText(80),
   notes: nullableText(2000),
   owner_profile_id: nullableText(60),
+  lifecycle_stage: lifecycleStage,
 });
 
 export const contactSchema = z.object({
@@ -30,7 +36,6 @@ export const contactSchema = z.object({
   owner_profile_id: nullableText(60),
 });
 
-const volumePeriod = z.enum(['ONE_OFF', 'WEEKLY', 'MONTHLY', 'ANNUAL']).nullable().optional();
 const intent = z
   .enum(['PRODUCT_INFO', 'SPEC_REQUEST', 'SAMPLE_REQUEST', 'RFQ', 'PRICE_REQUEST', 'LOGISTICS_REQUEST', 'FOLLOW_UP', 'HUMAN_REQUEST', 'OTHER'])
   .nullable()
@@ -86,6 +91,8 @@ export const opportunityCreateSchema = z.object({
   owner_profile_id: nullableText(60),
   next_action: nullableText(500),
   next_action_at: nullableText(40),
+  expected_close_at: nullableText(40),
+  probability,
   lost_reason: nullableText(500),
 });
 
@@ -105,6 +112,7 @@ export const taskCreateSchema = z.object({
   assigned_to: nullableText(60),
   status: z.enum(['PENDING', 'IN_PROGRESS', 'DONE', 'CANCELLED']).optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
+  task_type: taskType,
   due_at: nullableText(40),
   source: nullableText(80),
   external_key: nullableText(160),

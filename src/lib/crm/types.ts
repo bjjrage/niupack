@@ -30,6 +30,16 @@ export type VolumePeriod = 'ONE_OFF' | 'WEEKLY' | 'MONTHLY' | 'ANNUAL';
 export type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED';
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 
+export type TaskType = 'CALL' | 'WHATSAPP' | 'EMAIL' | 'MEETING' | 'FOLLOW_UP' | 'QUOTE' | 'OTHER';
+
+export type LifecycleStage = 'PROSPECT' | 'CUSTOMER' | 'INACTIVE';
+
+export interface OwnerProfile {
+  id: string;
+  full_name: string;
+  email?: string | null;
+}
+
 export type ActivityType =
   | 'LEAD_CREATED'
   | 'LEAD_UPDATED'
@@ -64,6 +74,7 @@ export interface CrmCompany {
   source?: string | null;
   notes?: string | null;
   owner_profile_id?: string | null;
+  lifecycle_stage?: LifecycleStage | null;
   created_at: string;
   updated_at: string;
 }
@@ -137,6 +148,8 @@ export interface CrmOpportunity {
   owner_profile_id?: string | null;
   next_action?: string | null;
   next_action_at?: string | null;
+  expected_close_at?: string | null;
+  probability?: number | null;
   won_at?: string | null;
   lost_at?: string | null;
   lost_reason?: string | null;
@@ -155,6 +168,7 @@ export interface CrmTask {
   assigned_to?: string | null;
   status: TaskStatus;
   priority: TaskPriority;
+  task_type?: TaskType | null;
   due_at?: string | null;
   completed_at?: string | null;
   source?: string | null;
@@ -217,6 +231,69 @@ export interface CrmDashboard {
   tasks_overdue: number;
   conversations_active: number;
   persistence: 'SUPABASE' | 'MEMORY_FALLBACK' | 'NOT_CONFIGURED';
+}
+
+export interface StageBreakdown {
+  stage: PipelineStage;
+  count: number;
+  value: number;
+}
+
+export interface MarketBreakdown {
+  market: string;
+  count: number;
+  value: number;
+}
+
+export interface AttentionItem {
+  kind: 'OVERDUE_TASK' | 'MISSING_NEXT_ACTION' | 'HUMAN_PENDING' | 'STALE_OPPORTUNITY';
+  label: string;
+  detail?: string | null;
+  ref_id?: string | null;
+}
+
+export interface SalesDashboard extends CrmDashboard {
+  pipeline_open_count: number;
+  pipeline_open_value: number;
+  quotes_count: number;
+  quotes_value: number;
+  negotiation_count: number;
+  negotiation_value: number;
+  won_month_count: number;
+  won_month_value: number;
+  weighted_forecast: number;
+  won_count: number;
+  lost_count: number;
+  market_breakdown: MarketBreakdown[];
+  stage_breakdown: StageBreakdown[];
+  activity_recent: Array<{ id: string; type: string; title?: string | null; occurred_at: string }>;
+  attention_items: AttentionItem[];
+}
+
+export const ACTIVE_STAGES: PipelineStage[] = [
+  'NUEVO',
+  'CONTACTADO',
+  'CALIFICADO',
+  'COTIZACIÓN',
+  'NEGOCIACIÓN',
+];
+
+/** Probabilidad por defecto cuando la oportunidad no tiene probability cargada. */
+export const STAGE_DEFAULT_PROBABILITY: Record<PipelineStage, number> = {
+  NUEVO: 10,
+  CONTACTADO: 20,
+  CALIFICADO: 40,
+  'COTIZACIÓN': 60,
+  'NEGOCIACIÓN': 80,
+  GANADO: 100,
+  PERDIDO: 0,
+};
+
+export function opportunityProbability(stage: PipelineStage, probability?: number | null): number {
+  if (typeof probability === 'number' && Number.isFinite(probability)) {
+    return Math.min(100, Math.max(0, Math.round(probability)));
+  }
+  return STAGE_DEFAULT_PROBABILITY[stage] ?? 0;
 }
 
 export const PIPELINE_STAGES: PipelineStage[] = [

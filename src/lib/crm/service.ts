@@ -5,13 +5,17 @@ import { crmRepository } from './repository';
 import { supabaseAdmin, isSupabaseAdminConfigured } from '@/lib/db/supabase';
 import type {
   ActivityType,
+  AttentionItem,
   CrmLead,
   CrmOpportunity,
   Lead360,
+  MarketBreakdown,
   PipelineStage,
   Qualification,
+  SalesDashboard,
+  StageBreakdown,
 } from './types';
-import { isBotStageTransitionAllowed } from './types';
+import { ACTIVE_STAGES, isBotStageTransitionAllowed, opportunityProbability } from './types';
 
 function now(): string {
   return new Date().toISOString();
@@ -37,9 +41,20 @@ function rankQualification(q?: Qualification | null): number {
 // pero existe en otro, se rechaza con CROSS_TENANT_REFERENCE (no se filtra existencia).
 
 const profileOrgBinding = new Map<string, string>();
+const ownerDirectory = new Map<string, { organization_id: string; full_name: string; email?: string | null }>();
 
 export function __resetProfileBindings(): void {
   profileOrgBinding.clear();
+  ownerDirectory.clear();
+}
+
+/** Registra un perfil con nombre para tests/dev sin Supabase (producción lee `profiles`). */
+export function __registerTestOwner(
+  organizationId: string,
+  profile: { id: string; full_name: string; email?: string | null },
+): void {
+  profileOrgBinding.set(profile.id, organizationId);
+  ownerDirectory.set(profile.id, { organization_id: organizationId, full_name: profile.full_name, email: profile.email ?? null });
 }
 
 async function assertProfileInOrg(organizationId: string, profileId: string | null | undefined): Promise<void> {
@@ -597,6 +612,7 @@ export const crmService = {
       assigned_to?: string | null;
       due_at?: string | null;
       priority?: CrmOpportunity extends never ? never : 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+      task_type?: import('./types').TaskType | null;
       source?: string | null;
       external_key?: string | null;
     },
@@ -621,6 +637,7 @@ export const crmService = {
       assigned_to: input.assigned_to ?? null,
       status: 'PENDING',
       priority: input.priority ?? 'MEDIUM',
+      task_type: input.task_type ?? null,
       due_at: input.due_at ?? null,
       completed_at: null,
       source: input.source ?? 'CRM',
@@ -645,7 +662,7 @@ export const crmService = {
     return task;
   },
 
-  async updateTask(id: string, organizationId: string, updates: Partial<{ title: string; description: string | null; assigned_to: string | null; status: 'PENDING' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED'; priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'; due_at: string | null }>, actorProfileId?: string) {
+  async updateTask(id: string, organizationId: string, updates: Partial<{ title: string; description: string | null; assigned_to: string | null; status: 'PENDING' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED'; priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'; task_type: import('./types').TaskType | null; due_at: string | null }>, actorProfileId?: string) {
     await assertTaskInOrg(organizationId, id);
     await assertProfileInOrg(organizationId, updates.assigned_to);
     await assertProfileInOrg(organizationId, actorProfileId);
@@ -794,5 +811,158 @@ export const crmService = {
       );
     }
     return { conversation: updated, task };
+  },
+
+  // ---------- Owners (tenant-safe) ----------
+  async listOwners(organizationId: string): Promise<import('./types').OwnerProfile[]> {
+    if (!organizationId) throw new Error('ORGANIZATION_REQUIRED');
+    if (isSupabaseAdminConfigured && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('profiles')
+        .select('id, full_name, email')
+        .eq('organization_id', organizationId)
+        .order('full_name');
+      if (error) throw new Error(`profiles: ${error.message}`);
+      return ((data ?? []) as Array<{ id: string; full_name: string; email?: string | null }>).map((p) => ({
+        id: p.id,
+        full_name: p.full_name,
+        email: p.email ?? null,
+      }));
+    }
+    const out: import('./types').OwnerProfile[] = [];
+    for (const [id, o] of ownerDirectory.entries()) {
+      if (o.organization_id === organizationId) out.push({ id, full_name: o.full_name, email: o.email ?? null });
+    }
+    return out.sort((a, b) => a.full_name.localeCompare(b.full_name));
+  },
+
+  // ---------- Control de conversación (vendedor toma / devuelve al bot) ----------
+  async setConversationControl(
+    organizationId: string,
+    conversationId: string,
+    control: 'BOT' | 'HUMAN' | 'PAUSED',
+    actorProfileId?: string,
+  ) {
+    await assertConversationInOrg(organizationId, conversationId);
+    await assertProfileInOrg(organizationId, actorProfileId);
+    const conv = await crmRepository.getConversation(conversationId, organizationId);
+    if (!conv) throw new Error('CONVERSATION_NOT_FOUND');
+    if (conv.control_mode === control) return conv;
+    const updated = await crmRepository.updateConversation(conversationId, organizationId, { control_mode: control });
+    await this.addActivity(
+      organizationId,
+      {
+        conversation_id: conversationId,
+        lead_id: conv.lead_id ?? null,
+        type: control === 'HUMAN' ? 'HUMAN_HANDOFF' : 'NOTE',
+        source: 'CRM_UI',
+        title: control === 'HUMAN' ? 'Vendedor tomó la conversación' : control === 'BOT' ? 'Conversación devuelta a NIUPACKBOT' : 'Conversación pausada',
+      },
+      actorProfileId,
+    );
+    return updated;
+  },
+
+  // ---------- Dashboard comercial (todo calculado de DB, sin inventar) ----------
+  async getSalesDashboard(organizationId: string): Promise<SalesDashboard> {
+    if (!organizationId) throw new Error('ORGANIZATION_REQUIRED');
+    const [leads, opportunities, tasks, conversations, activities] = await Promise.all([
+      crmRepository.listLeads(organizationId),
+      crmRepository.listOpportunities(organizationId),
+      crmRepository.listTasks(organizationId),
+      crmRepository.listConversations(organizationId),
+      crmRepository.listActivities(organizationId, {}),
+    ]);
+    const nowTs = Date.now();
+    const nowDate = new Date();
+    const monthStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), 1).getTime();
+    const valueOf = (o: { estimated_value?: number | null }): number =>
+      typeof o.estimated_value === 'number' && Number.isFinite(o.estimated_value) ? o.estimated_value : 0;
+    const isOpen = (stage: string): boolean => stage !== 'GANADO' && stage !== 'PERDIDO';
+    const openOpps = opportunities.filter((o) => isOpen(o.stage));
+    const quotes = opportunities.filter((o) => o.stage === 'COTIZACIÓN');
+    const negotiation = opportunities.filter((o) => o.stage === 'NEGOCIACIÓN');
+    const won = opportunities.filter((o) => o.stage === 'GANADO');
+    const lost = opportunities.filter((o) => o.stage === 'PERDIDO');
+    const wonMonth = won.filter((o) => {
+      const ts = o.won_at ? new Date(o.won_at).getTime() : new Date(o.updated_at).getTime();
+      return ts >= monthStart;
+    });
+    const sum = (list: Array<{ estimated_value?: number | null }>): number => list.reduce((acc, o) => acc + valueOf(o), 0);
+    const weighted_forecast = openOpps.reduce(
+      (acc, o) => acc + (valueOf(o) * opportunityProbability(o.stage, o.probability ?? null)) / 100,
+      0,
+    );
+    const stage_breakdown: StageBreakdown[] = ACTIVE_STAGES.map((stage) => {
+      const list = opportunities.filter((o) => o.stage === stage);
+      return { stage, count: list.length, value: sum(list) };
+    });
+    const marketOf = (o: { destination_country?: string | null; country_code?: string | null }): string => {
+      const m = (o.destination_country || o.country_code || '').toUpperCase();
+      return ['BR', 'AR', 'BO', 'PY'].includes(m) ? m : 'Otros';
+    };
+    const marketMap = new Map<string, { count: number; value: number }>();
+    for (const o of openOpps) {
+      const m = marketOf(o as { destination_country?: string | null; country_code?: string | null });
+      const cur = marketMap.get(m) ?? { count: 0, value: 0 };
+      cur.count += 1;
+      cur.value += valueOf(o);
+      marketMap.set(m, cur);
+    }
+    const market_breakdown: MarketBreakdown[] = ['BR', 'AR', 'BO', 'PY', 'Otros']
+      .map((market) => ({ market, ...(marketMap.get(market) ?? { count: 0, value: 0 }) }))
+      .filter((m) => m.count > 0 || ['BR', 'AR', 'BO', 'PY', 'Otros'].includes(m.market));
+    const activity_recent = [...activities]
+      .sort((a, b) => (b.occurred_at ?? '').localeCompare(a.occurred_at ?? ''))
+      .slice(0, 8)
+      .map((a) => ({ id: a.id, type: a.type, title: a.title ?? null, occurred_at: a.occurred_at }));
+    const attention_items: AttentionItem[] = [
+      ...tasks
+        .filter((t) => t.due_at && new Date(t.due_at).getTime() < nowTs && t.status !== 'DONE' && t.status !== 'CANCELLED')
+        .slice(0, 5)
+        .map((t) => ({ kind: 'OVERDUE_TASK' as const, label: t.title, detail: t.due_at, ref_id: t.id })),
+      ...openOpps
+        .filter((o) => !o.next_action)
+        .slice(0, 5)
+        .map((o) => ({ kind: 'MISSING_NEXT_ACTION' as const, label: o.title, detail: o.stage, ref_id: o.id })),
+      ...conversations
+        .filter((c) => c.control_mode === 'HUMAN' && c.status === 'OPEN')
+        .slice(0, 5)
+        .map((c) => ({
+          kind: 'HUMAN_PENDING' as const,
+          label: (c.external_conversation_id ?? '').replace('whatsapp:', ''),
+          detail: c.last_message_at,
+          ref_id: c.id,
+        })),
+      ...openOpps
+        .filter((o) => nowTs - new Date(o.updated_at).getTime() > 14 * 86400000)
+        .slice(0, 5)
+        .map((o) => ({ kind: 'STALE_OPPORTUNITY' as const, label: o.title, detail: o.stage, ref_id: o.id })),
+    ].slice(0, 12);
+    return {
+      leads_total: leads.length,
+      opportunities_open: openOpps.length,
+      in_quote: quotes.length,
+      in_negotiation: negotiation.length,
+      won_total: won.length,
+      tasks_overdue: attention_items.filter((a) => a.kind === 'OVERDUE_TASK').length,
+      conversations_active: conversations.filter((c) => c.status === 'OPEN').length,
+      persistence: crmRepository.persistenceMode(),
+      pipeline_open_count: openOpps.length,
+      pipeline_open_value: sum(openOpps),
+      quotes_count: quotes.length,
+      quotes_value: sum(quotes),
+      negotiation_count: negotiation.length,
+      negotiation_value: sum(negotiation),
+      won_month_count: wonMonth.length,
+      won_month_value: sum(wonMonth),
+      weighted_forecast: Math.round(weighted_forecast * 100) / 100,
+      won_count: won.length,
+      lost_count: lost.length,
+      market_breakdown,
+      stage_breakdown,
+      activity_recent,
+      attention_items,
+    };
   },
 };
