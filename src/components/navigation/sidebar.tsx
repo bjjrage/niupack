@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -8,13 +8,12 @@ import {
   Eye,
   TrendingUp,
   Calculator,
-  Mail,
   Compass,
   CheckSquare,
   FileText,
   Settings,
   ShieldCheck,
-  ChevronRight,
+  ChevronDown,
   Database,
   Layers,
   Target,
@@ -118,7 +117,7 @@ export const Sidebar: React.FC = () => {
     {
       title: 'Pricing',
       items: [
-        { name: 'Estrategia de precio', href: '/pricing/strategy', icon: DollarSign, badge: 'CORE' },
+        { name: 'Estrategias de precio', href: '/pricing/strategy', icon: DollarSign, badge: 'CORE' },
       ],
     },
     {
@@ -155,85 +154,124 @@ export const Sidebar: React.FC = () => {
     },
   ];
 
+  // "General" son accesos directos; el resto son módulos desplegables (uno abierto a la vez).
+  const [general, ...modules] = navigation;
+  // Activo = la ruta más específica que contiene la URL actual (/logistics vs /logistics/ocean).
+  const activeHref = navigation
+    .flatMap((s) => s.items.map((i) => i.href))
+    .filter((h) => pathname === h || (h !== '/' && pathname.startsWith(`${h}/`)))
+    .sort((a, b) => b.length - a.length)[0];
+  const isItemActive = (href: string) => href === activeHref;
+  const activeModule = modules.find((m) => m.items.some((i) => isItemActive(i.href)))?.title ?? null;
+  const [openModule, setOpenModule] = useState<string | null>(activeModule);
+  useEffect(() => {
+    if (activeModule) setOpenModule(activeModule);
+  }, [activeModule]);
+
+  const hintHandlers = (href: string) => ({
+    onMouseEnter: (e: React.MouseEvent<HTMLElement>) => {
+      const r = e.currentTarget.getBoundingClientRect();
+      setHint({ href, top: r.top + r.height / 2, left: r.right + 8 });
+    },
+    onMouseLeave: () => setHint(null),
+    onClick: () => setHint(null),
+  });
+
+  const renderItem = (item: NavSection['items'][number], nested = false) => {
+    const isActive = isItemActive(item.href);
+    const Icon = item.icon;
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        {...hintHandlers(item.href)}
+        className={`group flex items-center justify-between rounded-md text-xs font-medium transition-colors ${nested ? 'px-2 py-1.5' : 'px-2.5 py-2'} ${
+          isActive ? 'bg-brand-500/10 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+        }`}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <Icon className={`h-3.5 w-3.5 shrink-0 transition-colors ${isActive ? 'text-brand-500' : 'text-slate-500 group-hover:text-slate-300'}`} />
+          <span className="truncate">{item.name}</span>
+        </div>
+        {item.badge && (
+          <span
+            className={`text-[10px] font-mono px-1 py-0.2 rounded font-semibold ${
+              item.badge === 'CORE'
+                ? 'bg-brand-950 text-brand-400 border border-brand-800/60'
+                : item.badge === 'PREVIEW'
+                  ? 'bg-amber-950/50 text-amber-300 border border-amber-800/60'
+                  : 'bg-slate-800 text-slate-300'
+            }`}
+          >
+            {item.badge}
+          </span>
+        )}
+      </Link>
+    );
+  };
+
   return (
     <aside className="w-48 bg-[#0a0d12] border-r border-slate-800 flex flex-col shrink-0 select-none">
       {/* Brand Header */}
-      <div className="h-14 px-3 border-b border-slate-800 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="h-7 w-7 rounded bg-brand-500 flex items-center justify-center font-bold text-white text-xs tracking-wider shadow-sm">
+      <div className="h-14 px-3 border-b border-slate-800 flex items-center">
+        <Link href="/" className="flex items-center gap-2.5 min-w-0">
+          <div className="h-7 w-7 shrink-0 rounded bg-brand-500 flex items-center justify-center font-bold text-white text-[10px] tracking-wider shadow-sm">
             NIU
           </div>
-          <div className="flex flex-col">
-            <span className="font-semibold text-xs text-white tracking-wide leading-none">INTELLIGENCE OS</span>
+          <div className="flex flex-col min-w-0">
+            <span className="whitespace-nowrap font-semibold text-xs text-white tracking-wide leading-none">INTELLIGENCE OS</span>
             <span className="text-[10px] text-slate-500 font-mono tracking-tight leading-none mt-1">GARDINER S.A.</span>
           </div>
         </Link>
-        <span className="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-400 border border-slate-700/60">
-          v1.0
-        </span>
       </div>
 
-      {/* Navigation Links */}
-      <div className="flex-1 overflow-y-auto py-2 px-1.5 space-y-3" onScroll={() => setHint(null)}>
-        {navigation.map((section, idx) => (
-          <div key={idx} className="space-y-0.5">
-            <h4 className="px-2 text-[10px] font-semibold text-slate-600 tracking-wider uppercase mb-0.5">
-              {section.title}
-            </h4>
-            {section.items.map((item) => {
-              const isActive = pathname === item.href;
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onMouseEnter={(e) => {
-                    const r = e.currentTarget.getBoundingClientRect();
-                    setHint({ href: item.href, top: r.top + r.height / 2, left: r.right + 8 });
-                  }}
-                  onMouseLeave={() => setHint(null)}
-                  onClick={() => setHint(null)}
-                  className={`group flex items-center justify-between px-2 py-1 text-xs font-medium rounded transition-colors ${
-                    isActive
-                      ? 'bg-brand-500/10 text-white border-l-2 border-brand-500 rounded-l-none'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Icon
-                      className={`h-3.5 w-3.5 shrink-0 transition-colors ${
-                        isActive ? 'text-brand-500' : 'text-slate-500 group-hover:text-slate-300'
-                      }`}
-                    />
-                    <span className="truncate">{item.name}</span>
-                  </div>
-                  {item.badge && (
-                    <span
-                      className={`text-[10px] font-mono px-1 py-0.2 rounded font-semibold ${
-                        item.badge === 'CORE'
-                          ? 'bg-brand-950 text-brand-400 border border-brand-800/60'
-                          : item.badge === 'PREVIEW'
-                            ? 'bg-amber-950/50 text-amber-300 border border-amber-800/60'
-                            : 'bg-slate-800 text-slate-300'
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-          </div>
-        ))}
-      </div>
+      {/* Navigation */}
+      <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5" onScroll={() => setHint(null)}>
+        {general.items.map((item) => renderItem(item))}
+
+        <div className="my-2 border-t border-slate-800/70" />
+
+        {modules.map((section) => {
+          const ModuleIcon = MODULE_ICON[section.title] ?? Layers;
+          const containsActive = section.title === activeModule;
+          // El CRM es un único destino: va directo, sin desplegable.
+          if (section.title === 'Comercial') {
+            const only = section.items[0];
+            return renderItem({ ...only, name: section.title, icon: ModuleIcon });
+          }
+          const open = openModule === section.title;
+          return (
+            <div key={section.title}>
+              <button
+                onClick={() => setOpenModule(open ? null : section.title)}
+                aria-expanded={open}
+                className={`group flex w-full items-center justify-between rounded-md px-2.5 py-2 text-xs font-medium transition-colors ${
+                  open ? 'text-white' : containsActive ? 'text-slate-200' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`}
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <ModuleIcon className={`h-3.5 w-3.5 shrink-0 ${containsActive ? 'text-brand-500' : 'text-slate-500 group-hover:text-slate-300'}`} />
+                  <span className="truncate">{section.title}</span>
+                </span>
+                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+              </button>
+              {open && (
+                <div className="mb-1 ml-2 mt-0.5 space-y-0.5 rounded-lg border border-slate-800 bg-[#0e1218] p-1">
+                  {section.items.map((item) => renderItem(item, true))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </nav>
 
       {/* Footer Info */}
-      <div className="p-3 border-t border-slate-800 bg-[#080b0f] flex items-center justify-between text-[11px] text-slate-500">
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
-          <span>Planta Asunción</span>
+      <div className="px-3 py-2.5 border-t border-slate-800 bg-[#080b0f] flex items-center justify-between text-[11px] text-slate-500">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500"></span>
+          <span className="truncate">Planta Asunción</span>
         </div>
-        <span className="font-mono text-[10px] text-slate-400">FSSC 22000</span>
+        <span className="font-mono text-[10px] text-slate-500">v1.0</span>
       </div>
       {hint && HINTS[hint.href] && (
         <div
@@ -247,4 +285,15 @@ export const Sidebar: React.FC = () => {
       )}
     </aside>
   );
+};
+
+const MODULE_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
+  'AI Visibility': Eye,
+  Mercado: TrendingUp,
+  Costos: Calculator,
+  Pricing: DollarSign,
+  RFQ: FileText,
+  Logística: Truck,
+  Comercial: Users,
+  Sistema: Settings,
 };
