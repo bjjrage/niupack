@@ -445,31 +445,6 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
         <>
           <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_19rem] 2xl:grid-cols-[minmax(0,1fr)_21rem]">
           <section aria-label="Resumen de costos" className="min-w-0 space-y-3 xl:col-start-2 xl:row-start-1 xl:sticky xl:top-4">
-            <div className="px-1">
-              <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-white">Resumen de costos</h2>
-              <p className="mt-1 text-xs text-slate-500">Impacto unitario según el breakdown actual</p>
-            </div>
-            <div aria-label="Conversor de moneda del resumen" className="flex flex-wrap items-center justify-end gap-1 rounded-xl border border-slate-800 bg-[#141820] p-1.5">
-              {([
-                ['USD', 'USD'],
-                ['PYG', 'Gs.'],
-                ['BOTH', 'Ambos'],
-              ] as const).map(([currency, label]) => (
-                <button
-                  key={currency}
-                  type="button"
-                  aria-pressed={summaryCurrency === currency}
-                  disabled={currency !== 'USD' && fxRate === null}
-                  title={currency !== 'USD' && fxRate === null ? 'Cotización USD/guaraní no disponible' : undefined}
-                  onClick={() => setSummaryCurrency(currency)}
-                  className={`min-h-8 rounded-md px-2.5 text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${summaryCurrency === currency ? 'bg-brand-500 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {fxRate !== null && <div className="px-1 text-right text-[10px] text-slate-500">Conversión: Gs. {fxRate.toLocaleString('es-PY')} = USD 1</div>}
-
             <article className="relative overflow-hidden rounded-xl border border-brand-500/40 bg-[#161c26] p-4 shadow-sm sm:p-5">
               <span className="absolute inset-x-0 top-0 h-0.5 bg-brand-500" />
               <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-200">True Cost</div>
@@ -550,6 +525,29 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
               onSourceChange={(source) => updateRubric('raw_material', { source })}
             >
               <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Moneda del resumen</span>
+                  <div aria-label="Conversor de moneda del resumen" className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-800 bg-[#10141b] p-1.5">
+                    {([
+                      ['USD', 'USD'],
+                      ['PYG', 'Gs.'],
+                      ['BOTH', 'Ambos'],
+                    ] as const).map(([currency, label]) => (
+                      <button
+                        key={currency}
+                        type="button"
+                        aria-pressed={summaryCurrency === currency}
+                        disabled={currency !== 'USD' && fxRate === null}
+                        title={currency !== 'USD' && fxRate === null ? 'Cotización USD/guaraní no disponible' : undefined}
+                        onClick={() => setSummaryCurrency(currency)}
+                        className={`min-h-8 rounded-md px-2.5 text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${summaryCurrency === currency ? 'bg-brand-500 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {fxRate !== null && <div className="px-1 text-[10px] text-slate-500">Conversión: Gs. {fxRate.toLocaleString('es-PY')} = USD 1</div>}
+                </div>
                 {/* 1. Costo del papel: UN solo origen del que se desprenden el cuerpo y el fondo. */}
                 <section className="rounded-lg border border-slate-800 bg-[#10141b] p-4 sm:p-5">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
