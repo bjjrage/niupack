@@ -157,6 +157,7 @@ function RubricCard({
   unitLabel,
   onEnabledChange,
   onSourceChange,
+  headerExtra,
   children,
 }: {
   title: string;
@@ -165,6 +166,7 @@ function RubricCard({
   unitLabel?: string;
   onEnabledChange: (enabled: boolean) => void;
   onSourceChange: (source: CostInputSource) => void;
+  headerExtra?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -191,6 +193,7 @@ function RubricCard({
             >
               {sourceOptions.map((source) => <option key={source} value={source}>{source}</option>)}
             </select>
+            {headerExtra}
           </div>
         </div>
         <div className="ml-auto text-right">
@@ -523,31 +526,29 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
               impact={rubricValues.raw_material}
               onEnabledChange={(enabled) => updateRubric('raw_material', { enabled })}
               onSourceChange={(source) => updateRubric('raw_material', { source })}
+              headerExtra={
+                <div role="group" aria-label="Moneda del resumen" title={fxRate !== null ? `Gs. ${fxRate.toLocaleString('es-PY')} = USD 1` : undefined} className="inline-flex items-center gap-1.5">
+                  {([
+                    ['USD', 'USD'],
+                    ['PYG', 'Gs.'],
+                    ['BOTH', 'Ambos'],
+                  ] as const).map(([currency, label]) => (
+                    <button
+                      key={currency}
+                      type="button"
+                      aria-pressed={summaryCurrency === currency}
+                      disabled={currency !== 'USD' && fxRate === null}
+                      title={currency !== 'USD' && fxRate === null ? 'Cotización USD/guaraní no disponible' : undefined}
+                      onClick={() => setSummaryCurrency(currency)}
+                      className={`min-h-8 rounded-md border px-2.5 text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${summaryCurrency === currency ? 'border-brand-500 bg-brand-500 text-white' : 'border-slate-700 bg-[#0c0f14] text-slate-300 hover:text-white'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              }
             >
               <div className="space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Moneda del resumen</span>
-                  <div aria-label="Conversor de moneda del resumen" className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-800 bg-[#10141b] p-1.5">
-                    {([
-                      ['USD', 'USD'],
-                      ['PYG', 'Gs.'],
-                      ['BOTH', 'Ambos'],
-                    ] as const).map(([currency, label]) => (
-                      <button
-                        key={currency}
-                        type="button"
-                        aria-pressed={summaryCurrency === currency}
-                        disabled={currency !== 'USD' && fxRate === null}
-                        title={currency !== 'USD' && fxRate === null ? 'Cotización USD/guaraní no disponible' : undefined}
-                        onClick={() => setSummaryCurrency(currency)}
-                        className={`min-h-8 rounded-md px-2.5 text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${summaryCurrency === currency ? 'bg-brand-500 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  {fxRate !== null && <div className="px-1 text-[10px] text-slate-500">Conversión: Gs. {fxRate.toLocaleString('es-PY')} = USD 1</div>}
-                </div>
                 {/* 1. Costo del papel: UN solo origen del que se desprenden el cuerpo y el fondo. */}
                 <section className="rounded-lg border border-slate-800 bg-[#10141b] p-4 sm:p-5">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
