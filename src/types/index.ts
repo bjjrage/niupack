@@ -811,6 +811,8 @@ export interface SystemSettings {
 // ==========================================
 
 export interface IndustrialPaperFormula {
+  fob_price_ton_usd?: number;         // USD por tonelada FOB (origen). CIF = FOB + flete
+  freight_ton_usd?: number;           // USD por tonelada de flete internacional
   cif_price_ton_usd: number;          // USD por tonelada CIF
   customs_dispatch_percent?: number;  // % Despacho / Gastos de importación (default 13%)
   customs_dispatch_ton_usd?: number;  // USD por tonelada despacho / aduana (calculado como CIF * 13%)

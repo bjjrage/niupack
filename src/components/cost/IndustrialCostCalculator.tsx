@@ -5,6 +5,7 @@ import { AlertCircle, Calculator, CheckCircle2, ChevronDown, Save } from 'lucide
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { IndustrialCostEngine } from '@/lib/engines/industrial-cost-engine';
+import { applyRawMaterial, bottomDiverges, DEFAULT_CUSTOMS_PERCENT, DEFAULT_FINANCIAL_PERCENT, readRawMaterial, type RawMaterialPatch } from '@/lib/cost/raw-material';
 import type {
   CostInputSource,
   CostV1RubricConfig,
@@ -53,8 +54,8 @@ function emptyInput(sku: string): IndustrialProductCostInput {
     sku,
     paper_formula: {
       cif_price_ton_usd: 0,
-      customs_dispatch_percent: 0,
-      financial_cost_percent: 0,
+      customs_dispatch_percent: DEFAULT_CUSTOMS_PERCENT,
+      financial_cost_percent: DEFAULT_FINANCIAL_PERCENT,
       printing_method: 'OFFSET',
       sheet_width_mm: 0,
       sheet_height_mm: 0,
@@ -67,8 +68,8 @@ function emptyInput(sku: string): IndustrialProductCostInput {
     },
     bottom_formula: {
       cif_price_ton_usd: 0,
-      customs_dispatch_percent: 0,
-      financial_cost_percent: 0,
+      customs_dispatch_percent: DEFAULT_CUSTOMS_PERCENT,
+      financial_cost_percent: DEFAULT_FINANCIAL_PERCENT,
       gsm: 0,
       coating_gsm: 0,
       sheet_width_mm: 0,
@@ -133,6 +134,18 @@ function NumberField({
   );
 }
 
+function ReadOnlyField({ label, value, suffix, tone }: { label: string; value: string; suffix?: string; tone?: 'rose' }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-slate-300">
+      <span>{label}</span>
+      <span className="flex min-h-11 items-center rounded-md border border-slate-800 bg-[#10141b]">
+        <span className={`min-w-0 flex-1 truncate px-3 py-2.5 font-mono text-sm tabular-nums ${tone === 'rose' ? 'text-rose-300' : 'text-slate-100'}`}>{value}</span>
+        {suffix && <span className="shrink-0 px-3 text-[11px] font-normal text-slate-500">{suffix}</span>}
+      </span>
+    </div>
+  );
+}
+
 function rubricConfig(input: IndustrialProductCostInput, key: CostV1RubricKey): CostV1RubricConfig {
   return { ...rubricDefaults[key], ...input.rubrics?.[key] };
 }
@@ -155,7 +168,7 @@ function RubricCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className={`min-w-0 rounded-xl border p-4 sm:p-5 ${config.enabled ? 'border-slate-700/90 bg-[#141820]' : 'border-slate-800 bg-[#10141a] opacity-75'}`}>
+    <section className={`min-w-0 rounded-xl border p-4 sm:p-5 ${config.enabled ? 'border-slate-700/90 bg-[#141820]' : 'border-slate-800 bg-[#10141b] opacity-75'}`}>
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 border-b border-slate-800 pb-4">
         <div className="min-w-0">
           <h3 className="text-sm font-bold tracking-wide text-white">{title}</h3>
@@ -278,6 +291,10 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
     } : current);
   };
 
+  const updateRaw = (patch: RawMaterialPatch) => {
+    setInput((current) => (current ? applyRawMaterial(current, patch) : current));
+  };
+
   const updateBottomFormula = (updates: Partial<NonNullable<IndustrialProductCostInput['bottom_formula']>>) => {
     const currentBottom = input?.bottom_formula || emptyInput(sku).bottom_formula!;
     updateInput({ bottom_formula: { ...currentBottom, ...updates } });
@@ -345,6 +362,8 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
   const paperFormula = input?.paper_formula;
   const bottomFormula = input?.bottom_formula || emptyInput(sku).bottom_formula!;
   const emptyValues = !configured;
+  const raw = readRawMaterial(input ?? emptyInput(sku));
+  const bottomDivergent = input ? bottomDiverges(input) : false;
 
   return (
     <div style={{ zoom: 0.8 }} className="space-y-6">
@@ -425,14 +444,12 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
       ) : input && breakdown && (
         <>
           <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_19rem] 2xl:grid-cols-[minmax(0,1fr)_21rem]">
-          <section aria-label="Resumen de costos" className="min-w-0 rounded-xl border border-slate-800 bg-[#141820] p-5 xl:col-start-2 xl:row-start-1 xl:sticky xl:top-4">
-            <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-white">Resumen de costos</h2>
-                <p className="mt-1 text-xs text-slate-500">Impacto unitario según el breakdown actual</p>
-              </div>
+          <section aria-label="Resumen de costos" className="min-w-0 space-y-3 xl:col-start-2 xl:row-start-1 xl:sticky xl:top-4">
+            <div className="px-1">
+              <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-white">Resumen de costos</h2>
+              <p className="mt-1 text-xs text-slate-500">Impacto unitario según el breakdown actual</p>
             </div>
-            <div aria-label="Conversor de moneda del resumen" className="mb-2 flex flex-wrap items-center justify-end gap-1 rounded-lg border border-slate-700 bg-[#0c0f14] p-1">
+            <div aria-label="Conversor de moneda del resumen" className="flex flex-wrap items-center justify-end gap-1 rounded-xl border border-slate-800 bg-[#141820] p-1.5">
               {([
                 ['USD', 'USD'],
                 ['PYG', 'Gs.'],
@@ -451,59 +468,62 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                 </button>
               ))}
             </div>
-            {fxRate !== null && <div className="mb-3 text-right text-[10px] text-slate-500">Conversión: Gs. {fxRate.toLocaleString('es-PY')} = USD 1</div>}
-            <div className="divide-y divide-slate-800">
-              <article className="relative overflow-hidden rounded-lg border border-brand-500/40 bg-[#191b22] p-4">
-                <span className="absolute inset-x-0 top-0 h-0.5 bg-brand-500" />
-                <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-200">True Cost</div>
-                <div className="mt-2 whitespace-nowrap font-mono text-xl font-bold tabular-nums text-white sm:text-2xl">
-                  {configured
-                    ? summaryCurrency === 'PYG' && fxRate !== null
-                      ? `Gs. ${Math.round(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY')}`
-                      : `$${breakdown.true_unit_cost_usd.toFixed(5)}`
-                    : 'Pendiente'}
-                </div>
-                <div className="mt-1 text-[11px] text-slate-500">{configured ? summaryCurrency === 'PYG' && fxRate !== null ? 'Gs. / unidad' : 'USD / unidad' : 'Faltan datos requeridos'}</div>
-                {configured && summaryCurrency === 'BOTH' && fxRate !== null && (
-                  <div className="mt-2 font-mono text-xs tabular-nums text-slate-300">Gs. {Math.round(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY')} /u</div>
-                )}
-                {configured && summaryCurrency === 'BOTH' && fxRate !== null && (
-                  <div className="mt-1 font-sans text-[10px] text-slate-500">Tasa aplicada: Gs. {fxRate.toLocaleString('es-PY')} / USD</div>
-                )}
+            {fxRate !== null && <div className="px-1 text-right text-[10px] text-slate-500">Conversión: Gs. {fxRate.toLocaleString('es-PY')} = USD 1</div>}
+
+            <article className="relative overflow-hidden rounded-xl border border-brand-500/40 bg-[#161c26] p-4 shadow-sm sm:p-5">
+              <span className="absolute inset-x-0 top-0 h-0.5 bg-brand-500" />
+              <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-200">True Cost</div>
+              <div className="mt-2 whitespace-nowrap font-mono text-xl font-bold tabular-nums text-white sm:text-2xl">
+                {configured
+                  ? summaryCurrency === 'PYG' && fxRate !== null
+                    ? `Gs. ${Math.round(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY')}`
+                    : `$${breakdown.true_unit_cost_usd.toFixed(5)}`
+                  : 'Pendiente'}
+              </div>
+              <div className="mt-1 text-[11px] text-slate-500">{configured ? summaryCurrency === 'PYG' && fxRate !== null ? 'Gs. / unidad' : 'USD / unidad' : 'Faltan datos requeridos'}</div>
+              {configured && summaryCurrency === 'BOTH' && fxRate !== null && (
+                <div className="mt-2 font-mono text-xs tabular-nums text-slate-300">Gs. {Math.round(breakdown.true_unit_cost_usd * fxRate).toLocaleString('es-PY')} /u</div>
+              )}
+              {configured && summaryCurrency === 'BOTH' && fxRate !== null && (
+                <div className="mt-1 font-sans text-[10px] text-slate-500">Tasa aplicada: Gs. {fxRate.toLocaleString('es-PY')} / USD</div>
+              )}
+            </article>
+
+            {/* Un cuadro por rubro, cada uno con su propio fondo (como en el diseño anterior). */}
+            {[
+              { label: 'Materia prima', value: rubricValues.raw_material },
+              { label: 'Impresión + troquelado', value: rubricValues.printing_die_cut },
+              { label: 'Costos operativos', value: rubricValues.operational },
+              { label: 'Merma', value: rubricValues.scrap },
+              { label: 'Depreciación', value: rubricValues.depreciation },
+              { label: 'Embalaje', value: rubricValues.packaging },
+            ].map((metric) => (
+              <article key={metric.label} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-slate-800 bg-[#141820] px-4 py-3.5">
+                <span className="text-xs font-semibold text-slate-300">{metric.label}</span>
+                <span className="flex shrink-0 flex-col items-end font-mono text-xs font-semibold tabular-nums text-slate-100">
+                  {(summaryCurrency !== 'PYG' || fxRate === null) && <span>${metric.value.toFixed(5)} /u</span>}
+                  {summaryCurrency !== 'USD' && fxRate !== null && <span className="text-[10px] text-slate-400">Gs. {Math.round(metric.value * fxRate).toLocaleString('es-PY')} /u</span>}
+                </span>
               </article>
-              {[
-                { label: 'Materia prima', value: rubricValues.raw_material },
-                { label: 'Impresión + troquelado', value: rubricValues.printing_die_cut },
-                { label: 'Costos operativos', value: rubricValues.operational },
-                { label: 'Merma', value: rubricValues.scrap },
-                { label: 'Depreciación', value: rubricValues.depreciation },
-                { label: 'Embalaje', value: rubricValues.packaging },
-              ].map((metric) => (
-                <div key={metric.label} className="flex min-w-0 items-center justify-between gap-3 py-3">
-                  <span className="text-xs font-medium text-slate-400">{metric.label}</span>
-                  <span className="flex shrink-0 flex-col items-end font-mono text-xs font-semibold tabular-nums text-slate-100">
-                    {(summaryCurrency !== 'PYG' || fxRate === null) && <span>${metric.value.toFixed(5)} /u</span>}
-                    {summaryCurrency !== 'USD' && fxRate !== null && <span className="text-[10px] text-slate-400">Gs. {Math.round(metric.value * fxRate).toLocaleString('es-PY')} /u</span>}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 rounded-lg border border-slate-800 bg-[#0c0f14] px-3 py-3">
+            ))}
+
+            <article className="rounded-xl border border-slate-800 bg-[#141820] px-4 py-3.5">
               <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
-                <span>Total del lote</span>
+                <span className="font-semibold text-slate-300">Total del lote</span>
                 <span className="text-right font-mono font-semibold tabular-nums text-white">
                   {(summaryCurrency !== 'PYG' || fxRate === null) && <span className="block">${breakdown.batch_total_cost_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>}
                   {summaryCurrency !== 'USD' && fxRate !== null && <span className="block text-[10px] text-slate-400">Gs. {Math.round(breakdown.batch_total_cost_usd * fxRate).toLocaleString('es-PY')}</span>}
                 </span>
               </div>
               <div className="mt-1 text-[11px] text-slate-500">{input.batch_size.toLocaleString('es-PY')} unidades</div>
-            </div>
-            {fxRate === null && <div className="mt-3 rounded-md border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-200">Cotización USD/guaraní no disponible; se muestran valores en USD.</div>}
-            <Button variant="primary" size="md" onClick={save} disabled={saving || !input} className="mt-4 min-h-11 w-full justify-center font-bold uppercase tracking-wide">
+            </article>
+
+            {fxRate === null && <div className="rounded-md border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-200">Cotización USD/guaraní no disponible; se muestran valores en USD.</div>}
+            <Button variant="primary" size="md" onClick={save} disabled={saving || !input} className="min-h-11 w-full justify-center font-bold uppercase tracking-wide">
               <Save className="h-4 w-4" />{saving ? 'Guardando…' : 'Guardar hoja de costo'}
             </Button>
-            {configured && <div className="mt-3 flex items-center gap-2 text-xs text-emerald-300"><CheckCircle2 className="h-4 w-4" /> Hoja activa y trazable en seis rubros.</div>}
-            {marketBenchmarkUSD && marketBenchmarkUSD > 0 && <div className="mt-3 text-xs text-slate-500">Benchmark real: <span className="font-mono">${marketBenchmarkUSD.toFixed(4)} USD/u</span>.</div>}
+            {configured && <div className="flex items-center gap-2 px-1 text-xs text-emerald-300"><CheckCircle2 className="h-4 w-4" /> Hoja activa y trazable en seis rubros.</div>}
+            {marketBenchmarkUSD && marketBenchmarkUSD > 0 && <div className="px-1 text-xs text-slate-500">Benchmark real: <span className="font-mono">${marketBenchmarkUSD.toFixed(4)} USD/u</span>.</div>}
           </section>
 
           <div className="min-w-0 space-y-5 xl:col-start-1 xl:row-start-1">
@@ -520,7 +540,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
           <section aria-labelledby="raw-material-heading">
             <div className="mb-3">
               <h2 id="raw-material-heading" className="text-sm font-bold uppercase tracking-[0.12em] text-white">Materia prima</h2>
-              <p className="mt-1 text-xs text-slate-500">Papel cuerpo y fondo, organizados por material</p>
+              <p className="mt-1 text-xs text-slate-500">Costo del papel importado; de ahí se desprenden el cuerpo y el fondo</p>
             </div>
             <RubricCard
               title="Materia prima"
@@ -529,73 +549,91 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
               onEnabledChange={(enabled) => updateRubric('raw_material', { enabled })}
               onSourceChange={(source) => updateRubric('raw_material', { source })}
             >
-              <div className="grid gap-4 xl:grid-cols-2">
-                <section className="rounded-lg border border-slate-800 bg-[#10141a] p-4 sm:p-5">
+              <div className="space-y-4">
+                {/* 1. Costo del papel: UN solo origen del que se desprenden el cuerpo y el fondo. */}
+                <section className="rounded-lg border border-slate-800 bg-[#10141b] p-4 sm:p-5">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <h3 className="text-xs font-bold uppercase tracking-[0.12em] text-slate-100">Papel cuerpo</h3>
-                      <p className="mt-1 text-[11px] text-slate-500">Cono · precio, gramaje y rendimiento</p>
+                      <h3 className="text-xs font-bold uppercase tracking-[0.12em] text-slate-100">Costo del papel</h3>
+                      <p className="mt-1 text-[11px] text-slate-500">Importación · de acá salen el costo del cuerpo y del fondo</p>
                     </div>
-                    <span className="font-mono text-xs text-slate-400">${breakdown.cost_paper_cone_usd.toFixed(5)} /u</span>
+                    <span className="font-mono text-xs text-slate-400">{raw.cif > 0 ? `$${raw.landedUsd.toFixed(2)} USD/t puesto en planta` : 'Sin costo cargado'}</span>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <NumberField label="CIF cuerpo" suffix="USD/t" value={input.paper_formula.cif_price_ton_usd} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, cif_price_ton_usd: value } })} />
-                    <NumberField label="Gramaje" suffix="gsm" value={input.paper_formula.gsm} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, gsm: value } })} />
-                    <NumberField label="Coating" suffix="gsm" value={input.paper_formula.coating_gsm || 0} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, coating_gsm: value } })} />
-                    <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-slate-300">
-                      <span>Método de impresión</span>
-                      <select
-                        value={input.paper_formula.printing_method}
-                        onChange={(event) => updateInput({ paper_formula: { ...input.paper_formula, printing_method: event.target.value as 'OFFSET' | 'FLEXO' } })}
-                        className="min-h-11 rounded-md border border-slate-700 bg-[#0c0f14] px-3 text-sm font-semibold text-white outline-none focus:border-brand-500/70"
-                      >
-                        <option value="OFFSET">OFFSET · pliego</option>
-                        <option value="FLEXO">FLEXO · bobina</option>
-                      </select>
-                    </label>
-                    {input.paper_formula.printing_method === 'OFFSET' ? (
-                      <>
-                        <NumberField label="Ancho pliego" suffix="mm" value={input.paper_formula.sheet_width_mm || 0} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, sheet_width_mm: value } })} />
-                        <NumberField label="Largo pliego" suffix="mm" value={input.paper_formula.sheet_height_mm || 0} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, sheet_height_mm: value } })} />
-                        <NumberField label="Unidades por pliego" suffix="u/pliego" value={input.paper_formula.units_per_sheet || 0} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, units_per_sheet: value } })} />
-                      </>
-                    ) : (
-                      <>
-                        <NumberField label="Ancho bobina" suffix="mm" value={input.paper_formula.web_width_mm || 0} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, web_width_mm: value } })} />
-                        <NumberField label="Unidades por metro" suffix="u/m" value={input.paper_formula.units_per_linear_meter || 0} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, units_per_linear_meter: value } })} />
-                      </>
-                    )}
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                    <NumberField label="FOB" suffix="USD/t" value={raw.fob} emptyWhenZero={emptyValues} onChange={(value) => updateRaw({ fob: value })} />
+                    <NumberField label="Flete" suffix="USD/t" value={raw.freight} emptyWhenZero={emptyValues} onChange={(value) => updateRaw({ freight: value })} />
+                    <ReadOnlyField label="CIF (FOB + flete)" suffix="USD/t" value={raw.cif > 0 ? raw.cif.toFixed(2) : '—'} />
+                    <NumberField label="Despacho" suffix="% s/CIF" value={raw.customsPercent} onChange={(value) => updateRaw({ customsPercent: value })} />
+                    <NumberField label="Costo del dinero" suffix="% s/CIF" value={raw.financialPercent} onChange={(value) => updateRaw({ financialPercent: value })} />
                   </div>
+                  {raw.cif > 0 && (
+                    <p className="mt-3 text-[11px] leading-5 text-slate-500">
+                      CIF <span className="font-mono text-slate-300">{raw.cif.toFixed(2)}</span> + despacho <span className="font-mono text-slate-300">{raw.customsUsd.toFixed(2)}</span> + costo del dinero{' '}
+                      <span className="font-mono text-slate-300">{raw.financialUsd.toFixed(2)}</span> = <span className="font-mono font-semibold text-slate-200">{raw.landedUsd.toFixed(2)}</span> USD por tonelada
+                    </p>
+                  )}
                 </section>
 
-                <section className="rounded-lg border border-slate-800 bg-[#10141a] p-4 sm:p-5">
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <h3 className="text-xs font-bold uppercase tracking-[0.12em] text-slate-100">Fondo</h3>
-                      <p className="mt-1 text-[11px] text-slate-500">Papel de fondo · cálculo por m² o rendimiento</p>
+                {/* 2. Papel cuerpo y fondo: solo gramaje, coating y rendimiento. El precio viene de arriba. */}
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <section className="rounded-lg border border-slate-800 bg-[#10141b] p-4 sm:p-5">
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-xs font-bold uppercase tracking-[0.12em] text-slate-100">Papel cuerpo</h3>
+                        <p className="mt-1 text-[11px] text-slate-500">Cono · gramaje y rendimiento</p>
+                      </div>
+                      <span className="font-mono text-xs text-slate-400">${breakdown.cost_paper_cone_usd.toFixed(5)} /u</span>
                     </div>
-                    <span className="font-mono text-xs text-slate-400">${breakdown.cost_bottom_usd.toFixed(5)} /u</span>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <NumberField label="CIF fondo" suffix="USD/t" value={bottomFormula.cif_price_ton_usd || input.bottom_paper_cost_ton_usd} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ bottom_paper_cost_ton_usd: value, bottom_formula: { ...bottomFormula, cif_price_ton_usd: value } })} />
-                    <NumberField label="Gramaje" suffix="gsm" value={bottomFormula.gsm || 0} emptyWhenZero={emptyValues} onChange={(value) => updateBottomFormula({ gsm: value })} />
-                    <NumberField label="Coating" suffix="gsm" value={bottomFormula.coating_gsm || 0} emptyWhenZero={emptyValues} onChange={(value) => updateBottomFormula({ coating_gsm: value })} />
-                    <NumberField label="Unidades por m²" suffix="u/m²" value={bottomFormula.units_per_m2 || 0} emptyWhenZero={emptyValues} onChange={(value) => updateBottomFormula({ units_per_m2: value })} />
-                  </div>
-                </section>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <NumberField label="Gramaje" suffix="gsm" value={input.paper_formula.gsm} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, gsm: value } })} />
+                      <NumberField label="Coating" suffix="gsm" value={input.paper_formula.coating_gsm || 0} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, coating_gsm: value } })} />
+                      {input.paper_formula.printing_method === 'OFFSET' ? (
+                        <>
+                          <NumberField label="Ancho pliego" suffix="mm" value={input.paper_formula.sheet_width_mm || 0} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, sheet_width_mm: value } })} />
+                          <NumberField label="Largo pliego" suffix="mm" value={input.paper_formula.sheet_height_mm || 0} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, sheet_height_mm: value } })} />
+                          <NumberField label="Unidades por pliego" suffix="u/pliego" value={input.paper_formula.units_per_sheet || 0} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, units_per_sheet: value } })} />
+                        </>
+                      ) : (
+                        <>
+                          <NumberField label="Ancho bobina" suffix="mm" value={input.paper_formula.web_width_mm || 0} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, web_width_mm: value } })} />
+                          <NumberField label="Unidades por metro" suffix="u/m" value={input.paper_formula.units_per_linear_meter || 0} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, units_per_linear_meter: value } })} />
+                        </>
+                      )}
+                    </div>
+                    <p className="mt-3 text-[11px] text-slate-500">
+                      Rendimiento según el método de impresión: <span className="font-semibold text-slate-300">{input.paper_formula.printing_method === 'OFFSET' ? 'OFFSET · pliego' : 'FLEXO · bobina'}</span> (se elige en Impresión + troquelado).
+                    </p>
+                  </section>
+
+                  <section className="rounded-lg border border-slate-800 bg-[#10141b] p-4 sm:p-5">
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-xs font-bold uppercase tracking-[0.12em] text-slate-100">Fondo</h3>
+                        <p className="mt-1 text-[11px] text-slate-500">Papel de fondo · cálculo por m² o rendimiento</p>
+                      </div>
+                      <span className="font-mono text-xs text-slate-400">${breakdown.cost_bottom_usd.toFixed(5)} /u</span>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <NumberField label="Gramaje" suffix="gsm" value={bottomFormula.gsm || 0} emptyWhenZero={emptyValues} onChange={(value) => updateBottomFormula({ gsm: value })} />
+                      <NumberField label="Coating" suffix="gsm" value={bottomFormula.coating_gsm || 0} emptyWhenZero={emptyValues} onChange={(value) => updateBottomFormula({ coating_gsm: value })} />
+                      <NumberField label="Unidades por m²" suffix="u/m²" value={bottomFormula.units_per_m2 || 0} emptyWhenZero={emptyValues} onChange={(value) => updateBottomFormula({ units_per_m2: value })} />
+                    </div>
+                    {bottomDivergent && (
+                      <p className="mt-3 rounded-md border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-200">
+                        Esta hoja guardó para el fondo un costo distinto (CIF {bottomFormula.cif_price_ton_usd.toFixed(2)} USD/t). Se mantiene tal cual hasta que edites el costo del papel: ahí se unifica con el de arriba.
+                      </p>
+                    )}
+                  </section>
+                </div>
               </div>
 
-              <details className="group mt-4 rounded-lg border border-slate-800 bg-[#10141a]">
+              <details className="group mt-4 rounded-lg border border-slate-800 bg-[#10141b]">
                 <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-slate-300 hover:text-white [&::-webkit-details-marker]:hidden">
-                  Parámetros avanzados de materia prima
+                  Parámetros avanzados de rendimiento
                   <ChevronDown className="h-4 w-4 shrink-0 text-slate-500 transition-transform group-open:rotate-180" />
                 </summary>
                 <div className="grid gap-4 border-t border-slate-800 p-4 sm:grid-cols-2 xl:grid-cols-3">
-                  <NumberField label="Despacho cuerpo" suffix="%" value={input.paper_formula.customs_dispatch_percent || 0} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, customs_dispatch_percent: value } })} />
-                  <NumberField label="Financiero cuerpo" suffix="%" value={input.paper_formula.financial_cost_percent || 0} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, financial_cost_percent: value } })} />
                   <NumberField label="Rendimiento directo cuerpo" suffix="u/t" value={input.paper_formula.paper_yield_units_per_ton} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ paper_formula: { ...input.paper_formula, paper_yield_units_per_ton: value } })} />
-                  <NumberField label="Despacho fondo" suffix="%" value={bottomFormula.customs_dispatch_percent || 0} emptyWhenZero={emptyValues} onChange={(value) => updateBottomFormula({ customs_dispatch_percent: value })} />
-                  <NumberField label="Financiero fondo" suffix="%" value={bottomFormula.financial_cost_percent || 0} emptyWhenZero={emptyValues} onChange={(value) => updateBottomFormula({ financial_cost_percent: value })} />
                   <NumberField label="Rendimiento directo fondo" suffix="u/t" value={input.bottom_yield_units_per_ton} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ bottom_yield_units_per_ton: value })} />
                   <NumberField label="Ancho pliego fondo" suffix="mm" value={bottomFormula.sheet_width_mm || 0} emptyWhenZero={emptyValues} onChange={(value) => updateBottomFormula({ sheet_width_mm: value })} />
                   <NumberField label="Largo pliego fondo" suffix="mm" value={bottomFormula.sheet_height_mm || 0} emptyWhenZero={emptyValues} onChange={(value) => updateBottomFormula({ sheet_height_mm: value })} />
@@ -620,6 +658,18 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                 onSourceChange={(source) => updateRubric('printing_die_cut', { source })}
               >
                 <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-slate-300 sm:col-span-2">
+                    <span>Método de impresión</span>
+                    <select
+                      value={input.paper_formula.printing_method}
+                      onChange={(event) => updateInput({ paper_formula: { ...input.paper_formula, printing_method: event.target.value as 'OFFSET' | 'FLEXO' } })}
+                      className="min-h-11 rounded-md border border-slate-700 bg-[#0c0f14] px-3 text-sm font-semibold text-white outline-none focus:border-brand-500/70"
+                    >
+                      <option value="OFFSET">OFFSET · pliego</option>
+                      <option value="FLEXO">FLEXO · bobina</option>
+                    </select>
+                    <span className="text-[11px] font-normal text-slate-500">Define cuántos vasos entran por pliego o por metro de bobina, o sea el rendimiento del papel del cuerpo.</span>
+                  </label>
                   <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-slate-300">
                     <span>Método de cotización</span>
                     <select
@@ -660,12 +710,9 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                 onEnabledChange={(enabled) => updateRubric('scrap', { enabled })}
                 onSourceChange={(source) => updateRubric('scrap', { source })}
               >
-                <div className="grid gap-3 sm:grid-cols-2 sm:items-end">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <NumberField label="Merma" suffix="%" value={input.scrap_rate_percent} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ scrap_rate_percent: value })} />
-                  <div className="rounded-md border border-slate-800 bg-[#0c0f14] px-3 py-2.5">
-                    <div className="text-[11px] text-slate-500">Impacto sobre materia prima</div>
-                    <div className="mt-1 font-mono text-sm tabular-nums text-rose-300">${breakdown.cost_scrap_usd.toFixed(5)} /u</div>
-                  </div>
+                  <ReadOnlyField label="Impacto sobre materia prima" suffix="USD/u" value={`${breakdown.cost_scrap_usd.toFixed(5)}`} tone="rose" />
                 </div>
               </RubricCard>
 
