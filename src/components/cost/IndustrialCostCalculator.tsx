@@ -527,7 +527,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
               onEnabledChange={(enabled) => updateRubric('raw_material', { enabled })}
               onSourceChange={(source) => updateRubric('raw_material', { source })}
               headerExtra={
-                <div role="group" aria-label="Moneda del resumen" title={fxRate !== null ? `Gs. ${fxRate.toLocaleString('es-PY')} = USD 1` : undefined} className="inline-flex items-center gap-1.5">
+                <div role="group" aria-label="Moneda del resumen" title={fxRate !== null ? `Gs. ${fxRate.toLocaleString('es-PY')} = USD 1` : undefined} className="inline-flex min-h-8 items-stretch rounded-md border border-slate-700 bg-[#0c0f14] p-0.5">
                   {([
                     ['USD', 'USD'],
                     ['PYG', 'Gs.'],
@@ -540,7 +540,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                       disabled={currency !== 'USD' && fxRate === null}
                       title={currency !== 'USD' && fxRate === null ? 'Cotización USD/guaraní no disponible' : undefined}
                       onClick={() => setSummaryCurrency(currency)}
-                      className={`min-h-8 rounded-md border px-2.5 text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${summaryCurrency === currency ? 'border-brand-500 bg-brand-500 text-white' : 'border-slate-700 bg-[#0c0f14] text-slate-300 hover:text-white'}`}
+                      className={`rounded px-2.5 text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${summaryCurrency === currency ? 'bg-brand-500 text-white' : 'text-slate-400 hover:text-white'}`}
                     >
                       {label}
                     </button>
