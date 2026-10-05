@@ -3,6 +3,7 @@
 import React, { FormEvent, useEffect, useState } from 'react';
 import { AlertTriangle, Anchor, History, Plus, Truck } from 'lucide-react';
 import type { LogisticsQuote, LogisticsRate, LogisticsRfq } from '@/lib/logistics/domain';
+import type { FreightosEstimate } from '@/lib/logistics/freightos-provider';
 import type { CargoFiveRateOption, CargoFivePlace } from '@/lib/logistics/cargofive-provider';
 import type { Supplier } from '@/types';
 
@@ -34,7 +35,7 @@ export function LogisticsWorkspace({ view }: { view: View }) {
   }
 
   if (view === 'road') return shell(<RoadPanel rfqs={rfqs} quotes={quotes} suppliers={suppliers} reload={load} setFeedback={setFeedback}/>);
-  if (view === 'ocean') return shell(<OceanPanel rates={rates} reload={load} setFeedback={setFeedback}/>);
+  if (view === 'ocean') return shell(<FreightosOceanPanel rates={rates} reload={load} setFeedback={setFeedback}/>);
   if (view === 'providers') return shell(<ProvidersPanel suppliers={suppliers} reload={load} setFeedback={setFeedback}/>);
   return shell(<HistoryPanel rates={rates}/>);
 }
@@ -190,6 +191,99 @@ export function RoadPanel({ rfqs, quotes, suppliers, reload, setFeedback }: { rf
   return <div className="space-y-6"><form onSubmit={create} className="rounded-lg border border-slate-800 bg-[#141820] p-5"><h2 className="mb-4 flex items-center gap-2 font-bold text-white"><Plus className="h-4 w-4"/> Nuevo RFQ terrestre</h2><div className="grid grid-cols-1 items-end gap-x-6 gap-y-5 md:grid-cols-2 lg:grid-cols-4"><div className="flex min-w-0 flex-col gap-1.5"><label htmlFor="origin_country" className={label}>País de origen *</label><input required id="origin_country" name="origin_country" defaultValue="Paraguay" className={formInput}/></div><div className="flex min-w-0 flex-col gap-1.5"><label htmlFor="origin_city" className={label}>Ciudad de origen *</label><input required id="origin_city" name="origin_city" defaultValue="Asunción" className={formInput}/></div><div className="flex min-w-0 flex-col gap-1.5"><label htmlFor="destination_country" className={label}>País de destino *</label><input required id="destination_country" name="destination_country" className={formInput}/></div><div className="flex min-w-0 flex-col gap-1.5"><label htmlFor="destination_city" className={label}>Ciudad de destino *</label><input required id="destination_city" name="destination_city" className={formInput}/></div><div className="flex min-w-0 flex-col gap-1.5"><label htmlFor="pickup_date" className={label}>Fecha de carga *</label><input required id="pickup_date" name="pickup_date" type="date" className={formInput}/></div><div className="flex min-w-0 flex-col gap-1.5"><label htmlFor="delivery_target_date" className={label}>Entrega objetivo (opcional)</label><input id="delivery_target_date" name="delivery_target_date" type="date" className={formInput}/></div><div className="flex min-w-0 flex-col gap-1.5"><label htmlFor="cargo_description" className={label}>Descripción de la carga *</label><input required id="cargo_description" name="cargo_description" className={formInput}/></div><div className="flex min-w-0 flex-col gap-1.5"><label htmlFor="equipment_type" className={label}>Tipo de equipo *</label><select required id="equipment_type" name="equipment_type" defaultValue="SEMI" className={formInput}><option>FTL</option><option>LTL</option><option>TRUCK</option><option>SEMI</option><option>OTHER</option></select></div><div className="flex min-w-0 flex-col gap-1.5"><label htmlFor="weight_kg" className={label}>Peso (kg)</label><input id="weight_kg" name="weight_kg" type="number" placeholder="0" className={formInput}/></div><div className="flex min-w-0 flex-col gap-1.5"><label htmlFor="volume_m3" className={label}>Volumen (m³)</label><input id="volume_m3" name="volume_m3" type="number" step="0.01" placeholder="0" className={formInput}/></div><div className="flex min-w-0 flex-col gap-1.5"><label htmlFor="pallet_count" className={label}>Pallets</label><input id="pallet_count" name="pallet_count" type="number" placeholder="0" className={formInput}/></div><div className="flex min-w-0 flex-col gap-1.5"><label htmlFor="commercial_term" className={label}>Condición comercial</label><input id="commercial_term" name="commercial_term" defaultValue="CPT" className={formInput}/></div><div className="flex min-w-0 flex-col gap-1.5"><label htmlFor="quote_deadline" className={label}>Fecha límite para cotizar *</label><input required id="quote_deadline" name="quote_deadline" type="datetime-local" className={formInput}/></div></div><button className="mt-5 rounded bg-red-600 px-4 py-2 text-xs font-bold text-white">Crear RFQ</button></form>
     <div className="rounded-lg border border-slate-800 bg-[#141820] p-5"><h2 className="mb-3 font-bold text-white">Invitar transportistas</h2><select value={selectedRfq} onChange={(e)=>setSelectedRfq(e.target.value)} className={input}><option value="">Seleccionar RFQ</option>{rfqs.map((r)=><option value={r.id} key={r.id}>{r.code} · {r.destination_city}</option>)}</select><div className="my-3 grid gap-2 md:grid-cols-2">{suppliers.map((s)=><label key={s.id} className="flex gap-2 text-xs text-slate-300"><input type="checkbox" checked={selectedSuppliers.includes(s.id)} onChange={(e)=>setSelectedSuppliers(e.target.checked?[...selectedSuppliers,s.id]:selectedSuppliers.filter(id=>id!==s.id))}/>{s.name} · {s.email||'Sin email'}</label>)}</div><button disabled={!selectedRfq||!selectedSuppliers.length} onClick={invite} className="rounded bg-slate-700 px-4 py-2 text-xs font-bold text-white disabled:opacity-40">Generar magic links / enviar</button></div>
     <div className="overflow-x-auto rounded-lg border border-slate-800 bg-[#141820] p-5"><h2 className="mb-3 font-bold text-white">Comparador terrestre</h2>{quotes.length===0?<p className="text-sm text-slate-500">Sin respuestas.</p>:<table className="w-full text-xs"><thead className="text-left text-slate-400"><tr><th>Proveedor</th><th>Precio</th><th>Normalizado</th><th>Transit</th><th>Vigencia</th><th>Incluye / No incluye</th><th>Estado</th><th></th></tr></thead><tbody>{quotes.map((q)=><tr key={q.id} className="border-t border-slate-800 text-slate-200"><td className="py-3">{q.supplier_name}</td><td>{q.currency} {q.quoted_total}</td><td>{q.normalized_total??'Pendiente FX'}</td><td>{q.transit_days} días</td><td>{q.valid_until||'No informada'}</td><td>{q.main_freight!==undefined?'Flete principal':'Flete no desglosado'}</td><td>{q.status}</td><td><button onClick={()=>select(q.id)} className="rounded bg-red-600 px-2 py-1">Seleccionar</button></td></tr>)}</tbody></table>}</div></div>;
+}
+
+function FreightosOceanPanel({ rates, reload, setFeedback }: { rates: LogisticsRate[]; reload: () => Promise<void>; setFeedback: (value: string) => void }) {
+  const [origin, setOrigin] = useState('');
+  const [destination, setDestination] = useState('');
+  const [equipment, setEquipment] = useState<'20GP' | '40GP' | '40HC'>('40HC');
+  const [quantity, setQuantity] = useState(1);
+  const [weight, setWeight] = useState('');
+  const [estimates, setEstimates] = useState<FreightosEstimate[]>([]);
+  const [status, setStatus] = useState('');
+  const [searching, setSearching] = useState(false);
+  const input = 'box-border h-9 w-full rounded border border-slate-700 bg-[#0c0f14] px-3 text-xs text-white';
+
+  async function search(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSearching(true);
+    setEstimates([]);
+    setStatus('Consultando estimaciones públicas de Freightos…');
+    try {
+      const response = await fetch('/api/logistics/ocean/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin, destination, equipment, quantity,
+          ...(weight ? { weight_kg: Number(weight) } : {}),
+        }),
+      });
+      const data = await response.json();
+      setEstimates(data.estimates ?? []);
+      setStatus(data.message ?? (response.ok ? 'Consulta completada.' : 'No fue posible obtener la estimación.'));
+    } catch {
+      setStatus('No fue posible consultar Freightos en este momento.');
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function manual(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const response = await fetch('/api/logistics/rates', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        origin: { country: form.get('origin') }, destination: { country: form.get('destination') },
+        mode: 'OCEAN', amount: Number(form.get('amount')), currency: form.get('currency'),
+        equipment: form.get('equipment'), valid_until: form.get('valid_until'), status: 'CONFIRMED',
+      }),
+    });
+    const data = await response.json();
+    setFeedback(response.ok ? `Tarifa manual ${data.rate.id} guardada.` : data.error);
+    await reload();
+  }
+
+  const money = (amount: number, currency: string) => new Intl.NumberFormat('en-US', {
+    style: 'currency', currency, maximumFractionDigits: 0,
+  }).format(amount);
+
+  return <div className="space-y-5">
+    <section className="rounded-lg border border-slate-800 bg-[#141820] p-4">
+      <h2 className="flex items-center gap-2 font-bold text-white"><Anchor className="h-4 w-4"/> Estimador marítimo Freightos</h2>
+      <p className="my-2 text-xs text-slate-400">Estimaciones públicas FCL por ruta (hasta 100 consultas por IP cada hora). No son tarifas firmes, reservas ni disponibilidad confirmada; no se guardan en el histórico de tarifas reales.</p>
+      <a href="https://ship.freightos.com" target="_blank" rel="noreferrer" className="mb-3 inline-block text-xs text-sky-300 underline">Fuente y más opciones: Freightos ↗</a>
+      <form onSubmit={search} className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <label className="space-y-1 text-xs text-slate-300 xl:col-span-2"><span>Origen *</span><input required minLength={2} maxLength={120} value={origin} onChange={(event) => setOrigin(event.target.value)} className={input} placeholder="UN/LOCODE o puerto, país (ej. CNSHA)"/></label>
+        <label className="space-y-1 text-xs text-slate-300 xl:col-span-2"><span>Destino *</span><input required minLength={2} maxLength={120} value={destination} onChange={(event) => setDestination(event.target.value)} className={input} placeholder="UN/LOCODE o puerto, país (ej. USLGB)"/></label>
+        <label className="space-y-1 text-xs text-slate-300"><span>Contenedor *</span><select value={equipment} onChange={(event) => setEquipment(event.target.value as typeof equipment)} className={input}><option value="20GP">20GP</option><option value="40GP">40GP</option><option value="40HC">40HC</option></select></label>
+        <label className="space-y-1 text-xs text-slate-300"><span>Cantidad *</span><input required min="1" max="100" type="number" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} className={input}/></label>
+        <label className="space-y-1 text-xs text-slate-300"><span>Peso bruto por contenedor (kg), opcional</span><input min="1" max="100000" step="1" type="number" value={weight} onChange={(event) => setWeight(event.target.value)} className={input} placeholder="Peso real"/></label>
+        <div className="flex items-end"><button type="submit" disabled={searching} className="h-9 rounded bg-red-600 px-4 text-xs font-bold text-white disabled:opacity-50">{searching ? 'Consultando…' : 'Estimar flete'}</button></div>
+      </form>
+      {status && <p role="status" className="mt-3 text-xs text-slate-300">{status}</p>}
+    </section>
+
+    {estimates.length > 0 && <section className="overflow-x-auto rounded-lg border border-slate-800 bg-[#141820]">
+      <table className="w-full min-w-[760px] text-left text-xs">
+        <thead className="text-[10px] uppercase tracking-wide text-slate-500"><tr><th className="p-3">Ruta</th><th className="p-3">Equipo</th><th className="p-3">Rango estimado</th><th className="p-3">Tránsito estimado</th><th className="p-3">Fuente</th></tr></thead>
+        <tbody>{estimates.map((estimate) => <tr key={estimate.id} className="border-t border-slate-800 align-top text-slate-300">
+          <td className="p-3">{estimate.origin} → {estimate.destination}</td>
+          <td className="p-3">{estimate.quantity} × {estimate.equipment}</td>
+          <td className="p-3 font-semibold text-white">{money(estimate.min_amount, estimate.currency)} – {money(estimate.max_amount, estimate.currency)}</td>
+          <td className="p-3">{estimate.min_transit_days !== undefined && estimate.max_transit_days !== undefined ? `${estimate.min_transit_days}–${estimate.max_transit_days} días` : 'No informado'}</td>
+          <td className="p-3"><a href={estimate.marketplace_url} target="_blank" rel="noreferrer" className="text-sky-300 underline">Freightos ↗</a><span className="mt-1 block text-[10px] text-slate-500">Consulta: {new Date(estimate.retrieved_at).toLocaleString()}</span></td>
+        </tr>)}</tbody>
+      </table>
+    </section>}
+
+    <form onSubmit={manual} className="rounded-lg border border-slate-800 bg-[#141820] p-4">
+      <h2 className="mb-3 font-bold text-white">Tarifa manual / contractual</h2>
+      <div className="grid gap-3 md:grid-cols-3"><input required name="origin" placeholder="Origen" className={input}/><input required name="destination" placeholder="Destino" className={input}/><select name="equipment" className={input}><option>20GP</option><option>40GP</option><option>40HC</option><option>LCL</option></select><input required name="amount" type="number" min="0" step="0.01" placeholder="Importe" className={input}/><select name="currency" className={input}><option>USD</option><option>PYG</option></select><input name="valid_until" type="date" className={input}/></div>
+      <button className="mt-4 rounded bg-slate-700 px-4 py-2 text-xs font-bold text-white">Guardar tarifa real</button>
+    </form>
+    <HistoryPanel rates={rates.filter((rate) => rate.mode === 'OCEAN')}/>
+  </div>;
 }
 
 function PlacePicker({ label, value, onSelect }: { label: string; value: CargoFivePlace | null; onSelect: (place: CargoFivePlace | null) => void }) {
