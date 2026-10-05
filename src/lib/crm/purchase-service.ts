@@ -230,20 +230,6 @@ export const purchaseService = {
         await crmRepository.saveProductAlias(organizationId, norm, normalizeSku(a.target));
       }
     }
-    // Marcar PROSPECT→CUSTOMER a empresas con compras.
-    if (inserted > 0) {
-      const seen = new Set(rows.map((r) => r.company_id));
-      for (const companyId of seen) {
-        try {
-          const company = await crmRepository.getCompany(companyId, organizationId);
-          if (company && !company.lifecycle_stage) {
-            await crmRepository.updateCompany(companyId, organizationId, { lifecycle_stage: 'CUSTOMER' } as never);
-          }
-        } catch {
-          // No bloquear importación por este marcado.
-        }
-      }
-    }
     return { inserted, duplicates, errors };
   },
 
@@ -306,7 +292,9 @@ export const purchaseService = {
       crmRepository.listPurchases(organizationId, undefined, 5000),
       crmRepository.listContacts(organizationId),
     ]);
-    const byName = new Map(companies.map((c) => [c.id, c]));
+    const potentialCompanies = companies.filter((c) => c.lifecycle_stage === 'PROSPECT' || !c.lifecycle_stage);
+    const potentialIds = new Set(potentialCompanies.map((c) => c.id));
+    const byName = new Map(potentialCompanies.map((c) => [c.id, c]));
     const mainContact = new Map<string, { full_name: string; whatsapp_phone?: string | null }>();
     for (const ct of contacts) {
       if (ct.company_id && !mainContact.has(ct.company_id)) {
@@ -315,6 +303,7 @@ export const purchaseService = {
     }
     const like: PurchaseLike[] = purchases.map((p) => toRows(p));
     return analyzeAll(like, todayTs)
+      .filter((s) => potentialIds.has(s.company_id))
       .filter((s) => s.repurchase_status === 'CONTACT_SOON' || s.repurchase_status === 'OVERDUE')
       .map((s) => ({
         ...s,
