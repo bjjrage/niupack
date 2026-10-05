@@ -202,7 +202,12 @@ export const niupackbotService = {
       type: 'BOT_MESSAGE',
       title: `Inbound: ${turn.intent} / ${turn.qualification}`,
       body: inbound.body.slice(0, 1000),
-      metadata: { intent: turn.intent, qualification: turn.qualification },
+      metadata: {
+        intent: turn.intent,
+        qualification: turn.qualification,
+        matched_sku: turn.catalog?.matched_sku ?? turn.extracted.matched_sku ?? null,
+        catalog_match: turn.catalog?.match ?? turn.extracted.catalog_match ?? null,
+      },
     });
 
     const effects = planEffects({ context: { ...context, leadId: lead.id }, turn });
@@ -229,7 +234,9 @@ export const niupackbotService = {
     }
 
     if (effects.createOpportunity) {
-      const opp = await crmTools.createOpportunityFromLead(organizationId, lead.id);
+      const opp = await crmTools.createOpportunityFromLead(organizationId, lead.id, {
+        sku: turn.catalog?.matched_sku ?? turn.extracted.matched_sku ?? null,
+      });
       opportunityId = opp.id;
       await crmRepository.updateConversation(conversationId, organizationId, { opportunity_id: opp.id });
       await niupackbotRepository.logEvent({
@@ -278,7 +285,11 @@ export const niupackbotService = {
       bot_status: turn.shouldRequestHandoff ? 'HANDOFF_REQUESTED' : 'ACTIVE',
       last_intent: turn.intent,
       language: turn.language,
-      extracted: turn.extracted as unknown as Record<string, unknown>,
+      extracted: {
+        ...turn.extracted,
+        matched_sku: turn.catalog?.matched_sku ?? turn.extracted.matched_sku ?? null,
+        catalog_match: turn.catalog?.match ?? turn.extracted.catalog_match ?? null,
+      } as unknown as Record<string, unknown>,
       turn_count: (context.state.turn_count ?? 0) + 1,
     });
     await niupackbotRepository.logEvent({

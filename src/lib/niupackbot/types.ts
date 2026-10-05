@@ -21,6 +21,8 @@ export interface ExtractedCommercial {
   destination_country?: string | null;
   intent?: CrmIntent | null;
   qualification?: Qualification | null;
+  matched_sku?: string | null;
+  catalog_match?: 'EXACT' | 'MULTIPLE' | 'NONE' | null;
 }
 
 export interface NormalizedInbound {
@@ -51,6 +53,11 @@ export interface BotTurnResult {
   shouldRequestHandoff: boolean;
   shouldCreateOpportunity: boolean;
   confidence: 'LOW' | 'MEDIUM' | 'HIGH';
+  catalog?: {
+    match: 'EXACT' | 'MULTIPLE' | 'NONE';
+    matched_sku?: string | null;
+    items?: unknown[];
+  };
 }
 
 export interface ToolResult<T = unknown> {

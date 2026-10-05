@@ -29,8 +29,8 @@ export const crmTools = {
     });
   },
 
-  createOpportunityFromLead: (organizationId: string, leadId: string) =>
-    crmService.createOpportunityFromLead(organizationId, leadId, { stage: 'NUEVO' }),
+  createOpportunityFromLead: (organizationId: string, leadId: string, overrides?: { sku?: string | null }) =>
+    crmService.createOpportunityFromLead(organizationId, leadId, { stage: 'NUEVO', ...overrides }),
 
   addActivity: (
     organizationId: string,

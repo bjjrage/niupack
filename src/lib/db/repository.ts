@@ -145,6 +145,9 @@ export const repository = {
       if (error) throw new Error(`products: ${error.message}`);
       return (data ?? []) as Product[];
     }
+    if (organizationId) {
+      return store.products.filter((p) => p.organization_id === organizationId);
+    }
     return [...store.products];
   },
   async getProductByCode(code: string): Promise<Product | undefined> {
@@ -161,6 +164,12 @@ export const repository = {
         .order('sku');
       if (error) throw new Error(`product_attributes: ${error.message}`);
       return (data ?? []) as ProductAttribute[];
+    }
+    if (organizationId) {
+      const orgProductIds = new Set(
+        store.products.filter((p) => p.organization_id === organizationId).map((p) => p.id),
+      );
+      return store.skus.filter((s) => orgProductIds.has(s.product_id));
     }
     return [...store.skus];
   },

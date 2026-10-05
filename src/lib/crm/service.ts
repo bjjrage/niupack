@@ -408,7 +408,7 @@ export const crmService = {
   async createOpportunityFromLead(
     organizationId: string,
     leadId: string,
-    overrides: { title?: string; stage?: PipelineStage; owner_profile_id?: string | null } = {},
+    overrides: { title?: string; stage?: PipelineStage; owner_profile_id?: string | null; sku?: string | null } = {},
     actorProfileId?: string,
   ): Promise<CrmOpportunity> {
     await assertLeadInOrg(organizationId, leadId);
@@ -436,7 +436,7 @@ export const crmService = {
       title,
       stage: overrides.stage ?? 'NUEVO',
       product_interest: lead.product_interest ?? null,
-      sku: null,
+      sku: overrides.sku ?? null,
       capacity: lead.capacity ?? null,
       material: lead.material ?? null,
       printing: lead.printing ?? null,

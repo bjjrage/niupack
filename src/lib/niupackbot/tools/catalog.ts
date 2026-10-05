@@ -51,8 +51,8 @@ function capacityFromQuery(query: string): { oz?: number; ml?: number } {
 
 function wallFromQuery(query: string): ProductAttribute['wall_type'] | null {
   const q = normalize(query);
-  if (/\b(doble pared|double wall|parede dupla|dupla)\b/.test(q)) return 'double';
-  if (/\b(pared simple|single wall|parede simples|simples)\b/.test(q)) return 'single';
+  if (/\b(doble pared|pared doble|double wall|parede dupla|dupla)\b/.test(q)) return 'double';
+  if (/\b(pared simple|simple pared|single wall|parede simples|simples)\b/.test(q)) return 'single';
   return null;
 }
 
@@ -127,6 +127,11 @@ export async function searchProducts(query: string, organizationId?: string): Pr
     if (wall) {
       constrained = true;
       matches = matches.filter((item) => item.wallType === wall);
+    } else if ((typeof capacity.oz === 'number' || typeof capacity.ml === 'number') && matches.length > 1) {
+      const singleWall = matches.filter((item) => item.wallType === 'single');
+      if (singleWall.length === 1 && matches.some((item) => item.wallType === 'double')) {
+        matches = singleWall;
+      }
     }
 
     if (!constrained && q) {
