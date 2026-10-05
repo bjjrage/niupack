@@ -5,9 +5,10 @@ import { Plus, Search, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Avatar, Card, daysFromToday, Empty, fmtDateLabel, fmtMoneyShort, ownerName, Pill, Segmented, type Tone } from '../commercial-ui';
 import { PurchaseImporter } from '../PurchaseImporter';
+import { AccountListImporter } from '../AccountListImporter';
 import type { CompanyHealth, CompanyRow, CrmActions, CrmData } from '../types';
 
-type Seg = 'all' | 'customers' | 'prospects' | 'contact' | 'inactive';
+type Seg = 'customers' | 'prospects' | 'contact';
 
 export interface AccountStatus {
   tone: Tone;
@@ -18,25 +19,20 @@ export interface AccountStatus {
 
 /** Un único estado legible por cuenta, ordenado por urgencia comercial. */
 export function accountStatus(c: CompanyRow, h: CompanyHealth | undefined, openOpps: number, openTasks: number): AccountStatus {
-  const hasPurchases = Boolean(h?.last_purchase_date);
-  const isCustomer = c.lifecycle_stage === 'CUSTOMER' || hasPurchases;
-  if (h?.worst_status === 'OVERDUE') return { tone: 'danger', text: 'Recompra vencida', rank: 0 };
-  if (h?.worst_status === 'CONTACT_SOON') return { tone: 'warning', text: 'Contactar pronto', rank: 1 };
-  if (isCustomer) {
-    if (!hasPurchases) return { tone: 'warning', text: 'Cliente sin compras cargadas', rank: 3 };
-    const since = -(daysFromToday(h!.last_purchase_date) ?? 0);
-    if (since > 90) return { tone: 'neutral', text: `Sin comprar hace ${since} d`, rank: 4 };
-    return { tone: 'success', text: 'Cliente activo', rank: 6 };
-  }
-  if (openOpps > 0) return { tone: 'info', text: 'Prospecto en negociación', rank: 5 };
-  if (openTasks > 0) return { tone: 'info', text: 'Prospecto con contacto agendado', rank: 5 };
-  return { tone: 'neutral', text: 'Prospecto sin seguimiento', rank: 2 };
+  const isPotential = c.lifecycle_stage === 'PROSPECT' || !c.lifecycle_stage;
+  if (!isPotential) return { tone: 'success', text: 'Cliente actual', rank: 6 };
+  if (h?.worst_status === 'OVERDUE') return { tone: 'danger', text: 'Compra esperada vencida', rank: 0 };
+  if (h?.worst_status === 'CONTACT_SOON') return { tone: 'warning', text: 'Compra próxima', rank: 1 };
+  if (openOpps > 0) return { tone: 'info', text: 'Potencial en negociación', rank: 5 };
+  if (openTasks > 0) return { tone: 'info', text: 'Potencial con contacto agendado', rank: 5 };
+  return { tone: 'neutral', text: 'Potencial sin seguimiento', rank: 2 };
 }
 
 export function AccountsView({ data, actions, onNew }: { data: CrmData; actions: CrmActions; onNew: () => void }) {
-  const [seg, setSeg] = useState<Seg>('all');
+  const [seg, setSeg] = useState<Seg>('customers');
   const [q, setQ] = useState('');
-  const [importOpen, setImportOpen] = useState(false);
+  const [purchaseImportOpen, setPurchaseImportOpen] = useState(false);
+  const [listImportStage, setListImportStage] = useState<'CUSTOMER' | 'PROSPECT' | null>(null);
 
   const rows = useMemo(() => {
     const healthById = new Map(data.health.map((h) => [h.company_id, h]));
@@ -51,7 +47,8 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
           c,
           h,
           status,
-          isCustomer: c.lifecycle_stage === 'CUSTOMER' || Boolean(h?.last_purchase_date),
+          isCustomer: c.lifecycle_stage === 'CUSTOMER' || c.lifecycle_stage === 'INACTIVE',
+          isPotential: c.lifecycle_stage !== 'CUSTOMER' && c.lifecycle_stage !== 'INACTIVE',
           pipeline: open.reduce((a, o) => a + (o.estimated_value ?? 0), 0),
           openCount: open.length,
           nextTask: tasks.sort((a, b) => (a.due_at ?? '9').localeCompare(b.due_at ?? '9'))[0],
@@ -66,11 +63,9 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
 
   const counts = useMemo(
     () => ({
-      all: rows.length,
       customers: rows.filter((r) => r.isCustomer).length,
-      prospects: rows.filter((r) => !r.isCustomer).length,
-      contact: rows.filter((r) => r.status.rank <= 2).length,
-      inactive: rows.filter((r) => r.status.rank === 4).length,
+      prospects: rows.filter((r) => r.isPotential).length,
+      contact: rows.filter((r) => r.isPotential && r.status.rank <= 2).length,
     }),
     [rows],
   );
@@ -79,20 +74,17 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
     const t = q.trim().toLowerCase();
     return rows.filter((r) => {
       if (seg === 'customers' && !r.isCustomer) return false;
-      if (seg === 'prospects' && r.isCustomer) return false;
-      if (seg === 'contact' && r.status.rank > 2) return false;
-      if (seg === 'inactive' && r.status.rank !== 4) return false;
+      if (seg === 'prospects' && !r.isPotential) return false;
+      if (seg === 'contact' && (!r.isPotential || r.status.rank > 2)) return false;
       if (!t) return true;
       return `${r.c.name} ${r.c.legal_name ?? ''} ${r.c.tax_id ?? ''} ${r.place} ${r.owner} ${r.email ?? ''} ${r.phone ?? ''}`.toLowerCase().includes(t);
     });
   }, [rows, seg, q]);
 
   const emptyCopy: Record<Seg, { title: string; hint: string }> = {
-    all: { title: 'Todavía no hay cuentas', hint: 'Cargá tus clientes y prospectos para empezar.' },
-    customers: { title: 'No hay clientes', hint: 'Creá un cliente o importá el historial de compras: las empresas con compras pasan a ser clientes.' },
-    prospects: { title: 'No hay prospectos', hint: 'Cargá empresas a las que querés venderles. Las que llegan por WhatsApp se vinculan desde Conversaciones.' },
-    contact: { title: 'Nadie para contactar', hint: 'Acá aparecen recompras vencidas o próximas y prospectos sin seguimiento agendado.' },
-    inactive: { title: 'No hay clientes inactivos', hint: 'Clientes que no compran hace más de 90 días.' },
+    customers: { title: 'No hay clientes actuales', hint: 'Importá o creá las empresas que hoy ya son clientes de NIUPACK.' },
+    prospects: { title: 'No hay clientes potenciales', hint: 'Importá las empresas nuevas que querés prospectar.' },
+    contact: { title: 'Nadie para contactar', hint: 'Acá aparecen solamente clientes potenciales con compra esperada o sin seguimiento agendado.' },
   };
 
   return (
@@ -102,11 +94,9 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
           value={seg}
           onChange={setSeg}
           options={[
-            { key: 'all', label: 'Todas', count: counts.all },
-            { key: 'customers', label: 'Clientes', count: counts.customers },
-            { key: 'prospects', label: 'Prospectos', count: counts.prospects },
+            { key: 'customers', label: 'Clientes actuales', count: counts.customers },
+            { key: 'prospects', label: 'Clientes potenciales', count: counts.prospects },
             { key: 'contact', label: 'Para contactar', count: counts.contact },
-            { key: 'inactive', label: 'Inactivos', count: counts.inactive },
           ]}
         />
         <div className="relative min-w-[200px] flex-1">
@@ -118,11 +108,18 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
             className="w-full rounded-lg border border-slate-800 bg-[#0c0f14] py-2 pl-9 pr-3 text-sm text-white placeholder-slate-600 focus:border-brand-500 focus:outline-none"
           />
         </div>
-        <Button variant="secondary" size="md" onClick={() => setImportOpen(true)}>
-          <Upload className="h-4 w-4" /> Importar compras
-        </Button>
+        {seg !== 'contact' && (
+          <Button variant="secondary" size="md" onClick={() => setListImportStage(seg === 'customers' ? 'CUSTOMER' : 'PROSPECT')}>
+            <Upload className="h-4 w-4" /> {seg === 'customers' ? 'Importar clientes actuales' : 'Importar clientes potenciales'}
+          </Button>
+        )}
+        {seg === 'prospects' && (
+          <Button variant="secondary" size="md" onClick={() => setPurchaseImportOpen(true)}>
+            <Upload className="h-4 w-4" /> Importar historial de compras
+          </Button>
+        )}
         <Button variant="primary" size="md" onClick={onNew}>
-          <Plus className="h-4 w-4" /> {seg === 'prospects' || seg === 'contact' ? 'Prospecto' : 'Cuenta'}
+          <Plus className="h-4 w-4" /> {seg === 'customers' ? 'Cliente actual' : 'Cliente potencial'}
         </Button>
       </div>
 
@@ -134,7 +131,7 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
             action={
               !data.loading && !q && seg !== 'inactive' ? (
                 <Button variant="primary" size="sm" onClick={onNew}>
-                  <Plus className="h-3.5 w-3.5" /> {seg === 'customers' ? 'Nuevo cliente' : 'Nuevo prospecto'}
+                  <Plus className="h-3.5 w-3.5" /> {seg === 'customers' ? 'Nuevo cliente actual' : 'Nuevo cliente potencial'}
                 </Button>
               ) : undefined
             }
@@ -158,7 +155,7 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
                 {visible.map((r) => {
                   const next = r.h?.next_repurchase_at;
                   const nd = daysFromToday(next ?? r.nextTask?.due_at);
-                  const needsAction = r.status.rank <= 2 && !r.nextTask;
+                  const needsAction = r.isPotential && r.status.rank <= 2 && !r.nextTask;
                   return (
                     <tr key={r.c.id} onClick={() => actions.openAccount(r.c.id)} className="cursor-pointer hover:bg-slate-800/20">
                       <td className="px-5 py-3">
@@ -209,7 +206,7 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
                             onClick={() =>
                               actions.newTask({
                                 company_id: r.c.id,
-                                title: r.isCustomer ? `Llamar por recompra · ${r.c.name}` : `Primer contacto · ${r.c.name}`,
+                                title: r.h?.last_purchase_date ? `Contactar por compra esperada · ${r.c.name}` : `Primer contacto · ${r.c.name}`,
                                 task_type: 'CALL',
                                 assigned_to: r.c.owner_profile_id ?? undefined,
                               })
@@ -229,12 +226,24 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
       </Card>
 
       <PurchaseImporter
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        companies={data.companies.map((c) => ({ id: c.id, name: c.name }))}
+        open={purchaseImportOpen}
+        onClose={() => setPurchaseImportOpen(false)}
+        companies={data.companies
+          .filter((c) => c.lifecycle_stage === 'PROSPECT' || !c.lifecycle_stage)
+          .map((c) => ({ id: c.id, name: c.name }))}
         onImported={() => {
           actions.reload();
-          actions.notify('Compras importadas. Recompras recalculadas.');
+          actions.notify('Historial importado. Alertas de clientes potenciales recalculadas.');
+        }}
+      />
+
+      <AccountListImporter
+        open={Boolean(listImportStage)}
+        lifecycleStage={listImportStage ?? 'PROSPECT'}
+        onClose={() => setListImportStage(null)}
+        onImported={() => {
+          actions.reload();
+          actions.notify(listImportStage === 'CUSTOMER' ? 'Clientes actuales importados.' : 'Clientes potenciales importados.');
         }}
       />
     </div>
