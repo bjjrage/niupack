@@ -25,7 +25,7 @@ export const KPICard: React.FC<KPICardProps> = ({
 }) => {
   return (
     <div
-      className={`bg-[#141820] border ${
+      className={`niu-kpi bg-[#141820] border ${
         alert ? 'border-amber-600/50' : 'border-slate-800'
       } rounded p-4 flex flex-col justify-between ${className}`}
     >

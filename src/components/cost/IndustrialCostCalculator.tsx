@@ -448,7 +448,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
         <>
           <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_19rem] 2xl:grid-cols-[minmax(0,1fr)_21rem]">
           <section aria-label="Resumen de costos" className="min-w-0 space-y-3 xl:col-start-2 xl:row-start-1 xl:sticky xl:top-4">
-            <article className="relative overflow-hidden rounded-xl border border-brand-500/40 bg-[#161c26] p-4 shadow-sm sm:p-5">
+            <article className="niu-kpi relative overflow-hidden rounded-xl border border-brand-500/40 bg-[#161c26] p-4 shadow-sm sm:p-5">
               <span className="absolute inset-x-0 top-0 h-0.5 bg-brand-500" />
               <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-200">True Cost</div>
               <div className="mt-2 whitespace-nowrap font-mono text-xl font-bold tabular-nums text-white sm:text-2xl">
@@ -476,7 +476,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
               { label: 'Depreciación', value: rubricValues.depreciation },
               { label: 'Embalaje', value: rubricValues.packaging },
             ].map((metric) => (
-              <article key={metric.label} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-slate-800 bg-[#141820] px-4 py-3.5">
+              <article key={metric.label} className="niu-kpi flex min-w-0 items-center justify-between gap-3 rounded-xl border border-slate-800 bg-[#141820] px-4 py-3.5">
                 <span className="text-xs font-semibold text-slate-300">{metric.label}</span>
                 <span className="flex shrink-0 flex-col items-end font-mono text-xs font-semibold tabular-nums text-slate-100">
                   {(summaryCurrency !== 'PYG' || fxRate === null) && <span>${metric.value.toFixed(5)} /u</span>}
@@ -485,7 +485,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
               </article>
             ))}
 
-            <article className="rounded-xl border border-slate-800 bg-[#141820] px-4 py-3.5">
+            <article className="niu-kpi rounded-xl border border-slate-800 bg-[#141820] px-4 py-3.5">
               <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
                 <span className="font-semibold text-slate-300">Total del lote</span>
                 <span className="text-right font-mono font-semibold tabular-nums text-white">

@@ -450,7 +450,7 @@ function KpiStrip({ data, openTasks, overdue }: { data: CrmData; openTasks: Task
 
 function Kpi({ label: text, value, sub, accent, children }: { label: string; value: string; sub: string; accent?: 'success' | 'danger'; children: ReactNode }) {
   return (
-    <Card className="flex flex-col p-4">
+    <Card className="niu-kpi flex flex-col p-4">
       <p className="text-xs font-medium text-slate-400">{text}</p>
       <p className={`mt-1 text-2xl font-semibold tabular-nums tracking-tight ${accent === 'success' ? 'text-emerald-400' : 'text-white'}`}>{value}</p>
       <p className={`text-xs ${accent === 'danger' ? 'text-red-400' : 'text-slate-500'}`}>{sub}</p>

@@ -228,7 +228,7 @@ export function CampaignDrawer({ campaignId, data, actions, onClose, onChanged }
 function Stat({ k, v, sub, tone }: { k: string; v: number; sub: string; tone?: 'success' | 'warning' | 'danger' }) {
   const color = tone === 'success' ? 'text-emerald-400' : tone === 'warning' ? 'text-amber-400' : tone === 'danger' ? 'text-red-400' : 'text-white';
   return (
-    <div className="min-w-0">
+    <div className="niu-kpi min-w-0 rounded-md">
       <dt className="truncate text-xs text-slate-500">{k}</dt>
       <dd className={`mt-0.5 text-xl font-semibold tabular-nums ${color}`}>{v}</dd>
       <dd className="truncate text-[11px] text-slate-600">{sub}</dd>

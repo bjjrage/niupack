@@ -439,7 +439,7 @@ export function PricingStrategyClient({
 
       {/* KPI Cards: True Cost, Benchmark, Target Price, Gap, Margin */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
-        <div className="bg-[#141820] border border-slate-800 rounded-lg p-4">
+        <div className="niu-kpi bg-[#141820] border border-slate-800 rounded-lg p-4">
           <span className="text-[11px] text-slate-400 font-medium block">Costo Unitario Real</span>
           <span className="text-xl font-black text-white font-mono font-tabular mt-1 block">
             ${unitCost.toFixed(5)}
@@ -447,7 +447,7 @@ export function PricingStrategyClient({
           <span className="text-[10px] text-slate-500 font-mono mt-0.5 block">USD / u en planta</span>
         </div>
 
-        <div className="bg-[#141820] border border-slate-800 rounded-lg p-4">
+        <div className="niu-kpi bg-[#141820] border border-slate-800 rounded-lg p-4">
           <span className="text-[11px] text-slate-400 font-medium block">Benchmark Mercado ({selectedMarket})</span>
           <span className="text-xl font-bold text-sky-400 font-mono font-tabular mt-1 block">
             ${marketBenchmark.toFixed(4)}
@@ -455,7 +455,7 @@ export function PricingStrategyClient({
           <span className="text-[10px] text-slate-500 font-mono mt-0.5 block">Precio de referencia local</span>
         </div>
 
-        <div className="bg-[#141820] border border-brand-500/30 rounded-lg p-4 relative overflow-hidden">
+        <div className="niu-kpi bg-[#141820] border border-brand-500/30 rounded-lg p-4 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-16 h-16 bg-brand-500/10 rounded-full blur-xl" />
           <span className="text-[11px] text-brand-300 font-medium block">Target Price ({targetMarginPercent}% Margen)</span>
           <span className="text-xl font-black text-white font-mono font-tabular mt-1 block">
@@ -464,7 +464,7 @@ export function PricingStrategyClient({
           <span className="text-[10px] text-brand-400 font-mono mt-0.5 block">Margen: ${Number((targetPrice - unitCost).toFixed(4))} USD/u</span>
         </div>
 
-        <div className="bg-[#141820] border border-slate-800 rounded-lg p-4">
+        <div className="niu-kpi bg-[#141820] border border-slate-800 rounded-lg p-4">
           <span className="text-[11px] text-slate-400 font-medium block">Competitive Gap</span>
           <span
             className={`text-xl font-bold font-mono font-tabular mt-1 block ${
@@ -478,7 +478,7 @@ export function PricingStrategyClient({
           </span>
         </div>
 
-        <div className="bg-[#141820] border border-slate-800 rounded-lg p-4">
+        <div className="niu-kpi bg-[#141820] border border-slate-800 rounded-lg p-4">
           <span className="text-[11px] text-slate-400 font-medium block">Margen a Precio Benchmark</span>
           <span
             className={`text-xl font-bold font-mono font-tabular mt-1 block ${

@@ -333,7 +333,7 @@ export function ExportLogisticsClient() {
 
       {/* KPI Cards: Logistics & Landed Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-        <div className="bg-[#141820] border border-brand-500/40 rounded-lg p-4 relative overflow-hidden">
+        <div className="niu-kpi bg-[#141820] border border-brand-500/40 rounded-lg p-4 relative overflow-hidden">
           <span className="text-[11px] text-brand-300 font-bold uppercase tracking-wider block">
             COSTO PLANTA (EXW)
           </span>
@@ -351,7 +351,7 @@ export function ExportLogisticsClient() {
           </span>
         </div>
 
-        <div className="bg-[#141820] border border-slate-800 rounded-lg p-4">
+        <div className="niu-kpi bg-[#141820] border border-slate-800 rounded-lg p-4">
           <span className="text-[11px] text-slate-400 font-medium block">
             Flete Logístico Unitario ({activeTab})
           </span>
@@ -367,7 +367,7 @@ export function ExportLogisticsClient() {
           </span>
         </div>
 
-        <div className="bg-[#141820] border border-slate-800 rounded-lg p-4">
+        <div className="niu-kpi bg-[#141820] border border-slate-800 rounded-lg p-4">
           <span className="text-[11px] text-emerald-400 font-medium block">
             Costo Puesto en Destino (LANDED)
           </span>
@@ -383,7 +383,7 @@ export function ExportLogisticsClient() {
           </span>
         </div>
 
-        <div className="bg-[#141820] border border-slate-800 rounded-lg p-4">
+        <div className="niu-kpi bg-[#141820] border border-slate-800 rounded-lg p-4">
           <span className="text-[11px] text-slate-400 font-medium block">
             Volumen & Break-Even FCL
           </span>

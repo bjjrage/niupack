@@ -117,7 +117,7 @@ export default async function StrategyPage() {
 
               {/* Data Grid: 5 Core Dimensions */}
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-xs font-mono">
-                <div className="p-2.5 rounded bg-[#10141b] border border-slate-800">
+                <div className="niu-kpi p-2.5 rounded bg-[#10141b] border border-slate-800">
                   <span className="text-slate-500 text-[11px] block">Visibilidad AI:</span>
                   <span className="text-white font-bold font-tabular text-sm mt-0.5 block">
                     {row.visibility_score}%
@@ -125,7 +125,7 @@ export default async function StrategyPage() {
                   <span className="text-[10px] text-slate-500">ChatGPT Web</span>
                 </div>
 
-                <div className="p-2.5 rounded bg-[#10141b] border border-slate-800">
+                <div className="niu-kpi p-2.5 rounded bg-[#10141b] border border-slate-800">
                   <span className="text-slate-500 text-[11px] block">Benchmark Mercado:</span>
                   <span className="text-emerald-400 font-bold font-tabular text-sm mt-0.5 block">
                     ${row.market_benchmark_usd.toFixed(4)}
@@ -133,7 +133,7 @@ export default async function StrategyPage() {
                   <span className="text-[10px] text-slate-500">Conf: {Math.round(row.benchmark_confidence * 100)}%</span>
                 </div>
 
-                <div className="p-2.5 rounded bg-[#10141b] border border-slate-800">
+                <div className="niu-kpi p-2.5 rounded bg-[#10141b] border border-slate-800">
                   <span className="text-slate-500 text-[11px] block">Costo NIUPACK:</span>
                   <span className="text-white font-bold font-tabular text-sm mt-0.5 block">
                     ${row.niupack_cost_usd.toFixed(4)}
@@ -141,7 +141,7 @@ export default async function StrategyPage() {
                   <span className="text-[10px] text-slate-500">Planta Asunción</span>
                 </div>
 
-                <div className="p-2.5 rounded bg-[#10141b] border border-slate-800">
+                <div className="niu-kpi p-2.5 rounded bg-[#10141b] border border-slate-800">
                   <span className="text-slate-500 text-[11px] block">Precio Target (15%):</span>
                   <span className="text-white font-bold font-tabular text-sm mt-0.5 block">
                     ${row.target_price_usd.toFixed(4)}
@@ -149,7 +149,7 @@ export default async function StrategyPage() {
                   <span className="text-[10px] text-slate-500">USD / unidad</span>
                 </div>
 
-                <div className="p-2.5 rounded bg-[#10141b] border border-slate-800">
+                <div className="niu-kpi p-2.5 rounded bg-[#10141b] border border-slate-800">
                   <span className="text-slate-500 text-[11px] block">Brecha de Precio:</span>
                   <span
                     className={`font-bold font-tabular text-sm mt-0.5 block ${
@@ -163,7 +163,7 @@ export default async function StrategyPage() {
                   </span>
                 </div>
 
-                <div className="p-2.5 rounded bg-[#10141b] border border-slate-800">
+                <div className="niu-kpi p-2.5 rounded bg-[#10141b] border border-slate-800">
                   <span className="text-slate-500 text-[11px] block">Margen Bruto:</span>
                   <span className="text-white font-bold font-tabular text-sm mt-0.5 block">
                     {row.margin_percent}%

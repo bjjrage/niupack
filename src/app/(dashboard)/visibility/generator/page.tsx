@@ -313,25 +313,25 @@ export default function QueryGeneratorPage() {
 
       {/* Metric Counters Ribbon */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 font-mono">
-        <div className="bg-[#11161d] border border-slate-800 p-3 rounded">
+        <div className="niu-kpi bg-[#11161d] border border-slate-800 p-3 rounded">
           <div className="text-[11px] text-slate-400">MERCADOS FILTRADOS</div>
           <div className="text-lg font-bold text-white mt-1">
             {selectedMarkets.length} / 4 <span className="text-xs text-brand-400 font-sans">({selectedMarkets.join(', ')})</span>
           </div>
         </div>
-        <div className="bg-[#11161d] border border-slate-800 p-3 rounded">
+        <div className="niu-kpi bg-[#11161d] border border-slate-800 p-3 rounded">
           <div className="text-[11px] text-slate-400">QUERIES VISIBLES</div>
           <div className="text-lg font-bold text-emerald-400 mt-1">
             {filteredQueries.length} <span className="text-xs text-slate-500 font-sans">en tabla</span>
           </div>
         </div>
-        <div className="bg-[#11161d] border border-slate-800 p-3 rounded">
+        <div className="niu-kpi bg-[#11161d] border border-slate-800 p-3 rounded">
           <div className="text-[11px] text-slate-400">TOTAL EN BATERÍA</div>
           <div className="text-lg font-bold text-white mt-1">
             {queries.length} <span className="text-xs text-slate-500 font-sans">cargadas</span>
           </div>
         </div>
-        <div className="bg-[#11161d] border border-slate-800 p-3 rounded">
+        <div className="niu-kpi bg-[#11161d] border border-slate-800 p-3 rounded">
           <div className="text-[11px] text-slate-400">NUEVAS A GENERAR (N)</div>
           <div className="text-lg font-bold text-amber-400 mt-1">
             +{isCustom ? customCount : selectedCount} <span className="text-xs text-slate-500 font-sans">queries</span>

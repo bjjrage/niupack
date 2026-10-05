@@ -47,7 +47,7 @@ function statusIcon(status: Status) {
 
 function StatusCard({ title, status, detail }: { title: string; status: Status; detail: string }) {
   return (
-    <div className="p-4 bg-[#141820] border border-slate-800 rounded flex items-start gap-3">
+    <div className="niu-kpi p-4 bg-[#141820] border border-slate-800 rounded flex items-start gap-3">
       <div className="mt-0.5">{statusIcon(status)}</div>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
@@ -100,7 +100,7 @@ export default async function DiscoveryPage() {
           status={check.seo_readiness_status}
           detail={`${check.title ? 'Title' : 'Sin title'} · ${check.meta_description ? 'description' : 'sin description'} · ${check.h1_count} H1`}
         />
-        <div className="p-4 bg-[#141820] border border-slate-800 rounded flex items-start gap-3">
+        <div className="niu-kpi p-4 bg-[#141820] border border-slate-800 rounded flex items-start gap-3">
           <div className="mt-0.5">
             {check.future_domain_status === 'LIVE' ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <AlertTriangle className="h-4 w-4 text-amber-400" />}
           </div>

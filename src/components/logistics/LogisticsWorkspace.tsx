@@ -3,6 +3,7 @@
 import React, { FormEvent, useEffect, useState } from 'react';
 import { AlertTriangle, Anchor, History, Plus, Truck } from 'lucide-react';
 import type { LogisticsQuote, LogisticsRate, LogisticsRfq } from '@/lib/logistics/domain';
+import type { CargoFiveRateOption, CargoFivePlace } from '@/lib/logistics/cargofive-provider';
 import type { Supplier } from '@/types';
 
 type View = 'overview' | 'ocean' | 'road' | 'providers' | 'history';
@@ -29,7 +30,7 @@ export function LogisticsWorkspace({ view }: { view: View }) {
     const open = rfqs.filter((item) => ['OPEN','PARTIALLY_RESPONDED'].includes(item.status)).length;
     const pending = Math.max(0, open - quotes.length); const expiring = rates.filter((rate) => rate.valid_until && new Date(rate.valid_until).getTime() > Date.now() && new Date(rate.valid_until).getTime() < Date.now()+7*86400000).length;
     const selected = rates.filter((rate) => rate.status === 'SELECTED').length;
-    return shell(<div className="grid gap-4 md:grid-cols-4">{[['RFQs abiertos',open],['Respuestas pendientes',pending],['Tarifas por vencer',expiring],['Tarifas seleccionadas',selected]].map(([label,value]) => <div key={label} className="rounded-lg border border-slate-800 bg-[#141820] p-4"><span className="text-xs text-slate-400">{label}</span><div className="mt-2 text-2xl font-bold text-white">{value || 'Sin datos'}</div></div>)}</div>);
+    return shell(<div className="grid gap-4 md:grid-cols-4">{[['RFQs abiertos',open],['Respuestas pendientes',pending],['Tarifas por vencer',expiring],['Tarifas seleccionadas',selected]].map(([label,value]) => <div key={label} className="niu-kpi rounded-lg border border-slate-800 bg-[#141820] p-4"><span className="text-xs text-slate-400">{label}</span><div className="mt-2 text-2xl font-bold text-white">{value || 'Sin datos'}</div></div>)}</div>);
   }
 
   if (view === 'road') return shell(<RoadPanel rfqs={rfqs} quotes={quotes} suppliers={suppliers} reload={load} setFeedback={setFeedback}/>);
@@ -191,11 +192,180 @@ export function RoadPanel({ rfqs, quotes, suppliers, reload, setFeedback }: { rf
     <div className="overflow-x-auto rounded-lg border border-slate-800 bg-[#141820] p-5"><h2 className="mb-3 font-bold text-white">Comparador terrestre</h2>{quotes.length===0?<p className="text-sm text-slate-500">Sin respuestas.</p>:<table className="w-full text-xs"><thead className="text-left text-slate-400"><tr><th>Proveedor</th><th>Precio</th><th>Normalizado</th><th>Transit</th><th>Vigencia</th><th>Incluye / No incluye</th><th>Estado</th><th></th></tr></thead><tbody>{quotes.map((q)=><tr key={q.id} className="border-t border-slate-800 text-slate-200"><td className="py-3">{q.supplier_name}</td><td>{q.currency} {q.quoted_total}</td><td>{q.normalized_total??'Pendiente FX'}</td><td>{q.transit_days} días</td><td>{q.valid_until||'No informada'}</td><td>{q.main_freight!==undefined?'Flete principal':'Flete no desglosado'}</td><td>{q.status}</td><td><button onClick={()=>select(q.id)} className="rounded bg-red-600 px-2 py-1">Seleccionar</button></td></tr>)}</tbody></table>}</div></div>;
 }
 
-function OceanPanel({ rates, reload, setFeedback }: { rates: LogisticsRate[]; reload:()=>Promise<void>; setFeedback:(v:string)=>void }) {
-  const [apiStatus,setApiStatus]=useState('Sin consultar'); const input='rounded border border-slate-700 bg-[#0c0f14] px-3 py-2 text-xs text-white';
-  async function search(){const res=await fetch('/api/logistics/ocean/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({origin:{country:'China',port:'Shanghai'},destination:{country:'Paraguay',port:'Asunción'},shipment_date:new Date().toISOString().slice(0,10),load_type:'FCL',equipment:'40HC',weight_kg:0,volume_m3:0})});const data=await res.json();setApiStatus(`${data.status}: ${data.message||`${data.rates.length} tarifas`}`);}
-  async function manual(event:FormEvent<HTMLFormElement>){event.preventDefault();const f=new FormData(event.currentTarget);const res=await fetch('/api/logistics/rates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({origin:{country:f.get('origin')},destination:{country:f.get('destination')},mode:'OCEAN',amount:Number(f.get('amount')),currency:f.get('currency'),equipment:f.get('equipment'),valid_until:f.get('valid_until'),status:'CONFIRMED'})});const data=await res.json();setFeedback(res.ok?`Tarifa manual ${data.rate.id} guardada.`:data.error);await reload();}
-  return <div className="space-y-6"><div className="rounded-lg border border-slate-800 bg-[#141820] p-5"><h2 className="flex items-center gap-2 font-bold text-white"><Anchor className="h-4 w-4"/> SeaRates API-first</h2><p className="my-3 text-xs text-slate-400">No se muestran tarifas ficticias. Sin credencial, el adaptador responde NOT_CONFIGURED.</p><button onClick={search} className="rounded bg-red-600 px-4 py-2 text-xs font-bold">Consultar SeaRates</button><span className="ml-3 text-xs text-amber-300">{apiStatus}</span></div><form onSubmit={manual} className="rounded-lg border border-slate-800 bg-[#141820] p-5"><h2 className="mb-3 font-bold text-white">Tarifa manual / contractual</h2><div className="grid gap-3 md:grid-cols-3"><input required name="origin" placeholder="Origen" className={input}/><input required name="destination" placeholder="Destino" className={input}/><select name="equipment" className={input}><option>20GP</option><option>40GP</option><option>40HC</option><option>LCL</option></select><input required name="amount" type="number" step="0.01" placeholder="Importe" className={input}/><select name="currency" className={input}><option>USD</option><option>PYG</option></select><input name="valid_until" type="date" className={input}/></div><button className="mt-4 rounded bg-slate-700 px-4 py-2 text-xs font-bold">Guardar tarifa real</button></form><HistoryPanel rates={rates.filter(r=>r.mode==='OCEAN')}/></div>;
+function PlacePicker({ label, value, onSelect }: { label: string; value: CargoFivePlace | null; onSelect: (place: CargoFivePlace | null) => void }) {
+  const [query, setQuery] = useState(value?.display_name ?? '');
+  const [places, setPlaces] = useState<CargoFivePlace[]>([]);
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const term = query.trim();
+    if (term.length < 4 || value?.display_name === term) {
+      setPlaces([]);
+      setLoading(false);
+      setMessage(term.length > 0 && term.length < 4 ? 'Ingresá al menos 4 caracteres.' : '');
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setLoading(true);
+      setMessage('');
+      try {
+        const response = await fetch(`/api/logistics/ocean/places?search=${encodeURIComponent(term)}`, { signal: controller.signal });
+        const data = await response.json();
+        setPlaces(data.places ?? []);
+        setMessage(data.message ?? ((data.places?.length ?? 0) === 0 ? 'No se encontraron puertos o lugares.' : ''));
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') return;
+        setPlaces([]);
+        setMessage('No fue posible buscar puertos y lugares en este momento.');
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }, 350);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [query, value?.display_name]);
+
+  const field = 'box-border h-9 w-full rounded border border-slate-700 bg-[#0c0f14] px-3 text-xs text-white';
+  return <label className="relative block space-y-1 text-xs text-slate-300">
+    <span>{label} *</span>
+    <input value={query} autoComplete="off" onChange={(event) => { setQuery(event.target.value); onSelect(null); }} className={field} placeholder="Buscar puerto o lugar (4+ caracteres)" />
+    {loading && <span className="mt-1 block text-slate-500">Buscando en el proveedor…</span>}
+    {!loading && message && <span className="mt-1 block text-slate-500">{message}</span>}
+    {places.length > 0 && <div className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded border border-slate-700 bg-[#10141b] shadow-xl">
+      {places.map((place) => <button type="button" key={`${place.place_type_id}:${place.id}`} onClick={() => { onSelect(place); setQuery(place.display_name); setPlaces([]); setMessage(''); }} className="block w-full border-b border-slate-800 px-3 py-2 text-left hover:bg-slate-800">
+        <span className="block text-xs text-white">{place.display_name}</span>
+        <span className="text-[10px] text-slate-500">{place.place_type_id === 1 ? 'Puerto' : 'Lugar'}{place.unlocode ? ` · ${place.unlocode}` : ''}{place.country_name ? ` · ${place.country_name}` : ''}</span>
+      </button>)}
+    </div>}
+  </label>;
 }
 
-function HistoryPanel({ rates }: { rates: LogisticsRate[] }) { const values=rates.map(r=>r.amount); const avg=(days:number)=>{const floor=Date.now()-days*86400000;const scoped=rates.filter(r=>new Date(r.created_at).getTime()>=floor);return scoped.length?scoped.reduce((s,r)=>s+r.amount,0)/scoped.length:undefined}; return <div className="rounded-lg border border-slate-800 bg-[#141820] p-5"><h2 className="mb-4 flex items-center gap-2 font-bold text-white"><History className="h-4 w-4"/> Histórico de tarifas</h2><div className="mb-4 grid gap-3 md:grid-cols-4">{[['Promedio 30 días',avg(30)],['Promedio 90 días',avg(90)],['Mínimo',values.length?Math.min(...values):undefined],['Máximo',values.length?Math.max(...values):undefined]].map(([l,v])=><div key={String(l)} className="rounded border border-slate-800 p-3 text-xs text-slate-400">{l}<strong className="mt-1 block text-white">{typeof v==='number'?v.toFixed(2):'Sin datos'}</strong></div>)}</div>{rates.length===0?<p className="text-sm text-slate-500">Sin datos.</p>:<div className="space-y-2">{rates.map(r=><div key={r.id} className="grid grid-cols-6 gap-2 border-t border-slate-800 py-2 text-xs"><span>{r.origin.city||r.origin.port||r.origin.country} → {r.destination.city||r.destination.port||r.destination.country}</span><span>{r.mode}</span><span>{r.equipment}</span><span>{r.currency} {r.amount}</span><span>{r.source}</span><span>{r.status}</span></div>)}</div>}</div>; }
+function OceanPanel({ rates, reload, setFeedback }: { rates: LogisticsRate[]; reload:()=>Promise<void>; setFeedback:(v:string)=>void }) {
+  const [origin, setOrigin] = useState<CargoFivePlace | null>(null);
+  const [destination, setDestination] = useState<CargoFivePlace | null>(null);
+  const [departureDate, setDepartureDate] = useState(new Date().toISOString().slice(0, 10));
+  const [equipment, setEquipment] = useState<'20GP' | '40GP' | '40HC'>('40HC');
+  const [quantity, setQuantity] = useState(1);
+  const [weight, setWeight] = useState('');
+  const [quotes, setQuotes] = useState<CargoFiveRateOption[]>([]);
+  const [status, setStatus] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [selecting, setSelecting] = useState('');
+  const input = 'box-border h-9 w-full rounded border border-slate-700 bg-[#0c0f14] px-3 text-xs text-white';
+
+  async function search(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!origin || !destination) { setStatus('Seleccioná un origen y un destino de la lista del proveedor.'); return; }
+    if (!weight || Number(weight) <= 0) { setStatus('Ingresá el peso bruto por contenedor requerido para FCL.'); return; }
+    setSearching(true);
+    setQuotes([]);
+    setStatus('Consultando tarifas marítimas en vivo…');
+    try {
+      const response = await fetch('/api/logistics/ocean/search', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin: { provider_place_id: origin.id, place_type_id: origin.place_type_id, country: origin.country_name || origin.display_name, city: origin.display_name, port: origin.display_name, display_name: origin.display_name, unlocode: origin.unlocode },
+          destination: { provider_place_id: destination.id, place_type_id: destination.place_type_id, country: destination.country_name || destination.display_name, city: destination.display_name, port: destination.display_name, display_name: destination.display_name, unlocode: destination.unlocode },
+          shipment_date: departureDate, load_type: 'FCL', equipment, quantity, weight_kg: Number(weight), volume_m3: 0,
+        }),
+      });
+      const data = await response.json();
+      setQuotes(data.rates ?? []);
+      setStatus(data.message ?? ((data.rates?.length ?? 0) > 0 ? `${data.rates.length} tarifas encontradas.` : 'No se encontraron tarifas para la ruta y fecha seleccionadas.'));
+    } catch {
+      setStatus('No fue posible obtener tarifas marítimas en este momento.');
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function selectQuote(quote: CargoFiveRateOption) {
+    if (!quote.selection_token || selecting) return;
+    setSelecting(quote.provider_rate_id);
+    try {
+      const response = await fetch('/api/logistics/ocean/select', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selection_token: quote.selection_token }),
+      });
+      const data = await response.json();
+      if (!response.ok) { setFeedback(data.error === 'EXPIRED_SELECTION' ? 'La selección venció; volvé a consultar tarifas.' : data.error === 'RATE_EXPIRED' ? 'La tarifa ya no está vigente.' : 'No se pudo guardar la tarifa seleccionada.'); return; }
+      setFeedback(`Tarifa de ${quote.carrier_name} guardada en el histórico.`);
+      setQuotes((current) => current.filter((item) => item.provider_rate_id !== quote.provider_rate_id));
+      await reload();
+    } catch {
+      setFeedback('No se pudo guardar la tarifa seleccionada.');
+    } finally {
+      setSelecting('');
+    }
+  }
+
+  async function manual(event:FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const f=new FormData(event.currentTarget);
+    const res=await fetch('/api/logistics/rates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({origin:{country:f.get('origin')},destination:{country:f.get('destination')},mode:'OCEAN',amount:Number(f.get('amount')),currency:f.get('currency'),equipment:f.get('equipment'),valid_until:f.get('valid_until'),status:'CONFIRMED'})});
+    const data=await res.json();
+    setFeedback(res.ok?`Tarifa manual ${data.rate.id} guardada.`:data.error);
+    await reload();
+  }
+
+  return <div className="space-y-5">
+    <section className="rounded-lg border border-slate-800 bg-[#141820] p-4">
+      <h2 className="flex items-center gap-2 font-bold text-white"><Anchor className="h-4 w-4"/> Tarifas marítimas en vivo</h2>
+      <p className="my-2 text-xs text-slate-400">Buscá puertos o lugares válidos y compará tarifas FCL reales. No se generan tarifas estimadas.</p>
+      <form onSubmit={search} className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <div className="xl:col-span-2"><PlacePicker label="Origen" value={origin} onSelect={setOrigin}/></div>
+        <div className="xl:col-span-2"><PlacePicker label="Destino" value={destination} onSelect={setDestination}/></div>
+        <label className="space-y-1 text-xs text-slate-300"><span>Salida *</span><input required type="date" value={departureDate} onChange={(event)=>setDepartureDate(event.target.value)} className={input}/></label>
+        <label className="space-y-1 text-xs text-slate-300"><span>Contenedor *</span><select value={equipment} onChange={(event)=>setEquipment(event.target.value as typeof equipment)} className={input}><option value="20GP">20GP</option><option value="40GP">40GP</option><option value="40HC">40HC</option></select></label>
+        <label className="space-y-1 text-xs text-slate-300"><span>Cantidad *</span><input required min="1" max="100" type="number" value={quantity} onChange={(event)=>setQuantity(Number(event.target.value))} className={input}/></label>
+        <label className="space-y-1 text-xs text-slate-300"><span>Peso bruto / contenedor (kg) *</span><input required min="1" max="100000" step="1" type="number" value={weight} onChange={(event)=>setWeight(event.target.value)} className={input} placeholder="Peso real"/></label>
+        <div className="flex items-end"><button type="submit" disabled={searching} className="h-9 rounded bg-red-600 px-4 text-xs font-bold text-white disabled:opacity-50">{searching?'Consultando…':'Buscar tarifas'}</button></div>
+      </form>
+      {status && <p role="status" className="mt-3 text-xs text-slate-300">{status}</p>}
+    </section>
+
+    {quotes.length > 0 && <section className="overflow-x-auto rounded-lg border border-slate-800 bg-[#141820]">
+      <table className="w-full min-w-[980px] text-left text-xs">
+        <thead className="text-[10px] uppercase tracking-wide text-slate-500"><tr><th className="p-3">Naviera / Servicio</th><th className="p-3">Ruta</th><th className="p-3">Equipo</th><th className="p-3">Salida</th><th className="p-3">Tránsito</th><th className="p-3">Cargos / total</th><th className="p-3">Fuente</th><th className="p-3"></th></tr></thead>
+        <tbody>{quotes.map((quote)=><tr key={quote.provider_rate_id || `${quote.carrier_name}:${quote.origin}`} className="border-t border-slate-800 align-top text-slate-300">
+          <td className="p-3"><strong className="text-white">{quote.carrier_name}</strong>{quote.carrier_code&&<span className="ml-1 text-slate-500">{quote.carrier_code}</span>}{quote.service&&<span className="block mt-1 text-slate-500">{quote.service}</span>}</td>
+          <td className="p-3">{quote.origin.display_name||quote.origin.port||quote.origin.country}{quote.origin_code?` (${quote.origin_code})`:''}<span className="mx-1 text-slate-600">→</span>{quote.destination.display_name||quote.destination.port||quote.destination.country}{quote.destination_code?` (${quote.destination_code})`:''}</td>
+          <td className="p-3">{quote.quantity} × {quote.equipment}</td>
+          <td className="p-3">{quote.departure_date}</td>
+          <td className="p-3">{quote.transit_days===undefined?'—':`${quote.transit_days} días`}</td>
+          <td className="max-w-sm p-3">{quote.amount!==undefined&&quote.currency?<strong className="text-white">{quote.currency} {quote.amount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</strong>:<strong className="text-amber-300">Sin total comparable</strong>}
+            {quote.charges.length>0&&<details className="mt-1 text-[10px] text-slate-500"><summary className="cursor-pointer">Ver cargos ({quote.charges.length})</summary><div className="mt-1 space-y-1">{quote.charges.map((charge,index)=><div key={`${charge.name}:${index}`}>{charge.name} · {charge.category}: {charge.amount===undefined?'—':charge.amount.toLocaleString()} {charge.currency}{charge.rate_basis?` · ${charge.rate_basis}`:''}</div>)}</div></details>}
+            {quote.unavailable_reason&&<span className="mt-1 block text-[10px] text-amber-300">{quote.unavailable_reason}</span>}
+          </td>
+          <td className="p-3">CargoFive {quote.source_type?`· ${quote.source_type}`:''}</td>
+          <td className="p-3"><button type="button" disabled={!quote.selectable||!quote.selection_token||Boolean(selecting)} onClick={()=>selectQuote(quote)} className="whitespace-nowrap rounded bg-slate-700 px-3 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">{selecting===quote.provider_rate_id?'Guardando…':'Seleccionar'}</button></td>
+        </tr>)}</tbody>
+      </table>
+    </section>}
+
+    <form onSubmit={manual} className="rounded-lg border border-slate-800 bg-[#141820] p-4">
+      <h2 className="mb-3 font-bold text-white">Tarifa manual / contractual</h2>
+      <div className="grid gap-3 md:grid-cols-3"><input required name="origin" placeholder="Origen" className={input}/><input required name="destination" placeholder="Destino" className={input}/><select name="equipment" className={input}><option>20GP</option><option>40GP</option><option>40HC</option><option>LCL</option></select><input required name="amount" type="number" min="0" step="0.01" placeholder="Importe" className={input}/><select name="currency" className={input}><option>USD</option><option>PYG</option></select><input name="valid_until" type="date" className={input}/></div>
+      <button className="mt-4 rounded bg-slate-700 px-4 py-2 text-xs font-bold text-white">Guardar tarifa real</button>
+    </form>
+    <HistoryPanel rates={rates.filter(r=>r.mode==='OCEAN')}/>
+  </div>;
+}
+
+function HistoryPanel({ rates }: { rates: LogisticsRate[] }) {
+  const currencies=[...new Set(rates.map((rate)=>rate.currency))].sort();
+  const summary=(currency:string)=>{
+    const scoped=rates.filter((rate)=>rate.currency===currency);
+    const recent=(days:number)=>{const floor=Date.now()-days*86400000;const rows=scoped.filter((rate)=>new Date(rate.created_at).getTime()>=floor);return rows.length?rows.reduce((sum,rate)=>sum+rate.amount,0)/rows.length:undefined;};
+    const values=scoped.map((rate)=>rate.amount);
+    return {currency,avg30:recent(30),avg90:recent(90),min:values.length?Math.min(...values):undefined,max:values.length?Math.max(...values):undefined};
+  };
+  const summaries=currencies.map(summary);
+  return <div className="rounded-lg border border-slate-800 bg-[#141820] p-4">
+    <h2 className="mb-4 flex items-center gap-2 font-bold text-white"><History className="h-4 w-4"/> Histórico de tarifas</h2>
+    {summaries.length>0&&<div className="mb-4 space-y-2">{summaries.map((row)=><div key={row.currency} className="grid gap-2 sm:grid-cols-5">
+      {[['Moneda',row.currency],['Promedio 30 días',row.avg30],['Promedio 90 días',row.avg90],['Mínimo',row.min],['Máximo',row.max]].map(([label,value])=><div key={String(label)} className="rounded border border-slate-800 p-2 text-[10px] text-slate-500">{label}<strong className="mt-1 block text-xs text-white">{typeof value==='number'?value.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):String(value)}</strong></div>)}
+    </div>)}</div>}
+    {rates.length===0?<p className="text-sm text-slate-500">Sin datos.</p>:<div className="overflow-x-auto"><div className="min-w-[720px] space-y-2">{rates.map((rate)=><div key={rate.id} className="grid grid-cols-7 gap-2 border-t border-slate-800 py-2 text-xs text-slate-400"><span>{rate.origin.display_name||rate.origin.city||rate.origin.port||rate.origin.country} → {rate.destination.display_name||rate.destination.city||rate.destination.port||rate.destination.country}</span><span>{rate.mode}</span><span>{rate.equipment}</span><span>{rate.currency} {rate.amount.toLocaleString()}</span><span>{rate.components.provider_metadata?.carrier_name||rate.source}</span><span>{rate.status}</span><span>{rate.valid_until||'—'}</span></div>)}</div></div>}
+  </div>;
+}
