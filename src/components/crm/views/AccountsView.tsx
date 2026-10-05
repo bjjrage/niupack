@@ -129,7 +129,7 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
             title={data.loading ? 'Cargando cuentas…' : q ? 'Sin coincidencias' : emptyCopy[seg].title}
             hint={data.loading || q ? undefined : emptyCopy[seg].hint}
             action={
-              !data.loading && !q && seg !== 'inactive' ? (
+              !data.loading && !q ? (
                 <Button variant="primary" size="sm" onClick={onNew}>
                   <Plus className="h-3.5 w-3.5" /> {seg === 'customers' ? 'Nuevo cliente actual' : 'Nuevo cliente potencial'}
                 </Button>
