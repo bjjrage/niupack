@@ -160,7 +160,7 @@ describe('tareas de recompra idempotentes', () => {
     const c = await crmRepository.createCompany({
       organization_id: ORG, name: 'ACME', legal_name: null, tax_id: null, external_id: null,
       country_code: 'BR', city: null, website: null, phone: null, email: null,
-      source: 'MANUAL', notes: null, owner_profile_id: owner, lifecycle_stage: 'CUSTOMER',
+      source: 'MANUAL', notes: null, owner_profile_id: owner, lifecycle_stage: 'PROSPECT',
     });
     await seedPurchases(c.id, 'VP12', ['2026-07-10', '2026-08-09', '2026-09-08']);
     const t1 = await purchaseService.generateTasks(ORG, undefined, new Date('2026-10-03T12:00:00Z').getTime());
@@ -180,7 +180,7 @@ describe('tareas de recompra idempotentes', () => {
     const c = await crmRepository.createCompany({
       organization_id: ORG, name: 'Sin dueño', legal_name: null, tax_id: null, external_id: null,
       country_code: 'BR', city: null, website: null, phone: null, email: null,
-      source: 'MANUAL', notes: null, owner_profile_id: null, lifecycle_stage: 'CUSTOMER',
+      source: 'MANUAL', notes: null, owner_profile_id: null, lifecycle_stage: 'PROSPECT',
     });
     await seedPurchases(c.id, 'VP12', ['2026-07-10', '2026-08-09', '2026-09-08']);
     await purchaseService.generateTasks(ORG, undefined, new Date('2026-10-03T12:00:00Z').getTime());

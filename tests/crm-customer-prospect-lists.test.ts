@@ -67,4 +67,76 @@ describe('CRM current vs potential customers', () => {
     expect(alerts.length).toBeGreaterThan(0);
     expect(new Set(alerts.map((a) => a.company_id))).toEqual(new Set([potential.id]));
   });
+
+  it('enforces tenant isolation across organizations', async () => {
+    const ORG_B = '00000000-0000-0000-0000-00000000bb02';
+    await commitAccountList(ORG, { lifecycleStage: 'CUSTOMER', rows: [row(0, 'Tenant A Co')] });
+    await commitAccountList(ORG_B, { lifecycleStage: 'PROSPECT', rows: [row(0, 'Tenant B Co')] });
+
+    const orgACompanies = await crmRepository.listCompanies(ORG);
+    const orgBCompanies = await crmRepository.listCompanies(ORG_B);
+
+    expect(orgACompanies.map((c) => c.name)).toEqual(['Tenant A Co']);
+    expect(orgBCompanies.map((c) => c.name)).toEqual(['Tenant B Co']);
+    expect(orgACompanies.some((c) => c.name === 'Tenant B Co')).toBe(false);
+  });
+
+  it('accepts CSV and XLSX buffers for preview', async () => {
+    const { previewAccountList } = await import('@/lib/crm/account-import');
+    const XLSX = await import('xlsx');
+
+    // Test CSV preview
+    const csvContent = 'Empresa,Contacto,Email,Telefono\nAcme Corp,Carlos Ruiz,carlos@acme.com,+595981111222\n';
+    const csvBuffer = Buffer.from(csvContent, 'utf-8');
+    const csvPreview = await previewAccountList({ buffer: csvBuffer, filename: 'leads.csv' });
+
+    expect(csvPreview.columns).toContain('Empresa');
+    expect(csvPreview.rows).toHaveLength(1);
+    expect(csvPreview.rows[0].company_name).toBe('Acme Corp');
+    expect(csvPreview.rows[0].contact_name).toBe('Carlos Ruiz');
+    expect(csvPreview.rows[0].email).toBe('carlos@acme.com');
+    expect(csvPreview.rows[0].errors).toHaveLength(0);
+
+    // Test XLSX preview
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['Empresa', 'Contacto', 'Email', 'Telefono'],
+      ['Beta SRL', 'Ana Gomez', 'ana@beta.com', '+595982333444'],
+    ]);
+    XLSX.utils.book_append_sheet(wb, ws, 'Hoja1');
+    const xlsxBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const xlsxPreview = await previewAccountList({ buffer: xlsxBuffer, filename: 'leads.xlsx' });
+
+    expect(xlsxPreview.rows).toHaveLength(1);
+    expect(xlsxPreview.rows[0].company_name).toBe('Beta SRL');
+    expect(xlsxPreview.rows[0].errors).toHaveLength(0);
+  });
+
+  it('handles invalid rows gracefully without breaking valid ones and reports errors', async () => {
+    const mixedRows: AccountImportRow[] = [
+      row(0, 'Empresa Valida Uno'),
+      {
+        index: 1,
+        company_name: '', // Invalid: missing company name
+        contact_name: null,
+        phone: null,
+        email: 'invalid-email',
+        country_code: null,
+        city: null,
+        tax_id: null,
+        website: null,
+        errors: ['Empresa requerida', 'Email inválido'],
+      },
+      row(2, 'Empresa Valida Dos'),
+    ];
+
+    const result = await commitAccountList(ORG, { lifecycleStage: 'PROSPECT', rows: mixedRows });
+
+    expect(result.created).toBe(2);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].index).toBe(1);
+
+    const companies = await crmRepository.listCompanies(ORG);
+    expect(companies.map((c) => c.name).sort()).toEqual(['Empresa Valida Dos', 'Empresa Valida Uno']);
+  });
 });
