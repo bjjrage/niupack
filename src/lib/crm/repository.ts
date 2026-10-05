@@ -105,12 +105,12 @@ export const crmRepository = {
         .select('*')
         .eq('organization_id', organizationId)
         .order('updated_at', { ascending: false })
-        .limit(200);
+        .limit(2000);
       if (error) throw new Error(`crm_companies: ${error.message}`);
       return (data ?? []) as CrmCompany[];
     }
     if (mode() === 'NOT_CONFIGURED') return [];
-    return mem().companies.filter((c) => c.organization_id === organizationId).slice(0, 200);
+    return mem().companies.filter((c) => c.organization_id === organizationId).slice(0, 2000);
   },
 
   async getCompany(id: string, organizationId: string): Promise<CrmCompany | undefined> {
@@ -168,14 +168,14 @@ export const crmRepository = {
   async listContacts(organizationId: string, companyId?: string): Promise<CrmContact[]> {
     mustOrg(organizationId);
     if (mode() === 'SUPABASE' && supabaseAdmin) {
-      let q = supabaseAdmin.from('crm_contacts').select('*').eq('organization_id', organizationId).order('updated_at', { ascending: false }).limit(300);
+      let q = supabaseAdmin.from('crm_contacts').select('*').eq('organization_id', organizationId).order('updated_at', { ascending: false }).limit(3000);
       if (companyId) q = q.eq('company_id', companyId);
       const { data, error } = await q;
       if (error) throw new Error(`crm_contacts: ${error.message}`);
       return (data ?? []) as CrmContact[];
     }
     if (mode() === 'NOT_CONFIGURED') return [];
-    return mem().contacts.filter((c) => c.organization_id === organizationId && (!companyId || c.company_id === companyId)).slice(0, 300);
+    return mem().contacts.filter((c) => c.organization_id === organizationId && (!companyId || c.company_id === companyId)).slice(0, 3000);
   },
 
   async getContact(id: string, organizationId: string): Promise<CrmContact | undefined> {
