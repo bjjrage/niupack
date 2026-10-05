@@ -14,11 +14,36 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'INVALID_FORMAT' }, { status: 400 });
     }
 
+    const overrideSheetName = form.get('sheet_name')?.toString();
+    const overrideHeaderRowIndexStr = form.get('header_row_index')?.toString();
+    const overrideHeaderRowIndex =
+      overrideHeaderRowIndexStr !== undefined && overrideHeaderRowIndexStr !== ''
+        ? parseInt(overrideHeaderRowIndexStr, 10)
+        : undefined;
+
+    const overrideMappingStr = form.get('mapping')?.toString();
+    let overrideMapping: Record<string, number | null> | undefined;
+    if (overrideMappingStr) {
+      try {
+        overrideMapping = JSON.parse(overrideMappingStr);
+      } catch {
+        // ignore parse error, fallback
+      }
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer());
-    const preview = await previewAccountList({ buffer, filename: file.name });
+    const preview = await previewAccountList({
+      buffer,
+      filename: file.name,
+      overrideSheetName,
+      overrideHeaderRowIndex: overrideHeaderRowIndex !== undefined && !isNaN(overrideHeaderRowIndex)
+        ? overrideHeaderRowIndex
+        : undefined,
+      overrideMapping,
+    });
     return NextResponse.json(preview);
   } catch (error) {
-    if (error instanceof Error && ['EMPTY_FILE', 'FILE_TOO_LARGE', 'COMPANY_COLUMN_REQUIRED'].includes(error.message)) {
+    if (error instanceof Error && ['EMPTY_FILE', 'FILE_TOO_LARGE'].includes(error.message)) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
     return authErrorResponse(error);

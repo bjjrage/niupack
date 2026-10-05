@@ -85,10 +85,14 @@ describe('CRM current vs potential customers', () => {
     const { previewAccountList } = await import('@/lib/crm/account-import');
     const XLSX = await import('xlsx');
 
-    // Test CSV preview
+    // Test CSV preview with deterministic mapping
     const csvContent = 'Empresa,Contacto,Email,Telefono\nAcme Corp,Carlos Ruiz,carlos@acme.com,+595981111222\n';
     const csvBuffer = Buffer.from(csvContent, 'utf-8');
-    const csvPreview = await previewAccountList({ buffer: csvBuffer, filename: 'leads.csv' });
+    const csvPreview = await previewAccountList({
+      buffer: csvBuffer,
+      filename: 'leads.csv',
+      overrideMapping: { company_name: 0, contact_name: 1, email: 2, phone: 3 },
+    });
 
     expect(csvPreview.columns).toContain('Empresa');
     expect(csvPreview.rows).toHaveLength(1);
@@ -97,7 +101,7 @@ describe('CRM current vs potential customers', () => {
     expect(csvPreview.rows[0].email).toBe('carlos@acme.com');
     expect(csvPreview.rows[0].errors).toHaveLength(0);
 
-    // Test XLSX preview
+    // Test XLSX preview with deterministic mapping
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([
       ['Empresa', 'Contacto', 'Email', 'Telefono'],
@@ -105,7 +109,11 @@ describe('CRM current vs potential customers', () => {
     ]);
     XLSX.utils.book_append_sheet(wb, ws, 'Hoja1');
     const xlsxBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    const xlsxPreview = await previewAccountList({ buffer: xlsxBuffer, filename: 'leads.xlsx' });
+    const xlsxPreview = await previewAccountList({
+      buffer: xlsxBuffer,
+      filename: 'leads.xlsx',
+      overrideMapping: { company_name: 0, contact_name: 1, email: 2, phone: 3 },
+    });
 
     expect(xlsxPreview.rows).toHaveLength(1);
     expect(xlsxPreview.rows[0].company_name).toBe('Beta SRL');
