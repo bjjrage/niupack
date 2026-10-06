@@ -26,6 +26,9 @@ function detectSkuFromDescription(raw: string): string | null {
 
 describe('REAL COMMERCIAL SPREADSHEET VERIFICATION (10 STEPS)', () => {
   it('Steps 1-10 on listado clientes acumulado 2026.xlsx', async () => {
+    // Guard: tests must run strictly against memory fallback and never live Supabase
+    expect(crmRepository.persistenceMode()).toBe('MEMORY_FALLBACK');
+
     if (process.env.OPENAI_API_KEY) {
       OpenAIService.setApiKey(process.env.OPENAI_API_KEY);
     }

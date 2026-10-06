@@ -98,7 +98,7 @@ const InferredSchemaZod = z.object({
   sheet_name: z.string().min(1),
   header_row_index: z.number().int().min(0),
   mapping: z.record(z.string(), z.number().int().min(0).nullable()),
-  confidence: z.record(z.string(), z.number().nullable()).optional(),
+  confidence: z.union([z.number(), z.record(z.string(), z.number().nullable())]).optional(),
 });
 
 const INGESTION_SYSTEM_PROMPT = `Sos un motor de inteligencia comercial para NIUPACK (fabricante industrial de packaging y vasos).
@@ -218,12 +218,17 @@ export async function inferCommercialFileSchema(
       }
     }
 
+    const confidenceRecord: Record<string, number | null> =
+      typeof validated.confidence === 'number'
+        ? { overall: validated.confidence }
+        : ((validated.confidence as Record<string, number | null>) ?? {});
+
     return {
       dataset_type: validated.dataset_type as DatasetType,
       sheet_name: validated.sheet_name,
       header_row_index: validated.header_row_index,
       mapping: sanitizedMapping,
-      confidence: (validated.confidence as Record<string, number | null>) ?? {},
+      confidence: confidenceRecord,
     };
   } catch {
     return null;

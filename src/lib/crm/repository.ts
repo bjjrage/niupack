@@ -76,8 +76,12 @@ const uid = () => crypto.randomUUID();
 type Mode = 'SUPABASE' | 'MEMORY_FALLBACK' | 'NOT_CONFIGURED';
 
 function mode(nodeEnv: string | undefined = process.env.NODE_ENV, allowMemory = process.env.NIU_CRM_ALLOW_MEMORY === 'true'): Mode {
+  // CRITICAL GUARD: Automated tests (Vitest / Jest / NODE_ENV=test) MUST NEVER write to live Supabase
+  if (nodeEnv === 'test' || Boolean(process.env.VITEST)) {
+    return 'MEMORY_FALLBACK';
+  }
   if (isSupabaseAdminConfigured && supabaseAdmin) return 'SUPABASE';
-  if (nodeEnv === 'test' || (nodeEnv === 'development' && allowMemory)) return 'MEMORY_FALLBACK';
+  if (nodeEnv === 'development' && allowMemory) return 'MEMORY_FALLBACK';
   // En dev sin flag explícito también permitimos memoria para no tumbar /commercial,
   // pero la API informa persistence para que la UI muestre estado real.
   if (nodeEnv === 'development') return 'MEMORY_FALLBACK';
@@ -804,10 +808,14 @@ export const crmRepository = {
     if (rows.length === 0) return;
     mustOrg(rows[0].organization_id);
     if (mode() === 'SUPABASE' && supabaseAdmin) {
-      const { error } = await supabaseAdmin
-        .from('crm_import_rows')
-        .insert(rows);
-      if (error) throw new Error(`crm_import_rows: ${error.message}`);
+      const CHUNK_SIZE = 500;
+      for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+        const chunk = rows.slice(i, i + CHUNK_SIZE);
+        const { error } = await supabaseAdmin
+          .from('crm_import_rows')
+          .insert(chunk);
+        if (error) throw new Error(`crm_import_rows: ${error.message}`);
+      }
       return;
     }
     mem().importRows.push(...rows);
@@ -821,15 +829,25 @@ export const crmRepository = {
   ): Promise<import('./ingestion/types').CrmImportRow[]> {
     mustOrg(organizationId);
     if (mode() === 'SUPABASE' && supabaseAdmin) {
-      const { data, error } = await supabaseAdmin
-        .from('crm_import_rows')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .eq('job_id', jobId)
-        .order('row_index', { ascending: true })
-        .range(offset, offset + limit - 1);
-      if (error) throw new Error(`crm_import_rows: ${error.message}`);
-      return (data ?? []) as import('./ingestion/types').CrmImportRow[];
+      const all: import('./ingestion/types').CrmImportRow[] = [];
+      let currentOffset = offset;
+      const PAGE_SIZE = 1000;
+      while (all.length < limit) {
+        const fetchCount = Math.min(PAGE_SIZE, limit - all.length);
+        const { data, error } = await supabaseAdmin
+          .from('crm_import_rows')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .eq('job_id', jobId)
+          .order('row_index', { ascending: true })
+          .range(currentOffset, currentOffset + fetchCount - 1);
+        if (error) throw new Error(`crm_import_rows: ${error.message}`);
+        if (!data || data.length === 0) break;
+        all.push(...(data as import('./ingestion/types').CrmImportRow[]));
+        if (data.length < fetchCount) break;
+        currentOffset += data.length;
+      }
+      return all;
     }
     return mem()
       .importRows.filter((r) => r.organization_id === organizationId && r.job_id === jobId)
