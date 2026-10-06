@@ -584,9 +584,6 @@ export function CommercialDataImporter({
                       {summary.unresolved_product_groups
                         .filter((g) => g.match_type !== 'AMBIGUOUS' && (!g.candidates || g.candidates.length <= 1))
                         .map((group) => {
-                          const currentSelect = selectedSkus[group.raw_value] || '';
-                          const isResolving = resolvingGroup === group.raw_value;
-
                           return (
                             <div
                               key={group.raw_value}
@@ -606,37 +603,8 @@ export function CommercialDataImporter({
                                 </span>
                               </div>
 
-                              <div className="flex items-center gap-2">
-                                <select
-                                  value={currentSelect}
-                                  onChange={(e) =>
-                                    setSelectedSkus((prev) => ({
-                                      ...prev,
-                                      [group.raw_value]: e.target.value,
-                                    }))
-                                  }
-                                  className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-white focus:border-brand-500 focus:outline-none"
-                                >
-                                  <option value="">Seleccionar SKU manual...</option>
-                                  {group.candidates.map((cand) => (
-                                    <option key={cand.sku} value={cand.sku}>
-                                      {cand.sku} — {cand.name}
-                                    </option>
-                                  ))}
-                                </select>
-
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  disabled={!currentSelect || isResolving}
-                                  onClick={() => handleResolveGroup(group, currentSelect)}
-                                >
-                                  {isResolving ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  ) : (
-                                    'Asignar'
-                                  )}
-                                </Button>
+                              <div className="text-xs text-slate-500">
+                                No se ofrecen SKUs porque el Maestro no tiene un candidato compatible.
                               </div>
                             </div>
                           );

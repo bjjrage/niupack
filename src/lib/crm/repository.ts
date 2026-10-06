@@ -895,6 +895,45 @@ export const crmRepository = {
     return count;
   },
 
+  async updateUnresolvedImportRowsByIds(
+    organizationId: string,
+    jobId: string,
+    rowIds: string[],
+    updates: Partial<import('./ingestion/types').CrmImportRow>,
+  ): Promise<number> {
+    this.assertWritable();
+    mustOrg(organizationId);
+    const uniqueIds = [...new Set(rowIds)];
+    if (uniqueIds.length === 0) return 0;
+    const updatedObj = { ...updates, updated_at: now() };
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('crm_import_rows')
+        .update(updatedObj)
+        .in('id', uniqueIds)
+        .eq('organization_id', organizationId)
+        .eq('job_id', jobId)
+        .eq('row_status', 'PRODUCT_UNRESOLVED')
+        .select('id');
+      if (error) throw new Error(`crm_import_rows: ${error.message}`);
+      return data?.length ?? 0;
+    }
+    let count = 0;
+    const ids = new Set(uniqueIds);
+    for (const row of mem().importRows) {
+      if (
+        ids.has(row.id) &&
+        row.organization_id === organizationId &&
+        row.job_id === jobId &&
+        row.row_status === 'PRODUCT_UNRESOLVED'
+      ) {
+        Object.assign(row, updatedObj);
+        count += 1;
+      }
+    }
+    return count;
+  },
+
   async updateImportRowsByCustomer(
     organizationId: string,
     jobId: string,

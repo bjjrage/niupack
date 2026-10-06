@@ -372,8 +372,6 @@ export async function createIngestionJob(
       purchase_date: purchaseDate,
       product_raw: productDesc,
       sku_raw: skuRaw,
-      product_line_raw: productLine,
-      product_subline_raw: productSubline,
       quantity,
       document_number: docNum,
       line_number: lineNum != null && Number.isInteger(lineNum) ? lineNum : null,
@@ -492,17 +490,12 @@ export async function createIngestionJob(
     if (!res) continue;
 
     if (res.product_status === 'PRODUCT_UNRESOLVED') {
-      const cupCandidates = cat.skus
-        .filter((s) => s.category === 'cups')
-        .map((s) => ({ sku: s.sku, name: s.name }))
-        .slice(0, 6);
-
       const uGroup: UnresolvedGroup = {
         type: 'product',
         raw_value: grp.raw_value,
         normalized_value: normKey,
         occurrences: grp.count,
-        candidates: res.candidates && res.candidates.length > 0 ? res.candidates : cupCandidates,
+        candidates: res.candidates ?? [],
         match_type: res.match_type,
         detected_attributes: res.detected_attributes as Record<string, unknown> | undefined,
       };
@@ -695,17 +688,12 @@ export async function getIngestionCockpitSummary(
         cat.productAliases,
       );
 
-      const cupCandidates = cat.skus
-        .filter((s) => s.category === 'cups')
-        .map((s) => ({ sku: s.sku, name: s.name }))
-        .slice(0, 6);
-
       const uGroup: UnresolvedGroup = {
         type: 'product',
         raw_value: grp.raw_value,
         normalized_value: normKey,
         occurrences: grp.count,
-        candidates: pm.candidates && pm.candidates.length > 0 ? pm.candidates : cupCandidates,
+        candidates: pm.candidates ?? [],
         match_type: pm.match_type,
         detected_attributes: pm.detected_attributes as Record<string, unknown> | undefined,
       };
@@ -770,6 +758,125 @@ export async function getIngestionCockpitSummary(
     })),
     llm_inferred: false,
   };
+}
+
+export interface ExistingJobReconciliationSummary {
+  job_id: string;
+  auto_resolved_groups: number;
+  auto_resolved_rows: number;
+  ambiguous_groups: number;
+  no_match_groups: number;
+  resolved_non_cup_groups: number;
+}
+
+/**
+ * Re-runs deterministic product matching over an existing, uncommitted staging job.
+ * It only updates unresolved staging rows and safe attribute-unique aliases; it never
+ * changes job commit metadata or writes customer purchases.
+ */
+export async function reconcileExistingJobProducts(
+  organizationId: string,
+  jobId: string,
+): Promise<ExistingJobReconciliationSummary> {
+  if (!organizationId) throw new Error('ORGANIZATION_REQUIRED');
+  const job = await crmRepository.getImportJob(jobId, organizationId);
+  if (!job) throw new Error('IMPORT_JOB_NOT_FOUND');
+  if (job.committed_at || ['COMPLETED', 'COMMITTING', 'CANCELLED'].includes(job.status)) {
+    throw new Error('JOB_NOT_RECONCILABLE');
+  }
+
+  const [rows, catalog] = await Promise.all([
+    crmRepository.listImportRows(organizationId, jobId),
+    loadOrgCatalog(organizationId),
+  ]);
+
+  const groups = new Map<string, {
+    rawValue: string;
+    rows: CrmImportRow[];
+    skuRaw: string | null;
+    line: string | null;
+    subline: string | null;
+    rawPayload: Record<string, unknown>;
+  }>();
+
+  for (const row of rows) {
+    if (row.row_status !== 'PRODUCT_UNRESOLVED' || row.product_status !== 'PRODUCT_UNRESOLVED') continue;
+    const rawValue = row.product_raw || row.sku_raw || '';
+    const key = normalizeName(rawValue);
+    if (!key) continue;
+    const line = (row.raw_payload?.Linea as string) || (row.raw_payload?.linea as string) || row.product_line_raw || null;
+    const subline = (row.raw_payload?.['SUB-LINEA'] as string) || (row.raw_payload?.sublinea as string) || row.product_subline_raw || null;
+    const group = groups.get(key);
+    if (group) {
+      group.rows.push(row);
+      if (!group.line && line) group.line = line;
+      if (!group.subline && subline) group.subline = subline;
+    } else {
+      groups.set(key, {
+        rawValue,
+        rows: [row],
+        skuRaw: row.sku_raw,
+        line,
+        subline,
+        rawPayload: row.raw_payload ?? {},
+      });
+    }
+  }
+
+  const summary: ExistingJobReconciliationSummary = {
+    job_id: jobId,
+    auto_resolved_groups: 0,
+    auto_resolved_rows: 0,
+    ambiguous_groups: 0,
+    no_match_groups: 0,
+    resolved_non_cup_groups: 0,
+  };
+
+  for (const [normalizedValue, group] of groups) {
+    const match = matchProductRecordWithAttributes(
+      {
+        producto: group.rawValue,
+        sku_raw: group.skuRaw,
+        line: group.line,
+        subline: group.subline,
+        rawPayload: group.rawPayload,
+      },
+      catalog.skus,
+      catalog.productAliases,
+    );
+
+    if (!match.sku || !['EXACT_SKU', 'ALIAS_CONFIRMED', 'ATTRIBUTE_UNIQUE_MATCH'].includes(match.match_type)) {
+      if (match.match_type === 'AMBIGUOUS') summary.ambiguous_groups += 1;
+      else summary.no_match_groups += 1;
+      continue;
+    }
+
+    const masterSku = catalog.skus.find((sku) => normalizeSku(sku.sku) === normalizeSku(match.sku));
+    if (!masterSku) {
+      summary.no_match_groups += 1;
+      continue;
+    }
+
+    if (match.match_type === 'ATTRIBUTE_UNIQUE_MATCH') {
+      await crmRepository.saveProductAlias(organizationId, normalizedValue, masterSku.sku);
+      catalog.productAliases.push({ alias_normalized: normalizedValue, sku: masterSku.sku });
+    }
+
+    const productStatus: ProductRowStatus = masterSku.category === 'cups' ? 'RESOLVED_CUP' : 'RESOLVED_NON_CUP';
+    const updatedRows = await crmRepository.updateUnresolvedImportRowsByIds(
+      organizationId,
+      jobId,
+      group.rows.map((row) => row.id),
+      { sku: masterSku.sku, product_status: productStatus, row_status: 'READY' },
+    );
+    if (updatedRows !== group.rows.length) throw new Error('RECONCILIATION_ROW_COUNT_MISMATCH');
+
+    summary.auto_resolved_groups += 1;
+    summary.auto_resolved_rows += updatedRows;
+    if (productStatus === 'RESOLVED_NON_CUP') summary.resolved_non_cup_groups += 1;
+  }
+
+  return summary;
 }
 
 export async function resolveProductGroup(

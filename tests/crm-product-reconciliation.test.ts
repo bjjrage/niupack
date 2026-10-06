@@ -7,6 +7,7 @@ import {
 } from '@/lib/crm/ingestion/reconciliation';
 import {
   createIngestionJob,
+  reconcileExistingJobProducts,
   resolveProductGroup,
   getIngestionCockpitSummary,
 } from '@/lib/crm/ingestion/staging';
@@ -129,6 +130,8 @@ describe('Deterministic Product Reconciliation Engine', () => {
 
     expect(cockpit.unresolved_products_count).toBe(1);
     expect(cockpit.resolved_cups_count).toBe(0);
+    expect(cockpit.unresolved_product_groups[0].match_type).toBe('NO_MATCH');
+    expect(cockpit.unresolved_product_groups[0].candidates).toEqual([]);
     const rowInDb = (await crmRepository.listImportRows(TEST_ORG, cockpit.job_id))[0];
     expect(rowInDb.sku).toBeNull();
     expect(rowInDb.product_status).toBe('PRODUCT_UNRESOLVED');
@@ -176,6 +179,10 @@ describe('Deterministic Product Reconciliation Engine', () => {
     const staged = await crmRepository.listImportRows(TEST_ORG, cockpit.job_id);
     expect(staged.length).toBe(85);
     expect(staged.every((r) => r.sku === 'CUP-8OZ-SW' && r.product_status === 'RESOLVED_CUP')).toBe(true);
+    expect(staged[0].raw_payload.Linea).toBe('POLIPAPEL');
+    expect(staged[0].raw_payload['SUB-LINEA']).toBe('VASOS8');
+    expect(staged[0].product_line_raw).toBeUndefined();
+    expect(staged[0].product_subline_raw).toBeUndefined();
   });
 
   // Test 9: SKU exacto sigue ganando
@@ -278,5 +285,45 @@ describe('Deterministic Product Reconciliation Engine', () => {
   it('15. crm_customer_purchases permanece 0 tras staging y reconciliación', async () => {
     const purchases = await crmRepository.listPurchases(TEST_ORG);
     expect(purchases.length).toBe(0);
+  });
+
+  it('16. re-reconciles an existing group once, updates 85 rows, and leaves purchases uncommitted', async () => {
+    const product = 'VASOSDE8OZCONDISEÑO VINTAGE';
+    const rows: (string | number)[][] = [['CLIENTES', 'Producto', 'FechaFacturacion', 'Cantidad', 'Linea', 'SUB-LINEA']];
+    for (let i = 0; i < 85; i++) {
+      rows.push([`CLIENTE RECONCILIACION ${i}`, product, '2026-02-15', 500, 'POLIPAPEL', 'VASOS8']);
+    }
+    const cockpit = await createIngestionJob(TEST_ORG, {
+      buffer: buildExcelBuffer(rows),
+      filename: 'existing-staging-reconciliation.xlsx',
+      targetLifecycle: 'CUSTOMER',
+      overrideHeaderRowIndex: 0,
+      overrideMapping: {
+        customer_name: 0,
+        product_description: 1,
+        purchase_date: 2,
+        quantity: 3,
+        product_line: 4,
+        product_subline: 5,
+      },
+    });
+
+    await crmRepository.updateImportRowsByProduct(TEST_ORG, cockpit.job_id, product, {
+      sku: null,
+      product_status: 'PRODUCT_UNRESOLVED',
+      row_status: 'PRODUCT_UNRESOLVED',
+    });
+
+    const result = await reconcileExistingJobProducts(TEST_ORG, cockpit.job_id);
+    expect(result.auto_resolved_groups).toBe(1);
+    expect(result.auto_resolved_rows).toBe(85);
+    expect(result.ambiguous_groups).toBe(0);
+    expect(result.no_match_groups).toBe(0);
+
+    const staged = await crmRepository.listImportRows(TEST_ORG, cockpit.job_id);
+    expect(staged).toHaveLength(85);
+    expect(staged.every((row) => row.sku === 'CUP-8OZ-SW' && row.row_status === 'READY')).toBe(true);
+    expect((await crmRepository.getImportJob(cockpit.job_id, TEST_ORG))?.committed_at).toBeNull();
+    expect(await crmRepository.listPurchases(TEST_ORG)).toHaveLength(0);
   });
 });
