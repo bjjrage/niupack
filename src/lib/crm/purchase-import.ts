@@ -37,7 +37,10 @@ export interface SkuRef {
   sku: string;
   name: string;
   product_id?: string | null;
+  category?: string | null;
 }
+
+export type PurchaseRowStatus = 'RESOLVED_CUP' | 'PRODUCT_UNRESOLVED' | 'IGNORED_NON_CUP' | 'INVALID';
 
 /** 1 tax_id (dígitos) → 2 alias → 3 nombre normalizado. Retorna match único o candidatos. */
 export function matchCompany(
@@ -53,7 +56,9 @@ export function matchCompany(
   if (input.external_id) {
     const ext = normalizeSku(input.external_id);
     const hit = companies.find(
-      (c) => (c.external_id && normalizeSku(c.external_id) === ext) || digitsOnly(c.external_id) === digitsOnly(input.external_id),
+      (c) =>
+        (c.external_id && normalizeSku(c.external_id) === ext) ||
+        digitsOnly(c.external_id) === digitsOnly(input.external_id),
     );
     if (hit) return { company_id: hit.id, candidates: null };
   }
@@ -76,30 +81,76 @@ export function matchCompany(
   return { company_id: null, candidates: null };
 }
 
-/** 1 SKU exacto → 2 alias → 3 nombre normalizado. Nunca inventa SKU. */
+/**
+ * 1 SKU exacto real → 2 alias confirmado → 3 nombre normalizado del Maestro.
+ * REGLA CRÍTICA: NUNCA inventar SKU. Si no encuentra match en el Maestro, sku = null.
+ */
 export function matchProduct(
-  input: { producto?: string | null },
+  input: { producto?: string | null; sku_raw?: string | null },
   skus: SkuRef[],
   aliases: Array<{ alias_normalized: string; sku: string }>,
-): { sku: string | null; product_name: string | null; candidates: Array<{ sku: string; name: string }> | null } {
-  const raw = (input.producto ?? '').trim();
-  if (!raw) return { sku: null, product_name: null, candidates: null };
-  const exact = skus.find((s) => normalizeSku(s.sku) === normalizeSku(raw));
-  if (exact) return { sku: exact.sku, product_name: exact.name, candidates: null };
-  const norm = normalizeName(raw);
+): {
+  sku: string | null;
+  product_name: string | null;
+  category: string | null;
+  candidates: Array<{ sku: string; name: string }> | null;
+} {
+  const rawSku = (input.sku_raw ?? '').trim();
+  const rawProd = (input.producto ?? '').trim();
+  const raw = rawSku || rawProd;
+  if (!raw) return { sku: null, product_name: null, category: null, candidates: null };
+
+  // 1. SKU exacto real
+  if (rawSku) {
+    const exactSku = skus.find((s) => normalizeSku(s.sku) === normalizeSku(rawSku));
+    if (exactSku) {
+      return { sku: exactSku.sku, product_name: exactSku.name, category: exactSku.category ?? null, candidates: null };
+    }
+  }
+  const exactByProd = skus.find((s) => normalizeSku(s.sku) === normalizeSku(rawProd));
+  if (exactByProd) {
+    return { sku: exactByProd.sku, product_name: exactByProd.name, category: exactByProd.category ?? null, candidates: null };
+  }
+
+  // 2. Alias previamente confirmado
+  const norm = normalizeName(rawProd || rawSku);
   const alias = aliases.find((a) => a.alias_normalized === norm);
   if (alias) {
     const target = skus.find((s) => normalizeSku(s.sku) === normalizeSku(alias.sku));
-    return { sku: alias.sku, product_name: target?.name ?? raw, candidates: null };
+    if (target) {
+      return { sku: target.sku, product_name: target.name, category: target.category ?? null, candidates: null };
+    }
   }
+
+  // 3. Matching confiable contra nombre/descripción del Maestro
   const hits = skus.filter((s) => {
     const n = normalizeName(s.name);
-    return n && (n === norm || n.includes(norm) || norm.includes(n));
+    const skuNorm = normalizeName(s.sku);
+    return (n && (n === norm || n.includes(norm) || norm.includes(n))) || (skuNorm && norm.includes(skuNorm));
   });
-  if (hits.length === 1) return { sku: hits[0].sku, product_name: hits[0].name, candidates: null };
-  if (hits.length > 1) return { sku: null, product_name: raw, candidates: hits.map((s) => ({ sku: s.sku, name: s.name })) };
-  // Sin match: se conserva el nombre original, SKU = original normalizado (no inventado del master).
-  return { sku: normalizeSku(raw).slice(0, 80) || null, product_name: raw.slice(0, 200), candidates: null };
+
+  if (hits.length === 1) {
+    return { sku: hits[0].sku, product_name: hits[0].name, category: hits[0].category ?? null, candidates: null };
+  }
+  if (hits.length > 1) {
+    // Si hay varios, devolver candidatos para selección humana sin adivinar
+    return {
+      sku: null,
+      product_name: raw,
+      category: null,
+      candidates: hits.map((s) => ({ sku: s.sku, name: s.name })),
+    };
+  }
+
+  // 4. Si no hay match: NUNCA inventar un SKU nuevo.
+  // sku = null, queda PRODUCT_UNRESOLVED
+  const cupCandidates = skus.filter((s) => s.category === 'cups').map((s) => ({ sku: s.sku, name: s.name }));
+  return {
+    sku: null,
+    product_name: raw,
+    category: null,
+    candidates: cupCandidates.slice(0, 5),
+  };
 }
 
 /** Fingerprint estable para filas sin documento (evita duplicados al reimportar). */
@@ -120,34 +171,4 @@ export function purchaseFingerprint(input: {
     String(input.quantity),
   ].join('|');
   return createHash('sha256').update(base, 'utf8').digest('hex').slice(0, 32);
-}
-
-/** Mapeo automático de columnas por encabezados ES/PT. */
-export function autoMapColumns(columns: string[]): Record<string, string> {
-  const norm = (s: string): string => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-  const wants: Record<string, string[]> = {
-    cliente: ['cliente', 'client', 'razao social', 'razon social', 'empresa', 'customer', 'nombre'],
-    tax_id: ['tax id', 'taxid', 'cnpj', 'cuit', 'ruc', 'nit', 'documento fiscal', 'cuit/cnpj'],
-    fecha: ['fecha', 'data', 'date', 'dt compra', 'emision', 'emissao'],
-    producto: ['producto', 'produto', 'product', 'sku', 'codigo', 'descri'],
-    cantidad: ['cantidad', 'quantidade', 'quantity', 'qtd', 'qty', 'volumen', 'unidades'],
-    documento: ['documento', 'document', 'nota', 'nfe', 'factura', 'fatura', 'nro doc', 'numero'],
-    linea: ['linea', 'linha', 'line', 'item', 'seq'],
-    precio: ['precio', 'preco', 'price', 'unitario', 'valor unit'],
-    total: ['total', 'importe', 'valor total', 'amount'],
-    moneda: ['moneda', 'moeda', 'currency'],
-    contacto: ['contacto', 'contato', 'contact'],
-    pais: ['pais', 'país', 'country'],
-  };
-  const mapping: Record<string, string> = {};
-  for (const col of columns) {
-    const n = norm(col);
-    for (const [field, keys] of Object.entries(wants)) {
-      if (!mapping[field] && keys.some((k) => n.includes(k))) {
-        mapping[field] = col;
-        break;
-      }
-    }
-  }
-  return mapping;
 }
