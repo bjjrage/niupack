@@ -4,8 +4,7 @@ import { useMemo, useState } from 'react';
 import { Plus, Search, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Avatar, Card, daysFromToday, Empty, fmtDateLabel, fmtMoneyShort, ownerName, Pill, Segmented, type Tone } from '../commercial-ui';
-import { PurchaseImporter } from '../PurchaseImporter';
-import { AccountListImporter } from '../AccountListImporter';
+import { CommercialDataImporter } from '../CommercialDataImporter';
 import type { CompanyHealth, CompanyRow, CrmActions, CrmData } from '../types';
 
 type Seg = 'customers' | 'prospects' | 'contact';
@@ -31,8 +30,7 @@ export function accountStatus(c: CompanyRow, h: CompanyHealth | undefined, openO
 export function AccountsView({ data, actions, onNew }: { data: CrmData; actions: CrmActions; onNew: () => void }) {
   const [seg, setSeg] = useState<Seg>('customers');
   const [q, setQ] = useState('');
-  const [purchaseImportOpen, setPurchaseImportOpen] = useState(false);
-  const [listImportStage, setListImportStage] = useState<'CUSTOMER' | 'PROSPECT' | null>(null);
+  const [importStage, setImportStage] = useState<'CUSTOMER' | 'PROSPECT' | null>(null);
 
   const rows = useMemo(() => {
     const healthById = new Map(data.health.map((h) => [h.company_id, h]));
@@ -109,13 +107,8 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
           />
         </div>
         {seg !== 'contact' && (
-          <Button variant="secondary" size="md" onClick={() => setListImportStage(seg === 'customers' ? 'CUSTOMER' : 'PROSPECT')}>
-            <Upload className="h-4 w-4" /> {seg === 'customers' ? 'Importar clientes actuales' : 'Importar clientes potenciales'}
-          </Button>
-        )}
-        {seg === 'prospects' && (
-          <Button variant="secondary" size="md" onClick={() => setPurchaseImportOpen(true)}>
-            <Upload className="h-4 w-4" /> Importar historial de compras
+          <Button variant="secondary" size="md" onClick={() => setImportStage(seg === 'customers' ? 'CUSTOMER' : 'PROSPECT')}>
+            <Upload className="h-4 w-4" /> Importar base
           </Button>
         )}
         <Button variant="primary" size="md" onClick={onNew}>
@@ -225,25 +218,13 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
         )}
       </Card>
 
-      <PurchaseImporter
-        open={purchaseImportOpen}
-        onClose={() => setPurchaseImportOpen(false)}
-        companies={data.companies
-          .filter((c) => c.lifecycle_stage === 'PROSPECT' || !c.lifecycle_stage)
-          .map((c) => ({ id: c.id, name: c.name }))}
+      <CommercialDataImporter
+        open={Boolean(importStage)}
+        targetLifecycle={importStage ?? 'PROSPECT'}
+        onClose={() => setImportStage(null)}
         onImported={() => {
           actions.reload();
-          actions.notify('Historial importado. Alertas de clientes potenciales recalculadas.');
-        }}
-      />
-
-      <AccountListImporter
-        open={Boolean(listImportStage)}
-        lifecycleStage={listImportStage ?? 'PROSPECT'}
-        onClose={() => setListImportStage(null)}
-        onImported={() => {
-          actions.reload();
-          actions.notify(listImportStage === 'CUSTOMER' ? 'Clientes actuales importados.' : 'Clientes potenciales importados.');
+          actions.notify(importStage === 'CUSTOMER' ? 'Base de clientes actuales importada.' : 'Base de clientes potenciales importada.');
         }}
       />
     </div>
