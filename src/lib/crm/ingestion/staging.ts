@@ -223,6 +223,8 @@ export async function createIngestionJob(
     sku_raw: string | null;
     line: string | null;
     subline: string | null;
+    line_values: Set<string>;
+    subline_values: Set<string>;
     raw_payload: Record<string, unknown>;
     count: number;
   }>();
@@ -341,6 +343,8 @@ export async function createIngestionJob(
           sku_raw: skuRaw,
           line: productLine,
           subline: productSubline,
+          line_values: new Set(productLine ? [productLine] : []),
+          subline_values: new Set(productSubline ? [productSubline] : []),
           raw_payload: strPayload,
           count: 1,
         });
@@ -349,6 +353,8 @@ export async function createIngestionJob(
         existing.count += 1;
         if (!existing.line && productLine) existing.line = productLine;
         if (!existing.subline && productSubline) existing.subline = productSubline;
+        if (productLine) existing.line_values.add(productLine);
+        if (productSubline) existing.subline_values.add(productSubline);
       }
     }
 
@@ -419,6 +425,17 @@ export async function createIngestionJob(
           candidates: null,
         });
       }
+      continue;
+    }
+
+    if (grp.line_values.size > 1 || grp.subline_values.size > 1) {
+      resolvedProductGroupsMap.set(normKey, {
+        sku: null,
+        product_status: 'PRODUCT_UNRESOLVED',
+        match_type: 'AMBIGUOUS',
+        candidates: [],
+        detected_attributes: { family: null, capacity_oz: null, wall_type: null, material_line: null, is_custom_print: null },
+      });
       continue;
     }
 
@@ -615,19 +632,38 @@ export async function getIngestionCockpitSummary(
     sku_raw: string | null;
     line: string | null;
     subline: string | null;
+    line_values: Set<string>;
+    subline_values: Set<string>;
     raw_payload: Record<string, unknown>;
     count: number;
     rows: CrmImportRow[];
   }>();
   const unresolvedCustomerGroupsMap = new Map<string, UnresolvedGroup>();
   const errorsSummary: Array<{ row_index: number; error: string }> = [];
+  const headerRow = rows.find((row) => row.row_index === 0);
+  const headerColumnByName = new Map<string, string>();
+  for (const [columnKey, headerValue] of Object.entries(headerRow?.raw_payload ?? {})) {
+    if (!/^Columna \d+$/i.test(columnKey)) continue;
+    const normalizedHeader = normalizeName(cleanStr(headerValue));
+    if (normalizedHeader) headerColumnByName.set(normalizedHeader, columnKey);
+  }
+  const readProductContext = (row: CrmImportRow, names: string[]): string | null => {
+    for (const name of names) {
+      const directValue = cleanStr(row.raw_payload?.[name]);
+      if (directValue) return directValue;
+      const columnKey = headerColumnByName.get(normalizeName(name));
+      const columnValue = columnKey ? cleanStr(row.raw_payload?.[columnKey]) : '';
+      if (columnValue) return columnValue;
+    }
+    return null;
+  };
 
   for (const r of rows) {
     if (r.product_raw || r.sku_raw) {
       const raw = r.product_raw || r.sku_raw || '';
       const key = normalizeName(raw);
-      const line = (r.raw_payload?.Linea as string) || (r.raw_payload?.linea as string) || (r.raw_payload?.product_line as string) || r.product_line_raw || null;
-      const subline = (r.raw_payload?.['SUB-LINEA'] as string) || (r.raw_payload?.sublinea as string) || (r.raw_payload?.product_subline as string) || r.product_subline_raw || null;
+      const line = readProductContext(r, ['Linea', 'Línea', 'product_line']) || r.product_line_raw || null;
+      const subline = readProductContext(r, ['SUB-LINEA', 'sublinea', 'sub_linea', 'product_subline']) || r.product_subline_raw || null;
       if (!productGroupsMap.has(key)) {
         productGroupsMap.set(key, {
           raw_value: raw,
@@ -635,6 +671,8 @@ export async function getIngestionCockpitSummary(
           sku_raw: r.sku_raw,
           line,
           subline,
+          line_values: new Set(line ? [line] : []),
+          subline_values: new Set(subline ? [subline] : []),
           raw_payload: r.raw_payload,
           count: 1,
           rows: [r],
@@ -645,6 +683,8 @@ export async function getIngestionCockpitSummary(
         grp.rows.push(r);
         if (!grp.line && line) grp.line = line;
         if (!grp.subline && subline) grp.subline = subline;
+        if (line) grp.line_values.add(line);
+        if (subline) grp.subline_values.add(subline);
       }
     }
 
@@ -676,6 +716,7 @@ export async function getIngestionCockpitSummary(
   for (const [normKey, grp] of productGroupsMap.entries()) {
     const isUnresolved = grp.rows.some((r) => r.row_status === 'PRODUCT_UNRESOLVED');
     if (isUnresolved) {
+      const contextConflict = grp.line_values.size > 1 || grp.subline_values.size > 1;
       const pm = matchProductRecordWithAttributes(
         {
           producto: grp.raw_value,
@@ -693,12 +734,14 @@ export async function getIngestionCockpitSummary(
         raw_value: grp.raw_value,
         normalized_value: normKey,
         occurrences: grp.count,
-        candidates: pm.candidates ?? [],
-        match_type: pm.match_type,
-        detected_attributes: pm.detected_attributes as Record<string, unknown> | undefined,
+        candidates: contextConflict ? [] : pm.candidates ?? [],
+        match_type: contextConflict ? 'AMBIGUOUS' : pm.match_type,
+        detected_attributes: contextConflict
+          ? { context_conflict: true }
+          : pm.detected_attributes as Record<string, unknown> | undefined,
       };
       unresolvedProductGroups.push(uGroup);
-      if (pm.match_type === 'AMBIGUOUS') {
+      if (contextConflict || pm.match_type === 'AMBIGUOUS') {
         ambiguousProductGroups.push(uGroup);
       } else {
         noMatchProductGroups.push(uGroup);
@@ -790,12 +833,33 @@ export async function reconcileExistingJobProducts(
     loadOrgCatalog(organizationId),
   ]);
 
+  const headerRow = rows.find((row) => row.row_index === 0);
+  const headerColumnByName = new Map<string, string>();
+  for (const [columnKey, headerValue] of Object.entries(headerRow?.raw_payload ?? {})) {
+    if (!/^Columna \d+$/i.test(columnKey)) continue;
+    const normalizedHeader = normalizeName(cleanStr(headerValue));
+    if (normalizedHeader) headerColumnByName.set(normalizedHeader, columnKey);
+  }
+
+  const readProductContext = (row: CrmImportRow, names: string[]): string | null => {
+    for (const name of names) {
+      const directValue = cleanStr(row.raw_payload?.[name]);
+      if (directValue) return directValue;
+      const columnKey = headerColumnByName.get(normalizeName(name));
+      const columnValue = columnKey ? cleanStr(row.raw_payload?.[columnKey]) : '';
+      if (columnValue) return columnValue;
+    }
+    return null;
+  };
+
   const groups = new Map<string, {
     rawValue: string;
     rows: CrmImportRow[];
     skuRaw: string | null;
     line: string | null;
     subline: string | null;
+    lineValues: Set<string>;
+    sublineValues: Set<string>;
     rawPayload: Record<string, unknown>;
   }>();
 
@@ -804,13 +868,15 @@ export async function reconcileExistingJobProducts(
     const rawValue = row.product_raw || row.sku_raw || '';
     const key = normalizeName(rawValue);
     if (!key) continue;
-    const line = (row.raw_payload?.Linea as string) || (row.raw_payload?.linea as string) || row.product_line_raw || null;
-    const subline = (row.raw_payload?.['SUB-LINEA'] as string) || (row.raw_payload?.sublinea as string) || row.product_subline_raw || null;
+    const line = readProductContext(row, ['Linea', 'Línea', 'product_line']) || row.product_line_raw || null;
+    const subline = readProductContext(row, ['SUB-LINEA', 'sublinea', 'sub_linea', 'product_subline']) || row.product_subline_raw || null;
     const group = groups.get(key);
     if (group) {
       group.rows.push(row);
       if (!group.line && line) group.line = line;
       if (!group.subline && subline) group.subline = subline;
+      if (line) group.lineValues.add(line);
+      if (subline) group.sublineValues.add(subline);
     } else {
       groups.set(key, {
         rawValue,
@@ -818,7 +884,13 @@ export async function reconcileExistingJobProducts(
         skuRaw: row.sku_raw,
         line,
         subline,
-        rawPayload: row.raw_payload ?? {},
+        lineValues: new Set(line ? [line] : []),
+        sublineValues: new Set(subline ? [subline] : []),
+        rawPayload: {
+          ...(row.raw_payload ?? {}),
+          ...(line ? { Linea: line } : {}),
+          ...(subline ? { 'SUB-LINEA': subline } : {}),
+        },
       });
     }
   }
@@ -833,6 +905,11 @@ export async function reconcileExistingJobProducts(
   };
 
   for (const [normalizedValue, group] of groups) {
+    if (group.lineValues.size > 1 || group.sublineValues.size > 1) {
+      summary.ambiguous_groups += 1;
+      continue;
+    }
+
     const match = matchProductRecordWithAttributes(
       {
         producto: group.rawValue,

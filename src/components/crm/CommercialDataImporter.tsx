@@ -501,7 +501,7 @@ export function CommercialDataImporter({
                         .map((group) => {
                           const currentSelect = selectedSkus[group.raw_value] || '';
                           const isResolving = resolvingGroup === group.raw_value;
-                          const attrs = group.detected_attributes as { family?: string; capacity_oz?: number; wall_type?: string } | undefined;
+                          const attrs = group.detected_attributes as { family?: string; capacity_oz?: number; wall_type?: string; context_conflict?: boolean } | undefined;
 
                           return (
                             <div
@@ -528,6 +528,13 @@ export function CommercialDataImporter({
                                 </div>
                               </div>
 
+                              {group.candidates.length === 0 ? (
+                                <p className="max-w-sm text-xs text-amber-300">
+                                  {attrs?.context_conflict
+                                    ? 'Este descriptor aparece con datos de Linea o SUB-LINEA contradictorios; no se asigna un SKU automáticamente.'
+                                    : 'No hay candidatos compatibles en el Maestro.'}
+                                </p>
+                              ) : (
                               <div className="flex items-center gap-2">
                                 <select
                                   value={currentSelect}
@@ -560,6 +567,7 @@ export function CommercialDataImporter({
                                   )}
                                 </Button>
                               </div>
+                              )}
                             </div>
                           );
                         })}

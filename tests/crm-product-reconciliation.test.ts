@@ -326,4 +326,73 @@ describe('Deterministic Product Reconciliation Engine', () => {
     expect((await crmRepository.getImportJob(cockpit.job_id, TEST_ORG))?.committed_at).toBeNull();
     expect(await crmRepository.listPurchases(TEST_ORG)).toHaveLength(0);
   });
+
+  it('17. recovers Linea and SUB-LINEA from legacy generic raw_payload columns', async () => {
+    const buffer = buildExcelBuffer([
+      ['', '', '', '', '', ''],
+      ['CLIENTES', 'Linea', 'SUB-LINEA', 'Producto', 'FechaFacturacion', 'Cantidad'],
+      ['CLIENTE CONTEXT', 'POLIPAPEL', 'VASOS8', 'VASO', '2026-02-14', 100],
+    ]);
+    const cockpit = await createIngestionJob(TEST_ORG, {
+      buffer,
+      filename: 'legacy-generic-columns.xlsx',
+      targetLifecycle: 'CUSTOMER',
+      overrideHeaderRowIndex: 0,
+      overrideMapping: {
+        customer_name: 0,
+        product_description: 3,
+        purchase_date: 4,
+        quantity: 5,
+      },
+    });
+
+    const before = await crmRepository.listImportRows(TEST_ORG, cockpit.job_id);
+    const pending = before.find((row) => row.product_raw === 'VASO');
+    expect(pending?.row_status).toBe('PRODUCT_UNRESOLVED');
+    expect(pending?.raw_payload['Columna 3']).toBe('VASOS8');
+
+    const result = await reconcileExistingJobProducts(TEST_ORG, cockpit.job_id);
+    expect(result.auto_resolved_groups).toBe(1);
+    expect(result.auto_resolved_rows).toBe(1);
+    const after = await crmRepository.listImportRows(TEST_ORG, cockpit.job_id);
+    const resolved = after.find((row) => row.product_raw === 'VASO');
+    expect(resolved?.sku).toBe('CUP-8OZ-SW');
+    expect(resolved?.row_status).toBe('READY');
+    expect((await crmRepository.getImportJob(cockpit.job_id, TEST_ORG))?.committed_at).toBeNull();
+    expect(await crmRepository.listPurchases(TEST_ORG)).toHaveLength(0);
+  });
+
+  it('18. conflicting Linea/SUB-LINEA values keep a normalized product group unresolved', async () => {
+    const buffer = buildExcelBuffer([
+      ['CLIENTES', 'Producto', 'FechaFacturacion', 'Cantidad', 'Linea', 'SUB-LINEA'],
+      ['CLIENTE CONTEXT A', 'VASO', '2026-02-14', 100, 'POLIPAPEL', 'VASOS8'],
+      ['CLIENTE CONTEXT B', 'VASO', '2026-02-15', 100, 'POLIPAPEL', 'VASOS12'],
+    ]);
+    const cockpit = await createIngestionJob(TEST_ORG, {
+      buffer,
+      filename: 'conflicting-product-context.xlsx',
+      targetLifecycle: 'CUSTOMER',
+      overrideHeaderRowIndex: 0,
+      overrideMapping: {
+        customer_name: 0,
+        product_description: 1,
+        purchase_date: 2,
+        quantity: 3,
+        product_line: 4,
+        product_subline: 5,
+      },
+    });
+
+    expect(cockpit.unresolved_product_groups).toHaveLength(1);
+    expect(cockpit.unresolved_product_groups[0].match_type).toBe('AMBIGUOUS');
+    expect(cockpit.unresolved_product_groups[0].candidates).toEqual([]);
+
+    const result = await reconcileExistingJobProducts(TEST_ORG, cockpit.job_id);
+    expect(result.auto_resolved_groups).toBe(0);
+    expect(result.ambiguous_groups).toBe(1);
+    const staged = await crmRepository.listImportRows(TEST_ORG, cockpit.job_id);
+    expect(staged.every((row) => row.sku === null && row.row_status === 'PRODUCT_UNRESOLVED')).toBe(true);
+    expect((await crmRepository.getImportJob(cockpit.job_id, TEST_ORG))?.committed_at).toBeNull();
+    expect(await crmRepository.listPurchases(TEST_ORG)).toHaveLength(0);
+  });
 });
