@@ -171,22 +171,229 @@ export interface SkuRef {
   name: string;
   product_id?: string | null;
   category?: string | null;
+  size_oz?: number | null;
+  size_ml?: number | null;
+  wall_type?: 'single' | 'double' | 'n/a' | null;
+  material?: string | null;
 }
+
+export type ProductFamily = 'cups' | 'lids' | 'bowls' | 'other';
+
+export interface ProductExtractedAttributes {
+  family: ProductFamily | null;
+  capacity_oz: number | null;
+  wall_type: 'single' | 'double' | 'n/a' | null;
+  material_line: string | null;
+  is_custom_print: boolean | null;
+}
+
+export interface ProductAttributeInput {
+  description?: string | null;
+  sku_raw?: string | null;
+  line?: string | null;
+  subline?: string | null;
+  rawPayload?: Record<string, unknown>;
+}
+
+function cleanStr(v: unknown): string {
+  if (v == null) return '';
+  return String(v).trim();
+}
+
+export function extractProductAttributes(input: ProductAttributeInput): ProductExtractedAttributes {
+  const descRaw = cleanStr(input.description || input.sku_raw);
+  const lineRaw = cleanStr(input.line ?? (input.rawPayload?.Linea as string) ?? (input.rawPayload?.linea as string));
+  const sublineRaw = cleanStr(input.subline ?? (input.rawPayload?.['SUB-LINEA'] as string) ?? (input.rawPayload?.sublinea as string));
+
+  const normDesc = normalizeName(descRaw);
+  const normSubline = normalizeName(sublineRaw);
+  const normLine = normalizeName(lineRaw);
+  const fullText = `${normDesc} ${normSubline} ${normLine}`.trim();
+
+  // 1. Material Line
+  let material_line: string | null = null;
+  if (normLine.includes('polipapel') || normDesc.includes('polipapel')) material_line = 'polipapel';
+  else if (normLine.includes('plastico') || normDesc.includes('plastico')) material_line = 'plastico';
+  else if (normLine.includes('extrusion') || normDesc.includes('extrusion')) material_line = 'extrusion';
+  else if (normLine.includes('kraft') || normDesc.includes('kraft')) material_line = 'kraft';
+  else if (normLine.includes('carton') || normLine.includes('cartulina') || normDesc.includes('carton')) material_line = 'cartulina';
+
+  // 2. Family
+  let family: ProductFamily | null = null;
+  // Check subline first
+  if (/^vasos?\b|\bvasos?\d/i.test(sublineRaw) || normSubline.startsWith('vaso')) {
+    family = 'cups';
+  } else if (/^tapas?\b|\btapas?\d/i.test(sublineRaw) || normSubline.startsWith('tapa')) {
+    family = 'lids';
+  } else if (/^bowls?\b|\bbowls?\d|^potes?\b|\bpotes?\d/i.test(sublineRaw) || normSubline.startsWith('bowl') || normSubline.startsWith('pote')) {
+    family = 'bowls';
+  } else if (normSubline.includes('cuna') || normSubline.includes('bandej') || normSubline.includes('bobin') || normSubline.includes('envio')) {
+    family = 'other';
+  }
+
+  // If not determined, check description
+  if (!family) {
+    if (normDesc.includes('vaso') || normDesc.includes('copo') || normDesc.includes('cup')) {
+      family = 'cups';
+    } else if (normDesc.includes('tapa') || normDesc.includes('lid')) {
+      family = 'lids';
+    } else if (normDesc.includes('bowl') || normDesc.includes('pote')) {
+      family = 'bowls';
+    } else if (
+      normDesc.includes('cuna') ||
+      normDesc.includes('bandej') ||
+      normDesc.includes('bobina') ||
+      normDesc.includes('panal') ||
+      normDesc.includes('envio') ||
+      normDesc.includes('flete')
+    ) {
+      family = 'other';
+    }
+  }
+
+  // 3. Capacity in OZ
+  let capacity_oz: number | null = null;
+
+  // Regex A: Search in description: number followed by oz/onza/onzas, e.g. "8OZ", "8 OZ", "12 ONZAS", "VASOSDE8OZ", "VASO12OZDOBLEPARED"
+  const ozDescMatch = descRaw.match(/(\d{1,2})\s*(?:oz|onza|onzas)/i);
+  if (ozDescMatch) {
+    const val = parseInt(ozDescMatch[1], 10);
+    if (val >= 1 && val <= 32) {
+      capacity_oz = val;
+    }
+  }
+
+  // Regex B: If not found in description, check subline, e.g. "VASOS8", "VASOS16", "TAPAS8", "BOWLS20", "POTES8"
+  if (capacity_oz === null && sublineRaw) {
+    const subMatch = sublineRaw.match(/(?:vasos?|tapas?|bowls?|potes?)\s*(\d{1,2})\b/i);
+    if (subMatch) {
+      const val = parseInt(subMatch[1], 10);
+      if (val >= 1 && val <= 32) {
+        capacity_oz = val;
+      }
+    }
+  }
+
+  // Regex C: Check if description has "de X oz" or standalone "X oz"
+  if (capacity_oz === null) {
+    const genericOz = fullText.match(/\b(\d{1,2})\s*oz/i);
+    if (genericOz) {
+      const val = parseInt(genericOz[1], 10);
+      if (val >= 1 && val <= 32) {
+        capacity_oz = val;
+      }
+    }
+  }
+
+  // 4. Wall Type ('single' | 'double' | 'n/a' | null)
+  let wall_type: 'single' | 'double' | 'n/a' | null = null;
+  const lowerDesc = descRaw.toLowerCase();
+  if (
+    fullText.includes('doble pared') ||
+    fullText.includes('double wall') ||
+    fullText.includes('pared doble') ||
+    /\bdw\b/i.test(fullText) ||
+    lowerDesc.includes('doblepared') ||
+    lowerDesc.includes('doble pared') ||
+    /doble\s*pared/i.test(descRaw) ||
+    /\b(dw)\b/i.test(descRaw) ||
+    lowerDesc.endsWith('dw') ||
+    lowerDesc.includes('-dw')
+  ) {
+    wall_type = 'double';
+  } else if (
+    fullText.includes('pared simple') ||
+    fullText.includes('single wall') ||
+    fullText.includes('simple pared') ||
+    /\bsw\b/i.test(fullText) ||
+    lowerDesc.includes('paredsimple') ||
+    lowerDesc.includes('pared simple') ||
+    /simple\s*pared/i.test(descRaw) ||
+    /\b(sw)\b/i.test(descRaw) ||
+    lowerDesc.endsWith('sw') ||
+    lowerDesc.includes('-sw')
+  ) {
+    wall_type = 'single';
+  }
+
+  // 5. Custom Print Clues
+  let is_custom_print: boolean | null = null;
+  if (
+    fullText.includes('con diseno') ||
+    fullText.includes('con diseño') ||
+    /\bc\/d\b/i.test(descRaw) ||
+    /\bcd\b/i.test(normDesc) ||
+    fullText.includes('logo') ||
+    fullText.includes('personalizado') ||
+    fullText.includes('impreso') ||
+    normDesc.includes('bkvasologo') ||
+    normDesc.includes('popvasologo')
+  ) {
+    is_custom_print = true;
+  } else if (
+    fullText.includes('sin diseno') ||
+    fullText.includes('sin diseño') ||
+    /\bs\/d\b/i.test(descRaw) ||
+    /\bsd\b/i.test(normDesc) ||
+    fullText.includes('generico') ||
+    fullText.includes('blanco')
+  ) {
+    is_custom_print = false;
+  }
+
+  return {
+    family,
+    capacity_oz,
+    wall_type,
+    material_line,
+    is_custom_print,
+  };
+}
+
+export type ProductMatchType =
+  | 'EXACT_SKU'
+  | 'ALIAS_CONFIRMED'
+  | 'ATTRIBUTE_UNIQUE_MATCH'
+  | 'AMBIGUOUS'
+  | 'NO_MATCH'
+  | 'SKIPPED';
 
 export interface ProductMatchResult {
   sku: string | null;
   product_name: string | null;
   category: string | null;
   status: ProductRowStatus;
+  match_type: ProductMatchType;
   candidates: Array<{ sku: string; name: string }> | null;
+  detected_attributes?: ProductExtractedAttributes;
 }
 
-export function matchProductRecord(
-  raw: { producto?: string | null; sku_raw?: string | null },
+export function matchProductRecordWithAttributes(
+  raw: {
+    producto?: string | null;
+    sku_raw?: string | null;
+    line?: string | null;
+    subline?: string | null;
+    rawPayload?: Record<string, unknown>;
+  },
   skus: SkuRef[],
   aliases: Array<{ alias_normalized: string; sku: string }>,
 ): ProductMatchResult {
   const normSkuRaw = normalizeSku(raw.sku_raw);
+  const normDesc = normalizeName(raw.producto || raw.sku_raw);
+
+  if (!normDesc && !normSkuRaw) {
+    return {
+      sku: null,
+      product_name: null,
+      category: null,
+      status: 'SKIPPED',
+      match_type: 'SKIPPED',
+      candidates: null,
+    };
+  }
+
+  // PRIORITY 1: EXACT SKU (raw sku or description exactly matches Master SKU)
   if (normSkuRaw) {
     const exact = skus.find((s) => normalizeSku(s.sku) === normSkuRaw);
     if (exact) {
@@ -196,70 +403,144 @@ export function matchProductRecord(
         product_name: exact.name,
         category: exact.category ?? null,
         status: isCup ? 'RESOLVED_CUP' : 'RESOLVED_NON_CUP',
+        match_type: 'EXACT_SKU',
         candidates: null,
       };
     }
   }
 
-  const normDesc = normalizeName(raw.producto || raw.sku_raw);
-  if (!normDesc) {
+  const exactByDesc = skus.find((s) => normalizeSku(s.sku) === normalizeSku(raw.producto));
+  if (exactByDesc) {
+    const isCup = exactByDesc.category === 'cups';
+    return {
+      sku: exactByDesc.sku,
+      product_name: exactByDesc.name,
+      category: exactByDesc.category ?? null,
+      status: isCup ? 'RESOLVED_CUP' : 'RESOLVED_NON_CUP',
+      match_type: 'EXACT_SKU',
+      candidates: null,
+    };
+  }
+
+  // PRIORITY 2: ALIAS CONFIRMED
+  // Check alias table. Crucial: alias must point to an EXISTING Master SKU!
+  if (normDesc) {
+    const aliasHit = aliases.find((a) => a.alias_normalized === normDesc);
+    if (aliasHit) {
+      const targetInMaster = skus.find((s) => normalizeSku(s.sku) === normalizeSku(aliasHit.sku));
+      if (targetInMaster) {
+        const isCup = targetInMaster.category === 'cups';
+        return {
+          sku: targetInMaster.sku,
+          product_name: targetInMaster.name,
+          category: targetInMaster.category ?? null,
+          status: isCup ? 'RESOLVED_CUP' : 'RESOLVED_NON_CUP',
+          match_type: 'ALIAS_CONFIRMED',
+          candidates: null,
+        };
+      }
+    }
+  }
+
+  // PRIORITY 3: DETERMINISTIC ATTRIBUTE PARSER & MASTER SKU FILTERING
+  const attrs = extractProductAttributes({
+    description: raw.producto,
+    sku_raw: raw.sku_raw,
+    line: raw.line,
+    subline: raw.subline,
+    rawPayload: raw.rawPayload,
+  });
+
+  // If no family or no capacity can be interpreted, cannot match cups/bowls
+  if (!attrs.family || attrs.capacity_oz === null) {
+    // Check if exact product name in master catalog
+    const exactNameMatch = skus.find((s) => normalizeName(s.name) === normDesc);
+    if (exactNameMatch) {
+      const isCup = exactNameMatch.category === 'cups';
+      return {
+        sku: exactNameMatch.sku,
+        product_name: exactNameMatch.name,
+        category: exactNameMatch.category ?? null,
+        status: isCup ? 'RESOLVED_CUP' : 'RESOLVED_NON_CUP',
+        match_type: 'ATTRIBUTE_UNIQUE_MATCH',
+        candidates: null,
+        detected_attributes: attrs,
+      };
+    }
+
     return {
       sku: null,
-      product_name: null,
+      product_name: raw.producto || raw.sku_raw || null,
       category: null,
-      status: 'SKIPPED',
+      status: 'PRODUCT_UNRESOLVED',
+      match_type: 'NO_MATCH',
       candidates: null,
+      detected_attributes: attrs,
     };
   }
 
-  // Alias match
-  const aliasHit = aliases.find((a) => a.alias_normalized === normDesc);
-  if (aliasHit) {
-    const s = skus.find((x) => normalizeSku(x.sku) === normalizeSku(aliasHit.sku));
-    if (s) {
-      const isCup = s.category === 'cups';
-      return {
-        sku: s.sku,
-        product_name: s.name,
-        category: s.category ?? null,
-        status: isCup ? 'RESOLVED_CUP' : 'RESOLVED_NON_CUP',
-        candidates: null,
-      };
-    }
+  // Filter real master SKUs by family
+  let candidates = skus.filter((s) => s.category === attrs.family);
+
+  // Filter by capacity
+  candidates = candidates.filter((s) => s.size_oz === attrs.capacity_oz);
+
+  // Filter by wall type if explicit
+  if (attrs.wall_type) {
+    candidates = candidates.filter((s) => s.wall_type === attrs.wall_type);
   }
 
-  // Exact match by SKU or product name
-  const exactDesc = skus.find(
-    (s) => normalizeName(s.sku) === normDesc || normalizeName(s.name) === normDesc,
-  );
-  if (exactDesc) {
-    const isCup = exactDesc.category === 'cups';
+  // Evaluate candidate count
+  if (candidates.length === 1) {
+    const matched = candidates[0];
+    const isCup = matched.category === 'cups';
     return {
-      sku: exactDesc.sku,
-      product_name: exactDesc.name,
-      category: exactDesc.category ?? null,
+      sku: matched.sku,
+      product_name: matched.name,
+      category: matched.category ?? null,
       status: isCup ? 'RESOLVED_CUP' : 'RESOLVED_NON_CUP',
+      match_type: 'ATTRIBUTE_UNIQUE_MATCH',
       candidates: null,
+      detected_attributes: attrs,
     };
   }
 
-  // Substring / candidates match
-  const candidates = skus
-    .filter((s) => {
-      const sn = normalizeName(s.name);
-      const sk = normalizeName(s.sku);
-      return sn.includes(normDesc) || normDesc.includes(sn) || normDesc.includes(sk);
-    })
-    .slice(0, 6)
-    .map((s) => ({ sku: s.sku, name: s.name }));
+  if (candidates.length >= 2) {
+    return {
+      sku: null,
+      product_name: raw.producto || raw.sku_raw || null,
+      category: null,
+      status: 'PRODUCT_UNRESOLVED',
+      match_type: 'AMBIGUOUS',
+      candidates: candidates.map((c) => ({ sku: c.sku, name: c.name })),
+      detected_attributes: attrs,
+    };
+  }
 
+  // 0 candidates
   return {
     sku: null,
     product_name: raw.producto || raw.sku_raw || null,
     category: null,
     status: 'PRODUCT_UNRESOLVED',
-    candidates: candidates.length > 0 ? candidates : null,
+    match_type: 'NO_MATCH',
+    candidates: null,
+    detected_attributes: attrs,
   };
+}
+
+export function matchProductRecord(
+  raw: {
+    producto?: string | null;
+    sku_raw?: string | null;
+    line?: string | null;
+    subline?: string | null;
+    rawPayload?: Record<string, unknown>;
+  },
+  skus: SkuRef[],
+  aliases: Array<{ alias_normalized: string; sku: string }>,
+): ProductMatchResult {
+  return matchProductRecordWithAttributes(raw, skus, aliases);
 }
 
 export function computePurchaseFingerprint(input: {

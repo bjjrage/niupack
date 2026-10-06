@@ -478,79 +478,207 @@ export function CommercialDataImporter({
                 </div>
               )}
 
-              {/* Tab: PENDIENTES */}
+              {/* Tab: PENDIENTES & CLASIFICACIÓN DE PRODUCTOS */}
               {activeTab === 'pendientes' && (
-                <div className="space-y-3">
-                  {summary.unresolved_product_groups.length === 0 ? (
+                <div className="space-y-6">
+                  {/* Sub-section: AMBIGUOS CON CANDIDATOS */}
+                  {summary.unresolved_product_groups.filter((g) => g.match_type === 'AMBIGUOUS' || (g.candidates && g.candidates.length > 1)).length > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-md bg-amber-500/20 px-2 py-0.5 text-xs font-semibold text-amber-300">
+                          AMBIGUOS
+                        </span>
+                        <h4 className="text-sm font-semibold text-white">
+                          Productos con Múltiples Opciones en Maestro ({summary.unresolved_product_groups.filter((g) => g.match_type === 'AMBIGUOUS' || (g.candidates && g.candidates.length > 1)).length})
+                        </h4>
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        La IA detectó atributos clave (ej: capacidad oz) pero existen variantes en el Maestro (ej: pared simple vs doble). Seleccioná la variante correcta:
+                      </p>
+
+                      {summary.unresolved_product_groups
+                        .filter((g) => g.match_type === 'AMBIGUOUS' || (g.candidates && g.candidates.length > 1))
+                        .map((group) => {
+                          const currentSelect = selectedSkus[group.raw_value] || '';
+                          const isResolving = resolvingGroup === group.raw_value;
+                          const attrs = group.detected_attributes as { family?: string; capacity_oz?: number; wall_type?: string } | undefined;
+
+                          return (
+                            <div
+                              key={group.raw_value}
+                              className="flex flex-col justify-between gap-3 rounded-xl border border-amber-900/40 bg-[#16131c] p-4 sm:flex-row sm:items-center"
+                            >
+                              <div className="flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-semibold text-white">
+                                    {group.raw_value}
+                                  </span>
+                                  <span className="rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300">
+                                    {group.occurrences} movimientos
+                                  </span>
+                                </div>
+                                <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-400">
+                                  {attrs?.family && <span>Familia: <strong className="text-slate-300">{attrs.family}</strong></span>}
+                                  {attrs?.capacity_oz != null && <span>Capacidad: <strong className="text-slate-300">{attrs.capacity_oz} oz</strong></span>}
+                                  {attrs?.wall_type ? (
+                                    <span>Pared: <strong className="text-slate-300">{attrs.wall_type}</strong></span>
+                                  ) : (
+                                    <span className="text-amber-400/90 font-medium">(Pared sin especificar en ERP)</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <select
+                                  value={currentSelect}
+                                  onChange={(e) =>
+                                    setSelectedSkus((prev) => ({
+                                      ...prev,
+                                      [group.raw_value]: e.target.value,
+                                    }))
+                                  }
+                                  className="rounded-lg border border-amber-700/60 bg-slate-900 px-3 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+                                >
+                                  <option value="">Seleccionar entre candidatos...</option>
+                                  {group.candidates.map((cand) => (
+                                    <option key={cand.sku} value={cand.sku}>
+                                      {cand.sku} — {cand.name}
+                                    </option>
+                                  ))}
+                                </select>
+
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  disabled={!currentSelect || isResolving}
+                                  onClick={() => handleResolveGroup(group, currentSelect)}
+                                >
+                                  {isResolving ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    'Asignar a todos'
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+
+                  {/* Sub-section: SIN MATCH */}
+                  {summary.unresolved_product_groups.filter((g) => g.match_type !== 'AMBIGUOUS' && (!g.candidates || g.candidates.length <= 1)).length > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-md bg-rose-500/20 px-2 py-0.5 text-xs font-semibold text-rose-300">
+                          SIN MATCH
+                        </span>
+                        <h4 className="text-sm font-semibold text-white">
+                          Sin Equivalente Directo en Maestro ({summary.unresolved_product_groups.filter((g) => g.match_type !== 'AMBIGUOUS' && (!g.candidates || g.candidates.length <= 1)).length})
+                        </h4>
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        Estos productos no pudieron vincularse automáticamente por falta de capacidad o familia compatible:
+                      </p>
+
+                      {summary.unresolved_product_groups
+                        .filter((g) => g.match_type !== 'AMBIGUOUS' && (!g.candidates || g.candidates.length <= 1))
+                        .map((group) => {
+                          const currentSelect = selectedSkus[group.raw_value] || '';
+                          const isResolving = resolvingGroup === group.raw_value;
+
+                          return (
+                            <div
+                              key={group.raw_value}
+                              className="flex flex-col justify-between gap-3 rounded-xl border border-slate-800 bg-[#11151f] p-4 sm:flex-row sm:items-center"
+                            >
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-white">
+                                    {group.raw_value}
+                                  </span>
+                                  <span className="rounded bg-slate-700/60 px-2 py-0.5 text-xs font-medium text-slate-300">
+                                    {group.occurrences} movimientos
+                                  </span>
+                                </div>
+                                <span className="text-xs text-slate-500">
+                                  No compatible con catálogo de vasos
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <select
+                                  value={currentSelect}
+                                  onChange={(e) =>
+                                    setSelectedSkus((prev) => ({
+                                      ...prev,
+                                      [group.raw_value]: e.target.value,
+                                    }))
+                                  }
+                                  className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-white focus:border-brand-500 focus:outline-none"
+                                >
+                                  <option value="">Seleccionar SKU manual...</option>
+                                  {group.candidates.map((cand) => (
+                                    <option key={cand.sku} value={cand.sku}>
+                                      {cand.sku} — {cand.name}
+                                    </option>
+                                  ))}
+                                </select>
+
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  disabled={!currentSelect || isResolving}
+                                  onClick={() => handleResolveGroup(group, currentSelect)}
+                                >
+                                  {isResolving ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    'Asignar'
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+
+                  {/* Sub-section: AUTO RESUELTOS */}
+                  {summary.auto_resolved_product_groups && summary.auto_resolved_product_groups.length > 0 && (
+                    <div className="space-y-3 pt-4 border-t border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-md bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-300">
+                          AUTO RESUELTOS
+                        </span>
+                        <h4 className="text-sm font-semibold text-white">
+                          Grupos Conciliados Automáticamente ({summary.auto_resolved_product_groups.length})
+                        </h4>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        {summary.auto_resolved_product_groups.slice(0, 10).map((ag) => (
+                          <div key={ag.raw_value} className="flex items-center justify-between rounded-lg border border-emerald-950/40 bg-emerald-950/10 p-2.5 text-slate-300">
+                            <span className="font-mono text-white truncate max-w-[200px]" title={ag.raw_value}>{ag.raw_value}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-slate-400">({ag.occurrences} filas)</span>
+                              <strong className="text-emerald-400">{ag.sku}</strong>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {summary.auto_resolved_product_groups.length > 10 && (
+                        <p className="text-xs text-slate-500 italic">
+                          ... y {summary.auto_resolved_product_groups.length - 10} grupos más auto-conciliados.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {summary.unresolved_product_groups.length === 0 && (
                     <div className="rounded-xl border border-slate-800 p-8 text-center text-sm text-slate-400">
                       <PackageCheck className="mx-auto mb-2 h-8 w-8 text-emerald-400" />
                       Todos los productos están conciliados con el Maestro de SKUs.
                     </div>
-                  ) : (
-                    <>
-                      <p className="text-xs text-slate-400">
-                        Los siguientes productos históricos no tienen coincidencia exacta en el Maestro de SKUs.
-                        Asigná el SKU correspondiente para resolver todos los movimientos de esa descripción en un solo paso:
-                      </p>
-                      {summary.unresolved_product_groups.map((group) => {
-                        const currentSelect = selectedSkus[group.raw_value] || '';
-                        const isResolving = resolvingGroup === group.raw_value;
-
-                        return (
-                          <div
-                            key={group.raw_value}
-                            className="flex flex-col justify-between gap-3 rounded-xl border border-slate-800 bg-[#11151f] p-4 sm:flex-row sm:items-center"
-                          >
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold text-white">
-                                  {group.raw_value}
-                                </span>
-                                <span className="rounded bg-purple-500/20 px-2 py-0.5 text-xs font-medium text-purple-300">
-                                  {group.occurrences} movimientos
-                                </span>
-                              </div>
-                              <span className="text-xs text-slate-500">
-                                Sin SKU en Maestro
-                              </span>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <select
-                                value={currentSelect}
-                                onChange={(e) =>
-                                  setSelectedSkus((prev) => ({
-                                    ...prev,
-                                    [group.raw_value]: e.target.value,
-                                  }))
-                                }
-                                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-white focus:border-brand-500 focus:outline-none"
-                              >
-                                <option value="">Seleccionar SKU Maestro...</option>
-                                {group.candidates.map((cand) => (
-                                  <option key={cand.sku} value={cand.sku}>
-                                    {cand.sku} — {cand.name}
-                                  </option>
-                                ))}
-                              </select>
-
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                disabled={!currentSelect || isResolving}
-                                onClick={() => handleResolveGroup(group, currentSelect)}
-                              >
-                                {isResolving ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  'Asignar a todos'
-                                )}
-                              </Button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </>
                   )}
                 </div>
               )}

@@ -460,7 +460,7 @@ describe('COMMERCIAL DATA INGESTION — 28 Tests Obligatorios', () => {
   it('16. 327 movimientos mismo product_raw: una sola decisión de alias', async () => {
     const rows: unknown[][] = [['Cliente', 'Fecha', 'Producto', 'Cantidad']];
     for (let i = 0; i < 327; i++) {
-      rows.push(['Cliente Regular', '2026-08-01', 'Vaso 8 Onzas Sin Marca', '1000']);
+      rows.push(['Cliente Regular', '2026-08-01', 'Vaso 12 Onzas Sin Marca', '1000']);
     }
     const buffer = makeXlsx({ Data: rows });
 
@@ -474,7 +474,7 @@ describe('COMMERCIAL DATA INGESTION — 28 Tests Obligatorios', () => {
     expect(summary.unresolved_product_groups).toHaveLength(1);
     expect(summary.unresolved_product_groups[0].occurrences).toBe(327);
 
-    const res = await resolveProductGroup(ORG_A, summary.job_id, 'Vaso 8 Onzas Sin Marca', 'CUP-8OZ-SW', true);
+    const res = await resolveProductGroup(ORG_A, summary.job_id, 'Vaso 12 Onzas Sin Marca', 'CUP-12OZ-SW', true);
     expect(res.updatedRows).toBe(327);
 
     const updatedSummary = await getIngestionCockpitSummary(ORG_A, summary.job_id);
@@ -482,7 +482,7 @@ describe('COMMERCIAL DATA INGESTION — 28 Tests Obligatorios', () => {
     expect(updatedSummary?.status).toBe('READY');
 
     const aliases = await crmRepository.listProductAliases(ORG_A);
-    expect(aliases.some((a) => a.sku === 'CUP-8OZ-SW')).toBe(true);
+    expect(aliases.some((a) => a.sku === 'CUP-12OZ-SW')).toBe(true);
   });
 
   // 17. Reimportación: 0 duplicados nuevos

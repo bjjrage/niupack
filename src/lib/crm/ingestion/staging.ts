@@ -6,14 +6,19 @@ import {
   inferCommercialFileSchema,
 } from './schema-inference';
 import {
+  extractProductAttributes,
   matchCompanyRecord,
   matchProductRecord,
+  matchProductRecordWithAttributes,
   normalizeName,
   normalizeSku,
   normalizeTaxId,
   parseDateCell,
   parseNum,
   type SkuRef,
+  type ProductMatchResult,
+  type ProductMatchType,
+  type ProductExtractedAttributes,
 } from './reconciliation';
 import type {
   CrmImportJob,
@@ -50,13 +55,24 @@ async function loadOrgCatalog(organizationId: string): Promise<{
     (products as Array<{ id: string; name: string; category?: string }>).map((p) => [p.id, p]),
   );
 
-  const skus: SkuRef[] = (attrs as Array<{ sku: string; product_id: string }>).map((a) => {
+  const skus: SkuRef[] = (attrs as Array<{
+    sku: string;
+    product_id: string;
+    size_oz?: number | null;
+    size_ml?: number | null;
+    wall_type?: 'single' | 'double' | 'n/a' | null;
+    material?: string | null;
+  }>).map((a) => {
     const prod = productById.get(a.product_id);
     return {
       sku: a.sku,
       product_id: a.product_id,
       name: prod?.name ?? a.sku,
       category: prod?.category ?? null,
+      size_oz: a.size_oz ?? null,
+      size_ml: a.size_ml ?? null,
+      wall_type: a.wall_type ?? null,
+      material: a.material ?? null,
     };
   });
 
@@ -117,6 +133,8 @@ export async function createIngestionJob(
       purchase_date: null,
       product_description: null,
       sku: null,
+      product_line: null,
+      product_subline: null,
       quantity: null,
       document_number: null,
       line_number: null,
@@ -157,6 +175,8 @@ export async function createIngestionJob(
         purchase_date: null,
         product_description: null,
         sku: null,
+        product_line: null,
+        product_subline: null,
         quantity: null,
         document_number: null,
         line_number: null,
@@ -197,6 +217,15 @@ export async function createIngestionJob(
   const unresolvedProductGroupsMap = new Map<string, UnresolvedGroup>();
   const unresolvedCustomerGroupsMap = new Map<string, UnresolvedGroup>();
   const errorsSummary: Array<{ row_index: number; error: string }> = [];
+  const productGroupsMap = new Map<string, {
+    raw_value: string;
+    normalized_value: string;
+    sku_raw: string | null;
+    line: string | null;
+    subline: string | null;
+    raw_payload: Record<string, unknown>;
+    count: number;
+  }>();
 
   const pendingResolutions = options.pendingResolutions ?? {};
 
@@ -238,6 +267,8 @@ export async function createIngestionJob(
     const purchaseDate = parseDateCell(getRaw('purchase_date'));
     const productDesc = get('product_description') || null;
     const skuRaw = get('sku') || null;
+    const productLine = get('product_line') || cleanStr(strPayload['Linea']) || cleanStr(strPayload['linea']) || null;
+    const productSubline = get('product_subline') || cleanStr(strPayload['SUB-LINEA']) || cleanStr(strPayload['sublinea']) || cleanStr(strPayload['sub_linea']) || null;
     const quantity = parseNum(getRaw('quantity'));
     const docNum = get('document_number') || null;
     const lineNum = parseNum(getRaw('line_number'));
@@ -299,59 +330,30 @@ export async function createIngestionJob(
       customerStatus = 'INVALID';
     }
 
-    // Product & SKU resolution
-    let resolvedSku: string | null = null;
-    let productStatus: ProductRowStatus = 'SKIPPED';
-
+    // Collect product group accumulator
     const prodKey = productDesc || skuRaw;
     if (prodKey) {
-      if (pendingResolutions[prodKey]) {
-        const targetSku = pendingResolutions[prodKey];
-        const matchInCatalog = cat.skus.find((s) => normalizeSku(s.sku) === normalizeSku(targetSku));
-        if (matchInCatalog) {
-          resolvedSku = matchInCatalog.sku;
-          productStatus = matchInCatalog.category === 'cups' ? 'RESOLVED_CUP' : 'RESOLVED_NON_CUP';
-        } else {
-          resolvedSku = targetSku;
-          productStatus = 'RESOLVED_CUP';
-        }
+      const normKey = normalizeName(prodKey);
+      if (!productGroupsMap.has(normKey)) {
+        productGroupsMap.set(normKey, {
+          raw_value: prodKey,
+          normalized_value: normKey,
+          sku_raw: skuRaw,
+          line: productLine,
+          subline: productSubline,
+          raw_payload: strPayload,
+          count: 1,
+        });
       } else {
-        const pm = matchProductRecord({ producto: productDesc, sku_raw: skuRaw }, cat.skus, cat.productAliases);
-        resolvedSku = pm.sku;
-        productStatus = pm.status;
-
-        if (pm.status === 'PRODUCT_UNRESOLVED') {
-          const normProdKey = normalizeName(prodKey);
-          if (!unresolvedProductGroupsMap.has(normProdKey)) {
-            const cupCandidates = cat.skus
-              .filter((s) => s.category === 'cups')
-              .map((s) => ({ sku: s.sku, name: s.name }))
-              .slice(0, 6);
-            unresolvedProductGroupsMap.set(normProdKey, {
-              type: 'product',
-              raw_value: prodKey,
-              normalized_value: normProdKey,
-              occurrences: 1,
-              candidates: pm.candidates && pm.candidates.length > 0 ? pm.candidates : cupCandidates,
-            });
-          } else {
-            unresolvedProductGroupsMap.get(normProdKey)!.occurrences += 1;
-          }
-        }
+        const existing = productGroupsMap.get(normKey)!;
+        existing.count += 1;
+        if (!existing.line && productLine) existing.line = productLine;
+        if (!existing.subline && productSubline) existing.subline = productSubline;
       }
     }
 
-    // Overall row status
-    let rowStatus: IngestionRowStatus = 'READY';
     if (rowErrors.length > 0) {
-      rowStatus = 'INVALID';
       errorsSummary.push({ row_index: rowIdx, error: rowErrors.join(', ') });
-    } else if (datasetType !== 'ACCOUNT_LIST' && productStatus === 'PRODUCT_UNRESOLVED') {
-      rowStatus = 'PRODUCT_UNRESOLVED';
-    } else if (customerStatus === 'UNRESOLVED') {
-      rowStatus = 'CUSTOMER_UNRESOLVED';
-    } else {
-      rowStatus = 'READY';
     }
 
     stagedRows.push({
@@ -370,6 +372,8 @@ export async function createIngestionJob(
       purchase_date: purchaseDate,
       product_raw: productDesc,
       sku_raw: skuRaw,
+      product_line_raw: productLine,
+      product_subline_raw: productSubline,
       quantity,
       document_number: docNum,
       line_number: lineNum != null && Number.isInteger(lineNum) ? lineNum : null,
@@ -377,15 +381,145 @@ export async function createIngestionJob(
       total_value: totalVal,
       currency,
       company_id: resolvedCompanyId,
-      sku: resolvedSku,
+      sku: null,
       customer_status: customerStatus,
-      product_status: productStatus,
-      row_status: rowStatus,
+      product_status: 'PRODUCT_UNRESOLVED',
+      row_status: 'READY',
       errors: rowErrors,
       raw_payload: strPayload,
       created_at: nowIso,
       updated_at: nowIso,
     });
+  }
+
+  // Reconcile product groups once per unique group
+  const resolvedProductGroupsMap = new Map<string, {
+    sku: string | null;
+    product_status: ProductRowStatus;
+    match_type: ProductMatchType;
+    candidates: Array<{ sku: string; name: string }> | null;
+    detected_attributes?: ProductExtractedAttributes;
+  }>();
+
+  for (const [normKey, grp] of productGroupsMap.entries()) {
+    const manualTarget = pendingResolutions[grp.raw_value] || pendingResolutions[normKey];
+    if (manualTarget) {
+      const matchInCatalog = cat.skus.find((s) => normalizeSku(s.sku) === normalizeSku(manualTarget));
+      if (matchInCatalog) {
+        resolvedProductGroupsMap.set(normKey, {
+          sku: matchInCatalog.sku,
+          product_status: matchInCatalog.category === 'cups' ? 'RESOLVED_CUP' : 'RESOLVED_NON_CUP',
+          match_type: 'EXACT_SKU',
+          candidates: null,
+        });
+      } else {
+        // STRICT SKU INVENTION GUARD: Target SKU not in catalog -> do NOT resolve!
+        resolvedProductGroupsMap.set(normKey, {
+          sku: null,
+          product_status: 'PRODUCT_UNRESOLVED',
+          match_type: 'NO_MATCH',
+          candidates: null,
+        });
+      }
+      continue;
+    }
+
+    const pm = matchProductRecordWithAttributes(
+      {
+        producto: grp.raw_value,
+        sku_raw: grp.sku_raw,
+        line: grp.line,
+        subline: grp.subline,
+        rawPayload: grp.raw_payload,
+      },
+      cat.skus,
+      cat.productAliases,
+    );
+
+    if (pm.match_type === 'ATTRIBUTE_UNIQUE_MATCH' && pm.sku) {
+      // Unequivocal match! Auto-learn alias safely
+      const alreadyHas = cat.productAliases.some((a) => a.alias_normalized === normKey);
+      if (!alreadyHas) {
+        await crmRepository.saveProductAlias(organizationId, normKey, pm.sku);
+        cat.productAliases.push({ alias_normalized: normKey, sku: pm.sku });
+      }
+    }
+
+    resolvedProductGroupsMap.set(normKey, {
+      sku: pm.sku,
+      product_status: pm.status,
+      match_type: pm.match_type,
+      candidates: pm.candidates,
+      detected_attributes: pm.detected_attributes,
+    });
+  }
+
+  // Apply group resolutions to stagedRows
+  for (const row of stagedRows) {
+    const prodKey = row.product_raw || row.sku_raw;
+    if (!prodKey) {
+      row.product_status = 'SKIPPED';
+      row.sku = null;
+    } else {
+      const normKey = normalizeName(prodKey);
+      const grpRes = resolvedProductGroupsMap.get(normKey);
+      if (grpRes) {
+        row.sku = grpRes.sku;
+        row.product_status = grpRes.product_status;
+      }
+    }
+
+    // Determine final row_status
+    if (row.errors.length > 0) {
+      row.row_status = 'INVALID';
+    } else if (datasetType !== 'ACCOUNT_LIST' && row.product_status === 'PRODUCT_UNRESOLVED') {
+      row.row_status = 'PRODUCT_UNRESOLVED';
+    } else if (row.customer_status === 'UNRESOLVED') {
+      row.row_status = 'CUSTOMER_UNRESOLVED';
+    } else {
+      row.row_status = 'READY';
+    }
+  }
+
+  // Populate unresolved, ambiguous, no-match, and auto-resolved groups for the cockpit
+  const unresolvedProductGroups: UnresolvedGroup[] = [];
+  const ambiguousProductGroups: UnresolvedGroup[] = [];
+  const noMatchProductGroups: UnresolvedGroup[] = [];
+  const autoResolvedProductGroups: Array<{ raw_value: string; sku: string; occurrences: number; match_type: string }> = [];
+
+  for (const [normKey, grp] of productGroupsMap.entries()) {
+    const res = resolvedProductGroupsMap.get(normKey);
+    if (!res) continue;
+
+    if (res.product_status === 'PRODUCT_UNRESOLVED') {
+      const cupCandidates = cat.skus
+        .filter((s) => s.category === 'cups')
+        .map((s) => ({ sku: s.sku, name: s.name }))
+        .slice(0, 6);
+
+      const uGroup: UnresolvedGroup = {
+        type: 'product',
+        raw_value: grp.raw_value,
+        normalized_value: normKey,
+        occurrences: grp.count,
+        candidates: res.candidates && res.candidates.length > 0 ? res.candidates : cupCandidates,
+        match_type: res.match_type,
+        detected_attributes: res.detected_attributes as Record<string, unknown> | undefined,
+      };
+      unresolvedProductGroups.push(uGroup);
+      if (res.match_type === 'AMBIGUOUS') {
+        ambiguousProductGroups.push(uGroup);
+      } else {
+        noMatchProductGroups.push(uGroup);
+      }
+    } else if (res.sku) {
+      autoResolvedProductGroups.push({
+        raw_value: grp.raw_value,
+        sku: res.sku,
+        occurrences: grp.count,
+        match_type: res.match_type,
+      });
+    }
   }
 
   // Calculate metrics
@@ -461,7 +595,10 @@ export async function createIngestionJob(
     unresolved_products_count: unresolvedProducts,
     unresolved_clients_count: unresolvedClients,
     invalid_rows_count: invalidRows,
-    unresolved_product_groups: Array.from(unresolvedProductGroupsMap.values()),
+    unresolved_product_groups: unresolvedProductGroups,
+    ambiguous_product_groups: ambiguousProductGroups,
+    no_match_product_groups: noMatchProductGroups,
+    auto_resolved_product_groups: autoResolvedProductGroups,
     unresolved_customer_groups: Array.from(unresolvedCustomerGroupsMap.values()),
     errors_summary: errorsSummary.slice(0, 100),
     sample_rows: sampleRows,
@@ -479,28 +616,42 @@ export async function getIngestionCockpitSummary(
   const rows = await crmRepository.listImportRows(organizationId, jobId, 10000);
   const cat = await loadOrgCatalog(organizationId);
 
-  const unresolvedProductGroupsMap = new Map<string, UnresolvedGroup>();
+  const productGroupsMap = new Map<string, {
+    raw_value: string;
+    normalized_value: string;
+    sku_raw: string | null;
+    line: string | null;
+    subline: string | null;
+    raw_payload: Record<string, unknown>;
+    count: number;
+    rows: CrmImportRow[];
+  }>();
   const unresolvedCustomerGroupsMap = new Map<string, UnresolvedGroup>();
   const errorsSummary: Array<{ row_index: number; error: string }> = [];
 
   for (const r of rows) {
-    if (r.row_status === 'PRODUCT_UNRESOLVED' && (r.product_raw || r.sku_raw)) {
+    if (r.product_raw || r.sku_raw) {
       const raw = r.product_raw || r.sku_raw || '';
       const key = normalizeName(raw);
-      if (!unresolvedProductGroupsMap.has(key)) {
-        const cupCandidates = cat.skus
-          .filter((s) => s.category === 'cups')
-          .map((s) => ({ sku: s.sku, name: s.name }))
-          .slice(0, 6);
-        unresolvedProductGroupsMap.set(key, {
-          type: 'product',
+      const line = (r.raw_payload?.Linea as string) || (r.raw_payload?.linea as string) || (r.raw_payload?.product_line as string) || r.product_line_raw || null;
+      const subline = (r.raw_payload?.['SUB-LINEA'] as string) || (r.raw_payload?.sublinea as string) || (r.raw_payload?.product_subline as string) || r.product_subline_raw || null;
+      if (!productGroupsMap.has(key)) {
+        productGroupsMap.set(key, {
           raw_value: raw,
           normalized_value: key,
-          occurrences: 1,
-          candidates: cupCandidates,
+          sku_raw: r.sku_raw,
+          line,
+          subline,
+          raw_payload: r.raw_payload,
+          count: 1,
+          rows: [r],
         });
       } else {
-        unresolvedProductGroupsMap.get(key)!.occurrences += 1;
+        const grp = productGroupsMap.get(key)!;
+        grp.count += 1;
+        grp.rows.push(r);
+        if (!grp.line && line) grp.line = line;
+        if (!grp.subline && subline) grp.subline = subline;
       }
     }
 
@@ -521,6 +672,57 @@ export async function getIngestionCockpitSummary(
 
     if (r.row_status === 'INVALID' && r.errors && r.errors.length > 0) {
       errorsSummary.push({ row_index: r.row_index, error: r.errors.join(', ') });
+    }
+  }
+
+  const unresolvedProductGroups: UnresolvedGroup[] = [];
+  const ambiguousProductGroups: UnresolvedGroup[] = [];
+  const noMatchProductGroups: UnresolvedGroup[] = [];
+  const autoResolvedProductGroups: Array<{ raw_value: string; sku: string; occurrences: number; match_type: string }> = [];
+
+  for (const [normKey, grp] of productGroupsMap.entries()) {
+    const isUnresolved = grp.rows.some((r) => r.row_status === 'PRODUCT_UNRESOLVED');
+    if (isUnresolved) {
+      const pm = matchProductRecordWithAttributes(
+        {
+          producto: grp.raw_value,
+          sku_raw: grp.sku_raw,
+          line: grp.line,
+          subline: grp.subline,
+          rawPayload: grp.raw_payload,
+        },
+        cat.skus,
+        cat.productAliases,
+      );
+
+      const cupCandidates = cat.skus
+        .filter((s) => s.category === 'cups')
+        .map((s) => ({ sku: s.sku, name: s.name }))
+        .slice(0, 6);
+
+      const uGroup: UnresolvedGroup = {
+        type: 'product',
+        raw_value: grp.raw_value,
+        normalized_value: normKey,
+        occurrences: grp.count,
+        candidates: pm.candidates && pm.candidates.length > 0 ? pm.candidates : cupCandidates,
+        match_type: pm.match_type,
+        detected_attributes: pm.detected_attributes as Record<string, unknown> | undefined,
+      };
+      unresolvedProductGroups.push(uGroup);
+      if (pm.match_type === 'AMBIGUOUS') {
+        ambiguousProductGroups.push(uGroup);
+      } else {
+        noMatchProductGroups.push(uGroup);
+      }
+    } else {
+      const sampleSku = grp.rows.find((r) => r.sku)?.sku || '';
+      autoResolvedProductGroups.push({
+        raw_value: grp.raw_value,
+        sku: sampleSku,
+        occurrences: grp.count,
+        match_type: 'RESOLVED',
+      });
     }
   }
 
@@ -551,7 +753,10 @@ export async function getIngestionCockpitSummary(
     unresolved_products_count: unresolvedProducts,
     unresolved_clients_count: unresolvedClients,
     invalid_rows_count: invalidRows,
-    unresolved_product_groups: Array.from(unresolvedProductGroupsMap.values()),
+    unresolved_product_groups: unresolvedProductGroups,
+    ambiguous_product_groups: ambiguousProductGroups,
+    no_match_product_groups: noMatchProductGroups,
+    auto_resolved_product_groups: autoResolvedProductGroups,
     unresolved_customer_groups: Array.from(unresolvedCustomerGroupsMap.values()),
     errors_summary: errorsSummary.slice(0, 100),
     sample_rows: rows.slice(0, 50).map((r) => ({
@@ -577,7 +782,11 @@ export async function resolveProductGroup(
   const cat = await loadOrgCatalog(organizationId);
   const matched = cat.skus.find((s) => normalizeSku(s.sku) === normalizeSku(targetSku));
 
-  const isCup = matched?.category === 'cups';
+  if (!matched) {
+    throw new Error('SKU_NOT_FOUND_IN_MASTER');
+  }
+
+  const isCup = matched.category === 'cups';
   const newProductStatus: ProductRowStatus = isCup ? 'RESOLVED_CUP' : 'RESOLVED_NON_CUP';
 
   const updatedRows = await crmRepository.updateImportRowsByProduct(
@@ -585,7 +794,7 @@ export async function resolveProductGroup(
     jobId,
     rawProduct,
     {
-      sku: matched?.sku ?? normalizeSku(targetSku),
+      sku: matched.sku,
       product_status: newProductStatus,
       row_status: 'READY',
     },
@@ -595,7 +804,7 @@ export async function resolveProductGroup(
     await crmRepository.saveProductAlias(
       organizationId,
       normalizeName(rawProduct),
-      matched?.sku ?? normalizeSku(targetSku),
+      matched.sku,
     );
   }
 

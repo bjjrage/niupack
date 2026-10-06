@@ -129,6 +129,8 @@ Tu tarea es analizar la estructura muestral de un archivo subido (Excel/CSV) y d
    - purchase_date
    - product_description
    - sku
+   - product_line (ej. Linea, Línea, Rubro, ej. POLIPAPEL, PLASTICO)
+   - product_subline (ej. SUB-LINEA, Sublínea, Subrubro, ej. VASOS8, VASOS16, TAPAS8)
    - quantity
    - document_number
    - line_number

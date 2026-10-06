@@ -43,6 +43,8 @@ export const TRANSACTION_CANONICAL_FIELDS = [
   'purchase_date',
   'product_description',
   'sku',
+  'product_line',
+  'product_subline',
   'quantity',
   'document_number',
   'line_number',
@@ -104,6 +106,8 @@ export interface CrmImportRow {
   purchase_date: string | null;
   product_raw: string | null;
   sku_raw: string | null;
+  product_line_raw?: string | null;
+  product_subline_raw?: string | null;
   quantity: number | null;
   document_number: string | null;
   line_number: number | null;
@@ -127,6 +131,8 @@ export interface UnresolvedGroup {
   normalized_value: string;
   occurrences: number;
   candidates: Array<{ id?: string; sku?: string; name: string }>;
+  match_type?: 'AMBIGUOUS' | 'NO_MATCH' | 'ATTRIBUTE_UNIQUE_MATCH' | 'EXACT_SKU' | 'ALIAS_CONFIRMED' | 'SKIPPED';
+  detected_attributes?: Record<string, unknown>;
 }
 
 export interface IngestionCockpitSummary {
@@ -147,6 +153,9 @@ export interface IngestionCockpitSummary {
   unresolved_clients_count: number;
   invalid_rows_count: number;
   unresolved_product_groups: UnresolvedGroup[];
+  ambiguous_product_groups?: UnresolvedGroup[];
+  no_match_product_groups?: UnresolvedGroup[];
+  auto_resolved_product_groups?: Array<{ raw_value: string; sku: string; occurrences: number; match_type: string }>;
   unresolved_customer_groups: UnresolvedGroup[];
   errors_summary: Array<{ row_index: number; error: string }>;
   sample_rows: Array<Record<string, unknown>>;
