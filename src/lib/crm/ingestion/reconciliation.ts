@@ -24,24 +24,52 @@ export function normalizeSku(s?: string | null): string {
 
 export function parseDateCell(v: unknown): string | null {
   if (v == null || v === '') return null;
-  if (typeof v === 'number' && Number.isFinite(v)) {
-    // Excel serial date to ISO YYYY-MM-DD
-    const base = Date.UTC(1899, 11, 30) + Math.round(v) * 86400000;
-    return new Date(base).toISOString().slice(0, 10);
+  try {
+    if (v instanceof Date && !isNaN(v.getTime())) {
+      return v.toISOString().slice(0, 10);
+    }
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      // Excel serial date to ISO YYYY-MM-DD (valid range: 1 to 100,000 covering 1900 to 2173)
+      if (v >= 1 && v <= 100000) {
+        const base = Date.UTC(1899, 11, 30) + Math.round(v) * 86400000;
+        const d = new Date(base);
+        if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+      } else if (v > 1000000000000) {
+        const d = new Date(v);
+        if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+      }
+      return null;
+    }
+    const s = String(v).trim();
+    if (!s) return null;
+    if (/^\d{5}$/.test(s)) {
+      const serial = Number(s);
+      if (serial >= 1 && serial <= 100000) {
+        const base = Date.UTC(1899, 11, 30) + Math.round(serial) * 86400000;
+        const d = new Date(base);
+        if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+      }
+    }
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+      const d = new Date(`${m[1]}-${m[2]}-${m[3]}`);
+      if (!isNaN(d.getTime())) return `${m[1]}-${m[2]}-${m[3]}`;
+    }
+    m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/);
+    if (m) {
+      const yyyy = m[3].length === 2 ? `20${m[3]}` : m[3];
+      const iso = `${yyyy}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+      const d = new Date(iso);
+      if (!isNaN(d.getTime())) return iso;
+    }
+    const fallback = new Date(s);
+    if (!isNaN(fallback.getTime())) {
+      return fallback.toISOString().slice(0, 10);
+    }
+    return null;
+  } catch {
+    return null;
   }
-  const s = String(v).trim();
-  if (/^\d{5}$/.test(s)) {
-    const base = Date.UTC(1899, 11, 30) + Math.round(Number(s)) * 86400000;
-    return new Date(base).toISOString().slice(0, 10);
-  }
-  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/);
-  if (m) {
-    const yyyy = m[3].length === 2 ? `20${m[3]}` : m[3];
-    return `${yyyy}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
-  }
-  return null;
 }
 
 export function parseNum(v: unknown): number | null {
