@@ -777,6 +777,39 @@ export const crmRepository = {
     return hit ? { ...hit } : null;
   },
 
+  async deleteImportJob(
+    id: string,
+    organizationId: string,
+    expectedStatus: import('./ingestion/types').ImportJobStatus,
+  ): Promise<boolean> {
+    this.assertWritable();
+    mustOrg(organizationId);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('crm_import_jobs')
+        .delete()
+        .eq('id', id)
+        .eq('organization_id', organizationId)
+        .eq('status', expectedStatus)
+        .is('committed_at', null)
+        .select('id')
+        .maybeSingle();
+      if (error) throw new Error(`crm_import_jobs: ${error.message}`);
+      return Boolean(data);
+    }
+
+    const store = mem();
+    const job = store.importJobs.find((entry) => entry.id === id && entry.organization_id === organizationId);
+    if (!job || job.status !== expectedStatus || job.committed_at) return false;
+    store.importRows = store.importRows.filter(
+      (row) => row.job_id !== id || row.organization_id !== organizationId,
+    );
+    store.importJobs = store.importJobs.filter(
+      (entry) => entry.id !== id || entry.organization_id !== organizationId,
+    );
+    return true;
+  },
+
   async updateImportJob(
     id: string,
     organizationId: string,

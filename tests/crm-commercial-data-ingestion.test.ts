@@ -9,6 +9,7 @@ import {
   getIngestionCockpitSummary,
   resolveProductGroup,
   cancelIngestionJob,
+  deleteIngestionJob,
 } from '@/lib/crm/ingestion/staging';
 import {
   commitIngestionJobBatch,
@@ -26,6 +27,18 @@ function makeXlsx(sheets: Record<string, unknown[][]>): Buffer {
     XLSX.utils.book_append_sheet(wb, ws, name);
   }
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
+
+function createDeleteTestJob(organizationId: string) {
+  return createIngestionJob(organizationId, {
+    buffer: makeXlsx({ Data: [
+      ['Cliente', 'Fecha', 'SKU', 'Cantidad'],
+      ['Cuenta pendiente', '2026-02-01', 'CUP-8OZ-SW', 100],
+    ] }),
+    filename: 'delete-guard.xlsx',
+    targetLifecycle: 'CUSTOMER',
+    overrideMapping: { customer_name: 0, purchase_date: 1, sku: 2, quantity: 3 },
+  });
 }
 
 function mockOpenAI(responseJson: Record<string, unknown>) {
@@ -844,5 +857,151 @@ describe('COMMERCIAL DATA INGESTION — 28 Tests Obligatorios', () => {
     await expect(commitEntireIngestionJob(ORG_A, summary.job_id)).rejects.toThrow('JOB_IS_CANCELLED');
     expect(await crmRepository.listCompanies(ORG_A)).toHaveLength(0);
     expect(await crmRepository.listPurchases(ORG_A)).toHaveLength(0);
+  });
+
+  it('29. Delete job: elimina solo staging y preserva CRM definitivo', async () => {
+    const company = await crmRepository.createCompany({ organization_id: ORG_A, name: 'Cuenta preservada' });
+    const contact = await crmRepository.createContact({
+      organization_id: ORG_A,
+      company_id: company.id,
+      full_name: 'Contacto preservado',
+    });
+    await crmRepository.insertPurchaseIdempotent({
+      organization_id: ORG_A,
+      company_id: company.id,
+      contact_id: contact.id,
+      purchase_date: '2026-01-01',
+      sku: 'CUP-8OZ-SW',
+      product_name: 'Vaso 8 oz',
+      quantity: 10,
+      unit: 'unit',
+      source: 'test',
+    });
+    await crmRepository.saveCustomerAlias(ORG_A, 'cuenta preservada', company.id);
+    await crmRepository.saveProductAlias(ORG_A, 'vaso preservado', 'CUP-8OZ-SW');
+
+    const crmSnapshot = async () => structuredClone({
+      companies: await crmRepository.listCompanies(ORG_A),
+      contacts: await crmRepository.listContacts(ORG_A),
+      purchases: await crmRepository.listPurchases(ORG_A),
+      customerAliases: await crmRepository.listCustomerAliases(ORG_A),
+      productAliases: await crmRepository.listProductAliases(ORG_A),
+    });
+    const beforeCrm = await crmSnapshot();
+
+    const summary = await createIngestionJob(ORG_A, {
+      buffer: makeXlsx({ Data: [
+        ['Cliente', 'Fecha', 'SKU', 'Cantidad'],
+        ['Cuenta preservada', '2026-02-01', 'CUP-8OZ-SW', 100],
+      ] }),
+      filename: 'delete-staging-only.xlsx',
+      targetLifecycle: 'CUSTOMER',
+      overrideMapping: { customer_name: 0, purchase_date: 1, sku: 2, quantity: 3 },
+    });
+    const beforeRows = await crmRepository.listImportRows(ORG_A, summary.job_id);
+
+    const deleted = await deleteIngestionJob(ORG_A, summary.job_id, beforeRows.length);
+
+    expect(deleted).toEqual({ job_id: summary.job_id, deleted_job: true, deleted_rows: beforeRows.length });
+    expect(await crmRepository.getImportJob(summary.job_id, ORG_A)).toBeNull();
+    expect(await crmRepository.listImportRows(ORG_A, summary.job_id)).toHaveLength(0);
+    expect(await crmRepository.listCompanies(ORG_A)).toHaveLength(1);
+    expect(await crmRepository.listContacts(ORG_A)).toHaveLength(1);
+    expect(await crmRepository.listPurchases(ORG_A)).toHaveLength(1);
+    expect(await crmSnapshot()).toEqual(beforeCrm);
+  });
+
+  it('30. Delete job: exige conteo exacto y rechaza imports comprometidas', async () => {
+    const summary = await createIngestionJob(ORG_A, {
+      buffer: makeXlsx({ Data: [
+        ['Cliente', 'Fecha', 'SKU', 'Cantidad'],
+        ['Cuenta pendiente', '2026-02-01', 'CUP-8OZ-SW', 100],
+      ] }),
+      filename: 'delete-guard.xlsx',
+      targetLifecycle: 'CUSTOMER',
+      overrideMapping: { customer_name: 0, purchase_date: 1, sku: 2, quantity: 3 },
+    });
+    const rows = await crmRepository.listImportRows(ORG_A, summary.job_id);
+
+    await expect(deleteIngestionJob(ORG_A, summary.job_id, rows.length + 1))
+      .rejects.toThrow('IMPORT_ROW_COUNT_MISMATCH');
+    expect(await crmRepository.listImportRows(ORG_A, summary.job_id)).toHaveLength(rows.length);
+
+    const job = await crmRepository.getImportJob(summary.job_id, ORG_A);
+    if (!job) throw new Error('IMPORT_JOB_NOT_FOUND');
+    await crmRepository.updateImportJob(summary.job_id, ORG_A, { committed_at: new Date().toISOString() });
+    await expect(deleteIngestionJob(ORG_A, summary.job_id, rows.length))
+      .rejects.toThrow('COMMITTED_JOB_CANNOT_BE_DELETED');
+    expect(await crmRepository.getImportJob(summary.job_id, ORG_A)).not.toBeNull();
+    expect(await crmRepository.listImportRows(ORG_A, summary.job_id)).toHaveLength(rows.length);
+  });
+
+  it('31. Delete job: rechaza tenant ajeno y preserva otros jobs', async () => {
+    const target = await createDeleteTestJob(ORG_A);
+    const sameTenant = await createDeleteTestJob(ORG_A);
+    const otherTenant = await createDeleteTestJob(ORG_B);
+    const targetJob = await crmRepository.getImportJob(target.job_id, ORG_A);
+    const targetRows = await crmRepository.listImportRows(ORG_A, target.job_id);
+    const sameTenantRows = await crmRepository.listImportRows(ORG_A, sameTenant.job_id);
+    const otherTenantRows = await crmRepository.listImportRows(ORG_B, otherTenant.job_id);
+    if (!targetJob) throw new Error('IMPORT_JOB_NOT_FOUND');
+
+    await expect(deleteIngestionJob(ORG_B, target.job_id, targetRows.length))
+      .rejects.toThrow('IMPORT_JOB_NOT_FOUND');
+    expect(await crmRepository.deleteImportJob(target.job_id, ORG_B, targetJob.status)).toBe(false);
+    expect(await crmRepository.getImportJob(target.job_id, ORG_A)).toEqual(targetJob);
+    expect(await crmRepository.listImportRows(ORG_A, target.job_id)).toEqual(targetRows);
+
+    await deleteIngestionJob(ORG_A, target.job_id, targetRows.length);
+    expect(await crmRepository.getImportJob(sameTenant.job_id, ORG_A)).not.toBeNull();
+    expect(await crmRepository.listImportRows(ORG_A, sameTenant.job_id)).toEqual(sameTenantRows);
+    expect(await crmRepository.getImportJob(otherTenant.job_id, ORG_B)).not.toBeNull();
+    expect(await crmRepository.listImportRows(ORG_B, otherTenant.job_id)).toEqual(otherTenantRows);
+  });
+
+  it.each(['COMPLETED', 'COMMITTING'] as const)(
+    '32. Delete job: protege estado %s aun sin committed_at',
+    async (status) => {
+      const summary = await createDeleteTestJob(ORG_A);
+      const rows = await crmRepository.listImportRows(ORG_A, summary.job_id);
+      await crmRepository.updateImportJob(summary.job_id, ORG_A, { status, committed_at: null });
+
+      await expect(deleteIngestionJob(ORG_A, summary.job_id, rows.length))
+        .rejects.toThrow('COMMITTED_JOB_CANNOT_BE_DELETED');
+      expect((await crmRepository.getImportJob(summary.job_id, ORG_A))?.status).toBe(status);
+      expect(await crmRepository.listImportRows(ORG_A, summary.job_id)).toEqual(rows);
+    },
+  );
+
+  it.each([
+    { status: 'COMMITTING' as const },
+    { committed_at: '2026-02-02T00:00:00.000Z' },
+  ])('33. Delete job: protege cambio concurrente %j', async (updates) => {
+    const summary = await createDeleteTestJob(ORG_A);
+    const rows = await crmRepository.listImportRows(ORG_A, summary.job_id);
+    const originalDelete = crmRepository.deleteImportJob.bind(crmRepository);
+    vi.spyOn(crmRepository, 'deleteImportJob').mockImplementationOnce(async (id, organizationId, status) => {
+      await crmRepository.updateImportJob(id, organizationId, updates);
+      return originalDelete(id, organizationId, status);
+    });
+
+    await expect(deleteIngestionJob(ORG_A, summary.job_id, rows.length))
+      .rejects.toThrow('IMPORT_JOB_CHANGED_BEFORE_DELETE');
+    expect(await crmRepository.getImportJob(summary.job_id, ORG_A)).toMatchObject(updates);
+    expect(await crmRepository.listImportRows(ORG_A, summary.job_id)).toEqual(rows);
+  });
+
+  it('34. Delete job: exige tenant y conteo valido sin borrar staging', async () => {
+    const summary = await createDeleteTestJob(ORG_A);
+    const rows = await crmRepository.listImportRows(ORG_A, summary.job_id);
+
+    await expect(deleteIngestionJob('', summary.job_id, rows.length))
+      .rejects.toThrow('ORGANIZATION_REQUIRED');
+    for (const invalidCount of [-1, 0.5, NaN]) {
+      await expect(deleteIngestionJob(ORG_A, summary.job_id, invalidCount))
+        .rejects.toThrow('EXPECTED_ROW_COUNT_INVALID');
+    }
+    expect(await crmRepository.getImportJob(summary.job_id, ORG_A)).not.toBeNull();
+    expect(await crmRepository.listImportRows(ORG_A, summary.job_id)).toEqual(rows);
   });
 });

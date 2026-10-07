@@ -1021,3 +1021,42 @@ export async function cancelIngestionJob(
     status: 'CANCELLED',
   });
 }
+
+export interface DeleteIngestionJobSummary {
+  job_id: string;
+  deleted_job: boolean;
+  deleted_rows: number;
+}
+
+/**
+ * Permanently removes only an uncommitted import job and its staged rows.
+ * The expected row count is required as an explicit deletion guard.
+ */
+export async function deleteIngestionJob(
+  organizationId: string,
+  jobId: string,
+  expectedRowCount: number,
+): Promise<DeleteIngestionJobSummary> {
+  if (!organizationId) throw new Error('ORGANIZATION_REQUIRED');
+  if (!Number.isInteger(expectedRowCount) || expectedRowCount < 0) {
+    throw new Error('EXPECTED_ROW_COUNT_INVALID');
+  }
+
+  const job = await crmRepository.getImportJob(jobId, organizationId);
+  if (!job) throw new Error('IMPORT_JOB_NOT_FOUND');
+  if (job.committed_at || ['COMPLETED', 'COMMITTING'].includes(job.status)) {
+    throw new Error('COMMITTED_JOB_CANNOT_BE_DELETED');
+  }
+
+  const rows = await crmRepository.listImportRows(organizationId, jobId);
+  if (rows.length !== expectedRowCount) throw new Error('IMPORT_ROW_COUNT_MISMATCH');
+
+  const deleted = await crmRepository.deleteImportJob(jobId, organizationId, job.status);
+  if (!deleted) throw new Error('IMPORT_JOB_CHANGED_BEFORE_DELETE');
+
+  return {
+    job_id: jobId,
+    deleted_job: true,
+    deleted_rows: rows.length,
+  };
+}
