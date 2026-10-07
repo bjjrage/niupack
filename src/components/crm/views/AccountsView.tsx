@@ -1,10 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Plus, Search, Upload } from 'lucide-react';
+import { MoreHorizontal, Plus, Search, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Avatar, Card, daysFromToday, Empty, fmtDateLabel, fmtMoneyShort, ownerName, Pill, Segmented, type Tone } from '../commercial-ui';
 import { CommercialDataImporter } from '../CommercialDataImporter';
+import { AccountDeletionDialog } from '../AccountDeletionDialog';
+import { matchesAccountSource, toggleVisibleAccounts, type AccountSourceFilter } from './accounts-state';
 import type { CompanyHealth, CompanyRow, CrmActions, CrmData } from '../types';
 
 type Seg = 'customers' | 'prospects' | 'contact';
@@ -31,10 +33,21 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
   const [seg, setSeg] = useState<Seg>('customers');
   const [q, setQ] = useState('');
   const [importStage, setImportStage] = useState<'CUSTOMER' | 'PROSPECT' | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<AccountSourceFilter>('all');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectionNotice, setSelectionNotice] = useState('');
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+  const [deleteTarget, setDeleteTarget] = useState<{ ids: string[]; name?: string } | null>(null);
+
+  function resetSelection() {
+    if (selectedIds.size > 0) setSelectionNotice('Se restableció la selección al cambiar la pestaña, el origen o la búsqueda.');
+    setSelectedIds(new Set());
+  }
 
   const rows = useMemo(() => {
     const healthById = new Map(data.health.map((h) => [h.company_id, h]));
     return data.companies
+      .filter((c) => !deletedIds.has(c.id))
       .map((c) => {
         const h = healthById.get(c.id);
         const open = data.opps.filter((o) => o.company_id === c.id && o.stage !== 'GANADO' && o.stage !== 'PERDIDO');
@@ -57,7 +70,7 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
         };
       })
       .sort((a, b) => a.status.rank - b.status.rank || b.pipeline - a.pipeline || a.c.name.localeCompare(b.c.name));
-  }, [data.companies, data.contacts, data.health, data.opps, data.owners, data.tasks]);
+  }, [data.companies, data.contacts, data.health, data.opps, data.owners, data.tasks, deletedIds]);
 
   const counts = useMemo(
     () => ({
@@ -71,13 +84,18 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
   const visible = useMemo(() => {
     const t = q.trim().toLowerCase();
     return rows.filter((r) => {
+      if (!matchesAccountSource(r.c.source, sourceFilter)) return false;
       if (seg === 'customers' && !r.isCustomer) return false;
       if (seg === 'prospects' && !r.isPotential) return false;
       if (seg === 'contact' && (!r.isPotential || r.status.rank > 2)) return false;
       if (!t) return true;
       return `${r.c.name} ${r.c.legal_name ?? ''} ${r.c.tax_id ?? ''} ${r.place} ${r.owner} ${r.email ?? ''} ${r.phone ?? ''}`.toLowerCase().includes(t);
     });
-  }, [rows, seg, q]);
+  }, [rows, seg, q, sourceFilter]);
+
+  const visibleIds = visible.map((r) => r.c.id);
+  const selectedVisible = visibleIds.filter((id) => selectedIds.has(id));
+  const allVisibleSelected = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
 
   const emptyCopy: Record<Seg, { title: string; hint: string }> = {
     customers: { title: 'No hay clientes actuales', hint: 'Importá o creá las empresas que hoy ya son clientes de NIUPACK.' },
@@ -90,7 +108,7 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
       <div className="flex flex-wrap items-center gap-3">
         <Segmented<Seg>
           value={seg}
-          onChange={setSeg}
+          onChange={(value) => { resetSelection(); setSeg(value); }}
           options={[
             { key: 'customers', label: 'Clientes actuales', count: counts.customers },
             { key: 'prospects', label: 'Clientes potenciales', count: counts.prospects },
@@ -101,11 +119,20 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
           <input
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => { resetSelection(); setQ(e.target.value); }}
+            aria-label="Buscar cuentas"
             placeholder="Buscar por nombre, RUC, email, teléfono…"
             className="w-full rounded-lg border border-slate-800 bg-[#0c0f14] py-2 pl-9 pr-3 text-sm text-white placeholder-slate-600 focus:border-brand-500 focus:outline-none"
           />
         </div>
+        <label className="flex items-center gap-2 text-xs text-slate-400">
+          Origen
+          <select aria-label="Origen de cuentas" value={sourceFilter}
+            onChange={(e) => { resetSelection(); setSourceFilter(e.target.value as AccountSourceFilter); }}
+            className="rounded-lg border border-slate-800 bg-[#0c0f14] px-3 py-2 text-sm text-white">
+            <option value="all">Todos</option><option value="manual">Manual</option><option value="imported">Importados</option>
+          </select>
+        </label>
         {seg !== 'contact' && (
           <Button variant="secondary" size="md" onClick={() => setImportStage(seg === 'customers' ? 'CUSTOMER' : 'PROSPECT')}>
             <Upload className="h-4 w-4" /> Importar base
@@ -115,6 +142,14 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
           <Plus className="h-4 w-4" /> {seg === 'customers' ? 'Cliente actual' : 'Cliente potencial'}
         </Button>
       </div>
+
+      {selectionNotice && <p role="status" className="text-xs text-slate-400">{selectionNotice}</p>}
+      {visible.length > 500 && <p className="text-xs text-slate-400">Afiná la búsqueda para seleccionar hasta 500 cuentas por operación.</p>}
+      {selectedVisible.length > 0 && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-700 bg-slate-800/50 px-4 py-3" aria-label="Acciones de cuentas seleccionadas">
+        <span className="mr-auto text-sm text-white">{selectedVisible.length} seleccionadas</span>
+        <Button variant="secondary" onClick={() => { setSelectedIds(new Set()); setSelectionNotice(''); }}>Deseleccionar</Button>
+        <Button variant="danger" onClick={() => setDeleteTarget({ ids: selectedVisible })}><Trash2 className="h-4 w-4" />Eliminar seleccionadas</Button>
+      </div>}
 
       <Card className="overflow-hidden">
         {visible.length === 0 ? (
@@ -134,6 +169,13 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
             <table className="w-full min-w-[1040px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-800 text-xs text-slate-500">
+                  <th className="w-10 px-3 py-3">
+                    <input type="checkbox" aria-label="Seleccionar cuentas visibles" checked={allVisibleSelected}
+                      ref={(node) => { if (node) node.indeterminate = selectedVisible.length > 0 && !allVisibleSelected; }}
+                      disabled={data.loading || visible.length > 500}
+                      onChange={() => { setSelectedIds(toggleVisibleAccounts(new Set(selectedVisible), visibleIds)); setSelectionNotice(''); }}
+                      className="h-4 w-4 accent-red-600" />
+                  </th>
                   <th className="px-5 py-3 font-medium">Cuenta</th>
                   <th className="px-3 py-3 font-medium">Estado</th>
                   <th className="px-3 py-3 font-medium">Contacto</th>
@@ -151,6 +193,16 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
                   const needsAction = r.isPotential && r.status.rank <= 2 && !r.nextTask;
                   return (
                     <tr key={r.c.id} onClick={() => actions.openAccount(r.c.id)} className="cursor-pointer hover:bg-slate-800/20">
+                      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" aria-label={`Seleccionar ${r.c.name}`} checked={selectedIds.has(r.c.id)} disabled={data.loading}
+                          onChange={() => {
+                            const next = new Set(selectedVisible);
+                            if (next.has(r.c.id)) next.delete(r.c.id);
+                            else if (next.size < 500) next.add(r.c.id);
+                            else { setSelectionNotice('Podés seleccionar hasta 500 cuentas por operación.'); return; }
+                            setSelectedIds(next); setSelectionNotice('');
+                          }} className="h-4 w-4 accent-red-600" />
+                      </td>
                       <td className="px-5 py-3">
                         <p className="font-medium text-slate-100">{r.c.name}</p>
                         <p className="text-xs text-slate-500">{[r.place, r.c.tax_id].filter(Boolean).join(' · ') || '—'}</p>
@@ -192,6 +244,13 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
                         )}
                       </td>
                       <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                        <details className="mb-1 text-left">
+                          <summary aria-label={`Acciones de ${r.c.name}`} className="ml-auto w-fit cursor-pointer list-none rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white"><MoreHorizontal className="h-5 w-5" /></summary>
+                          <div className="flex flex-col gap-1 rounded-lg border border-slate-700 bg-[#141820] p-2 text-xs">
+                            <button className="rounded px-2 py-1 text-left text-slate-200 hover:bg-slate-800" onClick={() => actions.openAccount(r.c.id)}>Ver cuenta</button>
+                            <button className="rounded px-2 py-1 text-left text-red-300 hover:bg-red-950" onClick={() => setDeleteTarget({ ids: [r.c.id], name: r.c.name })}>Eliminar cuenta</button>
+                          </div>
+                        </details>
                         {needsAction && (
                           <Button
                             variant="outline"
@@ -217,6 +276,16 @@ export function AccountsView({ data, actions, onNew }: { data: CrmData; actions:
           </div>
         )}
       </Card>
+
+      {deleteTarget && <AccountDeletionDialog ids={deleteTarget.ids} name={deleteTarget.name}
+        onClose={() => setDeleteTarget(null)}
+        onDeleted={(result) => {
+          const removed = new Set([...result.deleted_ids, ...result.not_found_ids]);
+          setDeletedIds((previous) => new Set([...previous, ...removed]));
+          setSelectedIds((previous) => new Set([...previous].filter((id) => !removed.has(id))));
+          actions.reload();
+          actions.notify(`${result.deleted} cuentas y ${result.deleted_contacts} contactos eliminados.`, result.failed_accounts.length ? 'error' : 'ok');
+        }} />}
 
       <CommercialDataImporter
         open={Boolean(importStage)}

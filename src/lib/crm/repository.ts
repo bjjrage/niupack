@@ -12,6 +12,7 @@ import type {
   CrmTask,
 } from './types';
 import type { CustomerPurchase } from './purchase-types';
+import { emptyAccountDependencies, type AccountDeletionInspection } from './account-deletion';
 
 interface CrmMemory {
   companies: CrmCompany[];
@@ -99,6 +100,45 @@ function mustOrg(organizationId?: string): string {
   return organizationId;
 }
 
+function inspectMemoryCompanyDeletion(id: string, organizationId: string): AccountDeletionInspection {
+  const store = mem();
+  const company = store.companies.find((c) => c.id === id && c.organization_id === organizationId);
+  const dependencies = emptyAccountDependencies();
+  const result: AccountDeletionInspection = {
+    company_id: id, name: company?.name ?? '', status: 'NOT_FOUND',
+    dependencies, references: {}, contacts: 0, deleted: false, deleted_contacts: 0,
+  };
+  if (!company) return result;
+  const contacts = store.contacts.filter((c) => c.company_id === id);
+  const contactIds = new Set(contacts.map((c) => c.id));
+  const linked = (row: { company_id?: string | null; contact_id?: string | null }) =>
+    row.company_id === id || Boolean(row.contact_id && contactIds.has(row.contact_id));
+  dependencies.purchases = store.purchases.filter(linked).length;
+  dependencies.opportunities = store.opportunities.filter(linked).length;
+  dependencies.conversations = store.conversations.filter(linked).length;
+  dependencies.leads = store.leads.filter(linked).length;
+  dependencies.tasks = store.tasks.filter(linked).length;
+  dependencies.activities = store.activities.filter(linked).length;
+  dependencies.aliases = store.customerAliases.filter((a) => a.company_id === id).length;
+  dependencies.staged_rows = store.importRows.filter(linked).length;
+  dependencies.shared_contacts = contacts.filter((c) => c.organization_id !== organizationId).length;
+  dependencies.campaign_recipients = global.__niu_outreach_store?.recipients.filter(linked).length ?? 0;
+  result.contacts = contacts.filter((c) => c.organization_id === organizationId).length;
+  result.status = Object.values(dependencies).some((count) => count > 0)
+    ? 'BLOCKED_BY_BUSINESS_DATA' : 'SAFE_TO_DELETE';
+  return result;
+}
+
+function deleteMemoryCompany(id: string, organizationId: string): AccountDeletionInspection {
+  // Synchronous final check + mutation; no event-loop gap in the memory adapter.
+  const inspection = inspectMemoryCompanyDeletion(id, organizationId);
+  if (inspection.status !== 'SAFE_TO_DELETE') return inspection;
+  const store = mem();
+  store.contacts = store.contacts.filter((c) => c.company_id !== id || c.organization_id !== organizationId);
+  store.companies = store.companies.filter((c) => c.id !== id || c.organization_id !== organizationId);
+  return { ...inspection, status: 'DELETED', deleted: true, deleted_contacts: inspection.contacts };
+}
+
 export const crmRepository = {
   persistenceMode: mode,
 
@@ -107,6 +147,46 @@ export const crmRepository = {
   },
 
   // ---------- Companies ----------
+  /** SQL inspects every actual FK; execution rechecks under row locks atomically. */
+  async inspectCompanyDeletion(id: string, organizationId: string): Promise<AccountDeletionInspection> {
+    mustOrg(organizationId);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('crm_account_deletion', {
+        p_organization_id: organizationId, p_company_id: id, p_execute: false,
+      });
+      if (error) throw new Error(`ACCOUNT_INSPECTION_FAILED: ${error.code}`);
+      return data as AccountDeletionInspection;
+    }
+    return inspectMemoryCompanyDeletion(id, organizationId);
+  },
+
+  async deleteSafeCompany(id: string, organizationId: string): Promise<AccountDeletionInspection> {
+    this.assertWritable();
+    mustOrg(organizationId);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('crm_account_deletion', {
+        p_organization_id: organizationId, p_company_id: id, p_execute: true,
+      });
+      if (error) throw new Error(`ACCOUNT_DELETE_FAILED: ${error.code}`);
+      return data as AccountDeletionInspection;
+    }
+    return deleteMemoryCompany(id, organizationId);
+  },
+
+  async inspectCompaniesDeletion(ids: string[], organizationId: string, execute = false): Promise<AccountDeletionInspection[]> {
+    mustOrg(organizationId);
+    if (execute) this.assertWritable();
+    if (ids.length === 0) return [];
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('crm_account_deletion_batch', {
+        p_organization_id: organizationId, p_company_ids: ids, p_execute: execute,
+      });
+      if (error) throw new Error(`ACCOUNT_INSPECTION_FAILED: ${error.code}`);
+      return data as AccountDeletionInspection[];
+    }
+    return ids.map((id) => execute ? deleteMemoryCompany(id, organizationId) : inspectMemoryCompanyDeletion(id, organizationId));
+  },
+
   async listCompanies(organizationId: string): Promise<CrmCompany[]> {
     mustOrg(organizationId);
     if (mode() === 'SUPABASE' && supabaseAdmin) {
