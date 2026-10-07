@@ -16,6 +16,20 @@ import type {
   StageBreakdown,
 } from './types';
 import { ACTIVE_STAGES, isBotStageTransitionAllowed, opportunityProbability } from './types';
+import {
+  accountIdsSchema,
+  type AccountDeletionPreview,
+  type BulkAccountDeletionResult,
+  type BlockedAccount,
+  type AccountDeletionInspection,
+} from './account-deletion';
+
+function blockedAccount(account: AccountDeletionInspection): BlockedAccount {
+  return {
+    id: account.company_id, name: account.name, reason: 'ACCOUNT_HAS_BUSINESS_DATA',
+    dependencies: account.dependencies, references: account.references,
+  };
+}
 
 function now(): string {
   return new Date().toISOString();
@@ -530,6 +544,66 @@ export const crmService = {
     await assertProfileInOrg(organizationId, updates.owner_profile_id);
     await assertProfileInOrg(organizationId, actorProfileId);
     return crmRepository.updateCompany(id, organizationId, updates);
+  },
+
+  inspectCompanyDeletion(organizationId: string, id: string) {
+    return crmRepository.inspectCompanyDeletion(id, organizationId);
+  },
+
+  async deleteCompany(organizationId: string, id: string) {
+    const inspection = await this.inspectCompanyDeletion(organizationId, id);
+    if (inspection.status !== 'SAFE_TO_DELETE') return inspection;
+    // Repository rechecks all dependencies inside the deletion transaction.
+    return crmRepository.deleteSafeCompany(id, organizationId);
+  },
+
+  async previewCompanyDeletion(organizationId: string, companyIds: string[]): Promise<AccountDeletionPreview> {
+    if (!organizationId) throw new Error('ORGANIZATION_REQUIRED');
+    const ids = [...new Set(accountIdsSchema.parse(companyIds))];
+    const result: AccountDeletionPreview = {
+      requested: ids.length, deletable: 0, blocked: 0, not_found: 0,
+      contacts_to_delete: 0, deletable_ids: [], not_found_ids: [], blocked_accounts: [],
+    };
+    const inspections = await crmRepository.inspectCompaniesDeletion(ids, organizationId);
+    for (const account of inspections) {
+      const id = account.company_id;
+      if (account.status === 'NOT_FOUND') result.not_found_ids.push(id);
+      else if (account.status === 'BLOCKED_BY_BUSINESS_DATA') result.blocked_accounts.push(blockedAccount(account));
+      else if (account.status === 'SAFE_TO_DELETE') {
+        result.deletable_ids.push(id);
+        result.contacts_to_delete += account.contacts;
+      } else throw new Error('ACCOUNT_INSPECTION_FAILED');
+    }
+    result.deletable = result.deletable_ids.length;
+    result.blocked = result.blocked_accounts.length;
+    result.not_found = result.not_found_ids.length;
+    return result;
+  },
+
+  async bulkDeleteCompanies(organizationId: string, companyIds: string[]): Promise<BulkAccountDeletionResult> {
+    if (!organizationId) throw new Error('ORGANIZATION_REQUIRED');
+    const ids = [...new Set(accountIdsSchema.parse(companyIds))];
+    const result: BulkAccountDeletionResult = {
+      requested: ids.length, deleted: 0, blocked: 0, not_found: 0, deleted_contacts: 0,
+      deleted_ids: [], not_found_ids: [], blocked_accounts: [], failed_accounts: [],
+    };
+    const inspections = await crmRepository.inspectCompaniesDeletion(ids, organizationId);
+    const safeIds = inspections.filter((a) => a.status === 'SAFE_TO_DELETE').map((a) => a.company_id);
+    const deletions = await crmRepository.inspectCompaniesDeletion(safeIds, organizationId, true);
+    const results = [...inspections.filter((a) => a.status !== 'SAFE_TO_DELETE'), ...deletions];
+    for (const account of results) {
+      const id = account.company_id;
+      if (account.status === 'NOT_FOUND') result.not_found_ids.push(id);
+      else if (account.status === 'BLOCKED_BY_BUSINESS_DATA') result.blocked_accounts.push(blockedAccount(account));
+      else if (account.deleted) {
+        result.deleted_ids.push(id);
+        result.deleted_contacts += account.deleted_contacts;
+      } else result.failed_accounts.push({ id, reason: 'ACCOUNT_DELETE_FAILED' });
+    }
+    result.deleted = result.deleted_ids.length;
+    result.blocked = result.blocked_accounts.length;
+    result.not_found = result.not_found_ids.length;
+    return result;
   },
 
   async createContact(

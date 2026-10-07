@@ -12,6 +12,7 @@ import type {
   CrmTask,
 } from './types';
 import type { CustomerPurchase } from './purchase-types';
+import { emptyAccountDependencies, type AccountDeletionInspection } from './account-deletion';
 
 interface CrmMemory {
   companies: CrmCompany[];
@@ -24,6 +25,8 @@ interface CrmMemory {
   purchases: CustomerPurchase[];
   customerAliases: Array<{ organization_id: string; alias_normalized: string; company_id: string }>;
   productAliases: Array<{ organization_id: string; alias_normalized: string; sku: string }>;
+  importJobs: import('./ingestion/types').CrmImportJob[];
+  importRows: import('./ingestion/types').CrmImportRow[];
 }
 
 declare global {
@@ -44,6 +47,8 @@ function mem(): CrmMemory {
       purchases: [],
       customerAliases: [],
       productAliases: [],
+      importJobs: [],
+      importRows: [],
     };
   }
   return global.__niu_crm_store;
@@ -61,6 +66,8 @@ export function resetCrmMemory(): void {
     purchases: [],
     customerAliases: [],
     productAliases: [],
+    importJobs: [],
+    importRows: [],
   };
 }
 
@@ -70,8 +77,12 @@ const uid = () => crypto.randomUUID();
 type Mode = 'SUPABASE' | 'MEMORY_FALLBACK' | 'NOT_CONFIGURED';
 
 function mode(nodeEnv: string | undefined = process.env.NODE_ENV, allowMemory = process.env.NIU_CRM_ALLOW_MEMORY === 'true'): Mode {
+  // CRITICAL GUARD: Automated tests (Vitest / Jest / NODE_ENV=test) MUST NEVER write to live Supabase
+  if (nodeEnv === 'test' || Boolean(process.env.VITEST)) {
+    return 'MEMORY_FALLBACK';
+  }
   if (isSupabaseAdminConfigured && supabaseAdmin) return 'SUPABASE';
-  if (nodeEnv === 'test' || (nodeEnv === 'development' && allowMemory)) return 'MEMORY_FALLBACK';
+  if (nodeEnv === 'development' && allowMemory) return 'MEMORY_FALLBACK';
   // En dev sin flag explícito también permitimos memoria para no tumbar /commercial,
   // pero la API informa persistence para que la UI muestre estado real.
   if (nodeEnv === 'development') return 'MEMORY_FALLBACK';
@@ -89,6 +100,45 @@ function mustOrg(organizationId?: string): string {
   return organizationId;
 }
 
+function inspectMemoryCompanyDeletion(id: string, organizationId: string): AccountDeletionInspection {
+  const store = mem();
+  const company = store.companies.find((c) => c.id === id && c.organization_id === organizationId);
+  const dependencies = emptyAccountDependencies();
+  const result: AccountDeletionInspection = {
+    company_id: id, name: company?.name ?? '', status: 'NOT_FOUND',
+    dependencies, references: {}, contacts: 0, deleted: false, deleted_contacts: 0,
+  };
+  if (!company) return result;
+  const contacts = store.contacts.filter((c) => c.company_id === id);
+  const contactIds = new Set(contacts.map((c) => c.id));
+  const linked = (row: { company_id?: string | null; contact_id?: string | null }) =>
+    row.company_id === id || Boolean(row.contact_id && contactIds.has(row.contact_id));
+  dependencies.purchases = store.purchases.filter(linked).length;
+  dependencies.opportunities = store.opportunities.filter(linked).length;
+  dependencies.conversations = store.conversations.filter(linked).length;
+  dependencies.leads = store.leads.filter(linked).length;
+  dependencies.tasks = store.tasks.filter(linked).length;
+  dependencies.activities = store.activities.filter(linked).length;
+  dependencies.aliases = store.customerAliases.filter((a) => a.company_id === id).length;
+  dependencies.staged_rows = store.importRows.filter(linked).length;
+  dependencies.shared_contacts = contacts.filter((c) => c.organization_id !== organizationId).length;
+  dependencies.campaign_recipients = global.__niu_outreach_store?.recipients.filter(linked).length ?? 0;
+  result.contacts = contacts.filter((c) => c.organization_id === organizationId).length;
+  result.status = Object.values(dependencies).some((count) => count > 0)
+    ? 'BLOCKED_BY_BUSINESS_DATA' : 'SAFE_TO_DELETE';
+  return result;
+}
+
+function deleteMemoryCompany(id: string, organizationId: string): AccountDeletionInspection {
+  // Synchronous final check + mutation; no event-loop gap in the memory adapter.
+  const inspection = inspectMemoryCompanyDeletion(id, organizationId);
+  if (inspection.status !== 'SAFE_TO_DELETE') return inspection;
+  const store = mem();
+  store.contacts = store.contacts.filter((c) => c.company_id !== id || c.organization_id !== organizationId);
+  store.companies = store.companies.filter((c) => c.id !== id || c.organization_id !== organizationId);
+  return { ...inspection, status: 'DELETED', deleted: true, deleted_contacts: inspection.contacts };
+}
+
 export const crmRepository = {
   persistenceMode: mode,
 
@@ -97,6 +147,46 @@ export const crmRepository = {
   },
 
   // ---------- Companies ----------
+  /** SQL inspects every actual FK; execution rechecks under row locks atomically. */
+  async inspectCompanyDeletion(id: string, organizationId: string): Promise<AccountDeletionInspection> {
+    mustOrg(organizationId);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('crm_account_deletion', {
+        p_organization_id: organizationId, p_company_id: id, p_execute: false,
+      });
+      if (error) throw new Error(`ACCOUNT_INSPECTION_FAILED: ${error.code}`);
+      return data as AccountDeletionInspection;
+    }
+    return inspectMemoryCompanyDeletion(id, organizationId);
+  },
+
+  async deleteSafeCompany(id: string, organizationId: string): Promise<AccountDeletionInspection> {
+    this.assertWritable();
+    mustOrg(organizationId);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('crm_account_deletion', {
+        p_organization_id: organizationId, p_company_id: id, p_execute: true,
+      });
+      if (error) throw new Error(`ACCOUNT_DELETE_FAILED: ${error.code}`);
+      return data as AccountDeletionInspection;
+    }
+    return deleteMemoryCompany(id, organizationId);
+  },
+
+  async inspectCompaniesDeletion(ids: string[], organizationId: string, execute = false): Promise<AccountDeletionInspection[]> {
+    mustOrg(organizationId);
+    if (execute) this.assertWritable();
+    if (ids.length === 0) return [];
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('crm_account_deletion_batch', {
+        p_organization_id: organizationId, p_company_ids: ids, p_execute: execute,
+      });
+      if (error) throw new Error(`ACCOUNT_INSPECTION_FAILED: ${error.code}`);
+      return data as AccountDeletionInspection[];
+    }
+    return ids.map((id) => execute ? deleteMemoryCompany(id, organizationId) : inspectMemoryCompanyDeletion(id, organizationId));
+  },
+
   async listCompanies(organizationId: string): Promise<CrmCompany[]> {
     mustOrg(organizationId);
     if (mode() === 'SUPABASE' && supabaseAdmin) {
@@ -105,12 +195,12 @@ export const crmRepository = {
         .select('*')
         .eq('organization_id', organizationId)
         .order('updated_at', { ascending: false })
-        .limit(200);
+        .limit(2000);
       if (error) throw new Error(`crm_companies: ${error.message}`);
       return (data ?? []) as CrmCompany[];
     }
     if (mode() === 'NOT_CONFIGURED') return [];
-    return mem().companies.filter((c) => c.organization_id === organizationId).slice(0, 200);
+    return mem().companies.filter((c) => c.organization_id === organizationId).slice(0, 2000);
   },
 
   async getCompany(id: string, organizationId: string): Promise<CrmCompany | undefined> {
@@ -168,14 +258,14 @@ export const crmRepository = {
   async listContacts(organizationId: string, companyId?: string): Promise<CrmContact[]> {
     mustOrg(organizationId);
     if (mode() === 'SUPABASE' && supabaseAdmin) {
-      let q = supabaseAdmin.from('crm_contacts').select('*').eq('organization_id', organizationId).order('updated_at', { ascending: false }).limit(300);
+      let q = supabaseAdmin.from('crm_contacts').select('*').eq('organization_id', organizationId).order('updated_at', { ascending: false }).limit(3000);
       if (companyId) q = q.eq('company_id', companyId);
       const { data, error } = await q;
       if (error) throw new Error(`crm_contacts: ${error.message}`);
       return (data ?? []) as CrmContact[];
     }
     if (mode() === 'NOT_CONFIGURED') return [];
-    return mem().contacts.filter((c) => c.organization_id === organizationId && (!companyId || c.company_id === companyId)).slice(0, 300);
+    return mem().contacts.filter((c) => c.organization_id === organizationId && (!companyId || c.company_id === companyId)).slice(0, 3000);
   },
 
   async getContact(id: string, organizationId: string): Promise<CrmContact | undefined> {
@@ -732,5 +822,268 @@ export const crmRepository = {
     if (!store.productAliases.some((a) => a.organization_id === organizationId && a.alias_normalized === alias_normalized)) {
       store.productAliases.push({ organization_id: organizationId, alias_normalized, sku });
     }
+  },
+
+  // ---------- Commercial Ingestion Jobs & Staging ----------
+  async createImportJob(job: import('./ingestion/types').CrmImportJob): Promise<import('./ingestion/types').CrmImportJob> {
+    this.assertWritable();
+    mustOrg(job.organization_id);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('crm_import_jobs')
+        .insert(job)
+        .select()
+        .single();
+      if (error) throw new Error(`crm_import_jobs: ${error.message}`);
+      return data as import('./ingestion/types').CrmImportJob;
+    }
+    mem().importJobs.push(job);
+    return job;
+  },
+
+  async getImportJob(id: string, organizationId: string): Promise<import('./ingestion/types').CrmImportJob | null> {
+    mustOrg(organizationId);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('crm_import_jobs')
+        .select('*')
+        .eq('id', id)
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+      if (error) throw new Error(`crm_import_jobs: ${error.message}`);
+      return (data as import('./ingestion/types').CrmImportJob) ?? null;
+    }
+    const hit = mem().importJobs.find((j) => j.id === id && j.organization_id === organizationId);
+    return hit ? { ...hit } : null;
+  },
+
+  async deleteImportJob(
+    id: string,
+    organizationId: string,
+    expectedStatus: import('./ingestion/types').ImportJobStatus,
+  ): Promise<boolean> {
+    this.assertWritable();
+    mustOrg(organizationId);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('crm_import_jobs')
+        .delete()
+        .eq('id', id)
+        .eq('organization_id', organizationId)
+        .eq('status', expectedStatus)
+        .is('committed_at', null)
+        .select('id')
+        .maybeSingle();
+      if (error) throw new Error(`crm_import_jobs: ${error.message}`);
+      return Boolean(data);
+    }
+
+    const store = mem();
+    const job = store.importJobs.find((entry) => entry.id === id && entry.organization_id === organizationId);
+    if (!job || job.status !== expectedStatus || job.committed_at) return false;
+    store.importRows = store.importRows.filter(
+      (row) => row.job_id !== id || row.organization_id !== organizationId,
+    );
+    store.importJobs = store.importJobs.filter(
+      (entry) => entry.id !== id || entry.organization_id !== organizationId,
+    );
+    return true;
+  },
+
+  async updateImportJob(
+    id: string,
+    organizationId: string,
+    updates: Partial<import('./ingestion/types').CrmImportJob>,
+  ): Promise<import('./ingestion/types').CrmImportJob> {
+    this.assertWritable();
+    mustOrg(organizationId);
+    const updatedObj = { ...updates, updated_at: now() };
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('crm_import_jobs')
+        .update(updatedObj)
+        .eq('id', id)
+        .eq('organization_id', organizationId)
+        .select()
+        .single();
+      if (error) throw new Error(`crm_import_jobs: ${error.message}`);
+      return data as import('./ingestion/types').CrmImportJob;
+    }
+    const store = mem();
+    const idx = store.importJobs.findIndex((j) => j.id === id && j.organization_id === organizationId);
+    if (idx < 0) throw new Error('IMPORT_JOB_NOT_FOUND');
+    store.importJobs[idx] = { ...store.importJobs[idx], ...updatedObj };
+    return { ...store.importJobs[idx] };
+  },
+
+  async insertImportRows(rows: import('./ingestion/types').CrmImportRow[]): Promise<void> {
+    this.assertWritable();
+    if (rows.length === 0) return;
+    mustOrg(rows[0].organization_id);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const CHUNK_SIZE = 500;
+      for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+        const chunk = rows.slice(i, i + CHUNK_SIZE);
+        const { error } = await supabaseAdmin
+          .from('crm_import_rows')
+          .insert(chunk);
+        if (error) throw new Error(`crm_import_rows: ${error.message}`);
+      }
+      return;
+    }
+    mem().importRows.push(...rows);
+  },
+
+  async listImportRows(
+    organizationId: string,
+    jobId: string,
+    limit = 10000,
+    offset = 0,
+  ): Promise<import('./ingestion/types').CrmImportRow[]> {
+    mustOrg(organizationId);
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const all: import('./ingestion/types').CrmImportRow[] = [];
+      let currentOffset = offset;
+      const PAGE_SIZE = 1000;
+      while (all.length < limit) {
+        const fetchCount = Math.min(PAGE_SIZE, limit - all.length);
+        const { data, error } = await supabaseAdmin
+          .from('crm_import_rows')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .eq('job_id', jobId)
+          .order('row_index', { ascending: true })
+          .range(currentOffset, currentOffset + fetchCount - 1);
+        if (error) throw new Error(`crm_import_rows: ${error.message}`);
+        if (!data || data.length === 0) break;
+        all.push(...(data as import('./ingestion/types').CrmImportRow[]));
+        if (data.length < fetchCount) break;
+        currentOffset += data.length;
+      }
+      return all;
+    }
+    return mem()
+      .importRows.filter((r) => r.organization_id === organizationId && r.job_id === jobId)
+      .sort((a, b) => a.row_index - b.row_index)
+      .slice(offset, offset + limit);
+  },
+
+  async updateImportRowsByProduct(
+    organizationId: string,
+    jobId: string,
+    productRawNormalized: string,
+    updates: Partial<import('./ingestion/types').CrmImportRow>,
+  ): Promise<number> {
+    this.assertWritable();
+    mustOrg(organizationId);
+    const updatedObj = { ...updates, updated_at: now() };
+    const norm = (s?: string | null) => (s ?? '').toLowerCase().trim();
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const rows = await this.listImportRows(organizationId, jobId);
+      const matchingIds = rows
+        .filter((r) => norm(r.product_raw) === norm(productRawNormalized) || norm(r.sku_raw) === norm(productRawNormalized))
+        .map((r) => r.id);
+      if (matchingIds.length === 0) return 0;
+      const { error } = await supabaseAdmin
+        .from('crm_import_rows')
+        .update(updatedObj)
+        .in('id', matchingIds)
+        .eq('organization_id', organizationId);
+      if (error) throw new Error(`crm_import_rows: ${error.message}`);
+      return matchingIds.length;
+    }
+    const store = mem();
+    let count = 0;
+    for (let i = 0; i < store.importRows.length; i++) {
+      const r = store.importRows[i];
+      if (
+        r.organization_id === organizationId &&
+        r.job_id === jobId &&
+        (norm(r.product_raw) === norm(productRawNormalized) || norm(r.sku_raw) === norm(productRawNormalized))
+      ) {
+        store.importRows[i] = { ...r, ...updatedObj };
+        count++;
+      }
+    }
+    return count;
+  },
+
+  async updateUnresolvedImportRowsByIds(
+    organizationId: string,
+    jobId: string,
+    rowIds: string[],
+    updates: Partial<import('./ingestion/types').CrmImportRow>,
+  ): Promise<number> {
+    this.assertWritable();
+    mustOrg(organizationId);
+    const uniqueIds = [...new Set(rowIds)];
+    if (uniqueIds.length === 0) return 0;
+    const updatedObj = { ...updates, updated_at: now() };
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('crm_import_rows')
+        .update(updatedObj)
+        .in('id', uniqueIds)
+        .eq('organization_id', organizationId)
+        .eq('job_id', jobId)
+        .eq('row_status', 'PRODUCT_UNRESOLVED')
+        .select('id');
+      if (error) throw new Error(`crm_import_rows: ${error.message}`);
+      return data?.length ?? 0;
+    }
+    let count = 0;
+    const ids = new Set(uniqueIds);
+    for (const row of mem().importRows) {
+      if (
+        ids.has(row.id) &&
+        row.organization_id === organizationId &&
+        row.job_id === jobId &&
+        row.row_status === 'PRODUCT_UNRESOLVED'
+      ) {
+        Object.assign(row, updatedObj);
+        count += 1;
+      }
+    }
+    return count;
+  },
+
+  async updateImportRowsByCustomer(
+    organizationId: string,
+    jobId: string,
+    customerRawNormalized: string,
+    updates: Partial<import('./ingestion/types').CrmImportRow>,
+  ): Promise<number> {
+    this.assertWritable();
+    mustOrg(organizationId);
+    const updatedObj = { ...updates, updated_at: now() };
+    const norm = (s?: string | null) => (s ?? '').toLowerCase().trim();
+    if (mode() === 'SUPABASE' && supabaseAdmin) {
+      const rows = await this.listImportRows(organizationId, jobId);
+      const matchingIds = rows
+        .filter((r) => norm(r.customer_raw) === norm(customerRawNormalized))
+        .map((r) => r.id);
+      if (matchingIds.length === 0) return 0;
+      const { error } = await supabaseAdmin
+        .from('crm_import_rows')
+        .update(updatedObj)
+        .in('id', matchingIds)
+        .eq('organization_id', organizationId);
+      if (error) throw new Error(`crm_import_rows: ${error.message}`);
+      return matchingIds.length;
+    }
+    const store = mem();
+    let count = 0;
+    for (let i = 0; i < store.importRows.length; i++) {
+      const r = store.importRows[i];
+      if (
+        r.organization_id === organizationId &&
+        r.job_id === jobId &&
+        norm(r.customer_raw) === norm(customerRawNormalized)
+      ) {
+        store.importRows[i] = { ...r, ...updatedObj };
+        count++;
+      }
+    }
+    return count;
   },
 };

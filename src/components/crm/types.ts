@@ -93,6 +93,7 @@ export interface InboxItem {
 export interface CompanyRow {
   id: string;
   name: string;
+  source?: string | null;
   legal_name?: string | null;
   tax_id?: string | null;
   country_code?: string | null;

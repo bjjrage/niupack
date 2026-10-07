@@ -153,7 +153,7 @@ export function NewAccountModal({ open, onClose, data, actions }: { open: boolea
       }
       onClose();
       actions.reload();
-      actions.notify(f.type === 'PROSPECT' ? 'Prospecto creado. Agendá el primer contacto desde Hoy.' : 'Cliente creado.');
+      actions.notify(f.type === 'PROSPECT' ? 'Cliente potencial creado. Agendá el primer contacto desde Hoy.' : 'Cliente actual creado.');
       if (id) actions.openAccount(id);
     } catch {
       actions.notify('No se pudo crear la cuenta.', 'error');
@@ -169,8 +169,8 @@ export function NewAccountModal({ open, onClose, data, actions }: { open: boolea
           value={f.type}
           onChange={(v) => setF((s) => ({ ...s, type: v }))}
           options={[
-            { key: 'PROSPECT', label: 'Prospecto' },
-            { key: 'CUSTOMER', label: 'Cliente que ya compra' },
+            { key: 'PROSPECT', label: 'Cliente potencial' },
+            { key: 'CUSTOMER', label: 'Cliente actual' },
           ]}
         />
         <div className="grid grid-cols-[1fr_160px] gap-3">
@@ -213,7 +213,7 @@ export function NewAccountModal({ open, onClose, data, actions }: { open: boolea
             <input value={f.contactEmail} onChange={set('contactEmail')} placeholder="Email" className={inputCls} />
           </div>
         </fieldset>
-        <Footer onCancel={onClose} onSubmit={() => void submit()} saving={saving} label={f.type === 'PROSPECT' ? 'Crear prospecto' : 'Crear cliente'} />
+        <Footer onCancel={onClose} onSubmit={() => void submit()} saving={saving} label={f.type === 'PROSPECT' ? 'Crear cliente potencial' : 'Crear cliente actual'} />
       </div>
     </Modal>
   );

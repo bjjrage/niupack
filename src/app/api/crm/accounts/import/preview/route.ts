@@ -1,15 +1,14 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
-import { purchaseService } from '@/lib/crm/purchase-service';
+import { previewAccountList } from '@/lib/crm/account-import';
 
-/** Preview de importación histórica: parsea el archivo, mapea columnas con LLM y matchea contra Maestro de SKUs. */
 export async function POST(request: Request) {
   try {
-    const identity = await requireNiuIdentity();
+    await requireNiuIdentity();
     const form = await request.formData();
     const file = form.get('file');
     if (!(file instanceof File)) return NextResponse.json({ error: 'FILE_REQUIRED' }, { status: 400 });
+
     const name = file.name.toLowerCase();
     if (!name.endsWith('.xlsx') && !name.endsWith('.xls') && !name.endsWith('.csv')) {
       return NextResponse.json({ error: 'INVALID_FORMAT' }, { status: 400 });
@@ -22,28 +21,18 @@ export async function POST(request: Request) {
         ? parseInt(overrideHeaderRowIndexStr, 10)
         : undefined;
 
+    const overrideMappingStr = form.get('mapping')?.toString();
     let overrideMapping: Record<string, number | null> | undefined;
-    const mappingRaw = form.get('mapping');
-    if (typeof mappingRaw === 'string' && mappingRaw) {
+    if (overrideMappingStr) {
       try {
-        overrideMapping = z.record(z.number().nullable()).parse(JSON.parse(mappingRaw));
+        overrideMapping = JSON.parse(overrideMappingStr);
       } catch {
-        return NextResponse.json({ error: 'INVALID_MAPPING' }, { status: 400 });
-      }
-    }
-
-    let pendingResolutions: Record<string, string> | undefined;
-    const resolutionsRaw = form.get('pending_resolutions');
-    if (typeof resolutionsRaw === 'string' && resolutionsRaw) {
-      try {
-        pendingResolutions = z.record(z.string()).parse(JSON.parse(resolutionsRaw));
-      } catch {
-        // ignore
+        // ignore parse error, fallback
       }
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const preview = await purchaseService.previewImport(identity.organizationId, {
+    const preview = await previewAccountList({
       buffer,
       filename: file.name,
       overrideSheetName,
@@ -51,7 +40,6 @@ export async function POST(request: Request) {
         ? overrideHeaderRowIndex
         : undefined,
       overrideMapping,
-      pendingResolutions,
     });
     return NextResponse.json(preview);
   } catch (error) {
