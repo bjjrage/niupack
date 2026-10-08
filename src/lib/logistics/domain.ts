@@ -27,7 +27,7 @@ export interface LogisticsProviderCharge {
 }
 
 export interface LogisticsProviderMetadata {
-  provider: 'CARGOFIVE';
+  provider: 'CARGOFIVE' | 'ICONTAINERS';
   rate_id: string;
   carrier_name?: string;
   carrier_code?: string;

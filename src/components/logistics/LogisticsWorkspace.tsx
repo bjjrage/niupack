@@ -5,6 +5,7 @@ import { AlertTriangle, Anchor, History, Plus, Truck } from 'lucide-react';
 import type { LogisticsQuote, LogisticsRate, LogisticsRfq } from '@/lib/logistics/domain';
 import type { FreightosEstimate } from '@/lib/logistics/freightos-provider';
 import type { CargoFiveRateOption, CargoFivePlace } from '@/lib/logistics/cargofive-provider';
+import type { IContainersNormalizedRate } from '@/lib/logistics/icontainers-provider';
 import type { Supplier } from '@/types';
 
 type View = 'overview' | 'ocean' | 'road' | 'providers' | 'history';
@@ -194,6 +195,9 @@ export function RoadPanel({ rfqs, quotes, suppliers, reload, setFeedback }: { rf
 }
 
 function FreightosOceanPanel({ rates, reload, setFeedback }: { rates: LogisticsRate[]; reload: () => Promise<void>; setFeedback: (value: string) => void }) {
+  const [provider, setProvider] = useState<'freightos' | 'icontainers'>('freightos');
+
+  // Freightos state
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
   const [equipment, setEquipment] = useState<'20GP' | '40GP' | '40HC'>('40HC');
@@ -202,6 +206,18 @@ function FreightosOceanPanel({ rates, reload, setFeedback }: { rates: LogisticsR
   const [estimates, setEstimates] = useState<FreightosEstimate[]>([]);
   const [status, setStatus] = useState('');
   const [searching, setSearching] = useState(false);
+
+  // iContainers state
+  const [icOrigin, setIcOrigin] = useState('CNSHA');
+  const [icDestination, setIcDestination] = useState('PYASU');
+  const [icEquipment, setIcEquipment] = useState<'20GP' | '40GP' | '40HC'>('40HC');
+  const [icQuantity, setIcQuantity] = useState(1);
+  const [icWeight, setIcWeight] = useState('');
+  const [icRates, setIcRates] = useState<IContainersNormalizedRate[]>([]);
+  const [icStatus, setIcStatus] = useState('');
+  const [icConfigured, setIcConfigured] = useState(true);
+  const [icSearching, setIcSearching] = useState(false);
+
   const input = 'box-border h-9 w-full rounded border border-slate-700 bg-[#0c0f14] px-3 text-xs text-white';
 
   async function search(event: FormEvent<HTMLFormElement>) {
@@ -228,6 +244,40 @@ function FreightosOceanPanel({ rates, reload, setFeedback }: { rates: LogisticsR
     }
   }
 
+  async function searchIcontainers(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIcSearching(true);
+    setIcRates([]);
+    setIcStatus('Consultando tarifas marítimas en iContainers Brutus API…');
+    try {
+      const response = await fetch('/api/logistics/ocean/icontainers/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin: { port_code: icOrigin },
+          destination: { port_code: icDestination },
+          equipment: icEquipment,
+          quantity: icQuantity,
+          ...(icWeight ? { weight_kg: Number(icWeight) } : {}),
+          validate_paraguay: true,
+        }),
+      });
+      const data = await response.json();
+      if (data.status === 'NOT_CONFIGURED' || response.status === 503) {
+        setIcConfigured(false);
+        setIcStatus('iContainers no configurado — requiere credenciales.');
+        return;
+      }
+      setIcConfigured(true);
+      setIcRates(data.rates ?? []);
+      setIcStatus(data.message ?? (response.ok ? 'Consulta completada.' : 'No fue posible obtener la cotización.'));
+    } catch {
+      setIcStatus('No fue posible consultar iContainers en este momento.');
+    } finally {
+      setIcSearching(false);
+    }
+  }
+
   async function manual(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -249,34 +299,204 @@ function FreightosOceanPanel({ rates, reload, setFeedback }: { rates: LogisticsR
   }).format(amount);
 
   return <div className="space-y-5">
-    <section className="rounded-lg border border-slate-800 bg-[#141820] p-4">
-      <h2 className="flex items-center gap-2 font-bold text-white"><Anchor className="h-4 w-4"/> Estimador marítimo Freightos</h2>
-      <p className="my-2 text-xs text-slate-400">Estimaciones públicas FCL por ruta (hasta 100 consultas por IP cada hora). No son tarifas firmes, reservas ni disponibilidad confirmada; no se guardan en el histórico de tarifas reales.</p>
-      <a href="https://ship.freightos.com" target="_blank" rel="noreferrer" className="mb-3 inline-block text-xs text-sky-300 underline">Fuente y más opciones: Freightos ↗</a>
-      <form onSubmit={search} className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-        <label className="space-y-1 text-xs text-slate-300 xl:col-span-2"><span>Origen *</span><input required minLength={2} maxLength={120} value={origin} onChange={(event) => setOrigin(event.target.value)} className={input} placeholder="UN/LOCODE o puerto, país (ej. CNSHA)"/></label>
-        <label className="space-y-1 text-xs text-slate-300 xl:col-span-2"><span>Destino *</span><input required minLength={2} maxLength={120} value={destination} onChange={(event) => setDestination(event.target.value)} className={input} placeholder="UN/LOCODE o puerto, país (ej. USLGB)"/></label>
-        <label className="space-y-1 text-xs text-slate-300"><span>Contenedor *</span><select value={equipment} onChange={(event) => setEquipment(event.target.value as typeof equipment)} className={input}><option value="20GP">20GP</option><option value="40GP">40GP</option><option value="40HC">40HC</option></select></label>
-        <label className="space-y-1 text-xs text-slate-300"><span>Cantidad *</span><input required min="1" max="100" type="number" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} className={input}/></label>
-        <label className="space-y-1 text-xs text-slate-300"><span>Peso bruto por contenedor (kg), opcional</span><input min="1" max="100000" step="1" type="number" value={weight} onChange={(event) => setWeight(event.target.value)} className={input} placeholder="Peso real"/></label>
-        <div className="flex items-end"><button type="submit" disabled={searching} className="h-9 rounded bg-red-600 px-4 text-xs font-bold text-white disabled:opacity-50">{searching ? 'Consultando…' : 'Estimar flete'}</button></div>
-      </form>
-      {status && <p role="status" className="mt-3 text-xs text-slate-300">{status}</p>}
-    </section>
+    {/* Selector de proveedor marítimo */}
+    <div className="flex gap-2 border-b border-slate-800 pb-3">
+      <button
+        type="button"
+        onClick={() => setProvider('freightos')}
+        className={`rounded px-3 py-1.5 text-xs font-semibold transition ${provider === 'freightos' ? 'bg-red-600 text-white' : 'bg-[#141820] text-slate-400 hover:text-white'}`}
+      >
+        Freightos (Estimador público)
+      </button>
+      <button
+        type="button"
+        onClick={() => setProvider('icontainers')}
+        className={`rounded px-3 py-1.5 text-xs font-semibold transition ${provider === 'icontainers' ? 'bg-red-600 text-white' : 'bg-[#141820] text-slate-400 hover:text-white'}`}
+      >
+        iContainers Brutus API (China → Paraguay)
+      </button>
+    </div>
 
-    {estimates.length > 0 && <section className="overflow-x-auto rounded-lg border border-slate-800 bg-[#141820]">
-      <table className="w-full min-w-[760px] text-left text-xs">
-        <thead className="text-[10px] uppercase tracking-wide text-slate-500"><tr><th className="p-3">Ruta</th><th className="p-3">Equipo</th><th className="p-3">Rango estimado</th><th className="p-3">Tránsito estimado</th><th className="p-3">Fuente</th></tr></thead>
-        <tbody>{estimates.map((estimate) => <tr key={estimate.id} className="border-t border-slate-800 align-top text-slate-300">
-          <td className="p-3">{estimate.origin} → {estimate.destination}</td>
-          <td className="p-3">{estimate.quantity} × {estimate.equipment}</td>
-          <td className="p-3 font-semibold text-white">{money(estimate.min_amount, estimate.currency)} – {money(estimate.max_amount, estimate.currency)}</td>
-          <td className="p-3">{estimate.min_transit_days !== undefined && estimate.max_transit_days !== undefined ? `${estimate.min_transit_days}–${estimate.max_transit_days} días` : 'No informado'}</td>
-          <td className="p-3"><a href={estimate.marketplace_url} target="_blank" rel="noreferrer" className="text-sky-300 underline">Freightos ↗</a><span className="mt-1 block text-[10px] text-slate-500">Consulta: {new Date(estimate.retrieved_at).toLocaleString()}</span></td>
-        </tr>)}</tbody>
-      </table>
-    </section>}
+    {/* Proveedor: Freightos */}
+    {provider === 'freightos' && (
+      <>
+        <section className="rounded-lg border border-slate-800 bg-[#141820] p-4">
+          <h2 className="flex items-center gap-2 font-bold text-white"><Anchor className="h-4 w-4"/> Estimador marítimo Freightos</h2>
+          <p className="my-2 text-xs text-slate-400">Estimaciones públicas FCL por ruta (hasta 100 consultas por IP cada hora). No son tarifas firmes, reservas ni disponibilidad confirmada; no se guardan en el histórico de tarifas reales.</p>
+          <a href="https://ship.freightos.com" target="_blank" rel="noreferrer" className="mb-3 inline-block text-xs text-sky-300 underline">Fuente y más opciones: Freightos ↗</a>
+          <form onSubmit={search} className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <label className="space-y-1 text-xs text-slate-300 xl:col-span-2"><span>Puerto de origen *</span><input required minLength={2} maxLength={120} value={origin} onChange={(event) => setOrigin(event.target.value)} className={input} placeholder="UN/LOCODE o puerto, país (ej. CNSHA)"/></label>
+            <label className="space-y-1 text-xs text-slate-300 xl:col-span-2"><span>Puerto de destino *</span><input required minLength={2} maxLength={120} value={destination} onChange={(event) => setDestination(event.target.value)} className={input} placeholder="UN/LOCODE o puerto, país (ej. USLGB)"/></label>
+            <label className="space-y-1 text-xs text-slate-300"><span>Contenedor *</span><select value={equipment} onChange={(event) => setEquipment(event.target.value as typeof equipment)} className={input}><option value="20GP">20GP</option><option value="40GP">40GP</option><option value="40HC">40HC</option></select></label>
+            <label className="space-y-1 text-xs text-slate-300"><span>Cantidad *</span><input required min="1" max="100" type="number" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} className={input}/></label>
+            <label className="space-y-1 text-xs text-slate-300"><span>Peso bruto por contenedor (kg), opcional</span><input min="1" max="100000" step="1" type="number" value={weight} onChange={(event) => setWeight(event.target.value)} className={input} placeholder="Peso real"/></label>
+            <div className="flex items-end"><button type="submit" disabled={searching} className="h-9 rounded bg-red-600 px-4 text-xs font-bold text-white disabled:opacity-50">{searching ? 'Consultando…' : 'Consultar'}</button></div>
+          </form>
+          {status && <p role="status" className="mt-3 text-xs text-slate-300">{status}</p>}
+        </section>
 
+        {estimates.length > 0 && <section className="overflow-x-auto rounded-lg border border-slate-800 bg-[#141820]">
+          <table className="w-full min-w-[760px] text-left text-xs">
+            <thead className="text-[10px] uppercase tracking-wide text-slate-500"><tr><th className="p-3">Proveedor</th><th className="p-3">Ruta</th><th className="p-3">Equipo</th><th className="p-3">Rango estimado</th><th className="p-3">Tránsito estimado</th><th className="p-3">Fuente</th></tr></thead>
+            <tbody>{estimates.map((estimate) => <tr key={estimate.id} className="border-t border-slate-800 align-top text-slate-300">
+              <td className="p-3 font-semibold text-white">Freightos</td>
+              <td className="p-3">{estimate.origin} → {estimate.destination}</td>
+              <td className="p-3">{estimate.quantity} × {estimate.equipment}</td>
+              <td className="p-3 font-semibold text-white">{money(estimate.min_amount, estimate.currency)} – {money(estimate.max_amount, estimate.currency)}</td>
+              <td className="p-3">{estimate.min_transit_days !== undefined && estimate.max_transit_days !== undefined ? `${estimate.min_transit_days}–${estimate.max_transit_days} días` : 'No informado'}</td>
+              <td className="p-3"><a href={estimate.marketplace_url} target="_blank" rel="noreferrer" className="text-sky-300 underline">Freightos ↗</a><span className="mt-1 block text-[10px] text-slate-500">Consulta: {new Date(estimate.retrieved_at).toLocaleString()}</span></td>
+            </tr>)}</tbody>
+          </table>
+        </section>}
+      </>
+    )}
+
+    {/* Proveedor: iContainers Brutus API */}
+    {provider === 'icontainers' && (
+      <>
+        <section className="rounded-lg border border-slate-800 bg-[#141820] p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="flex items-center gap-2 font-bold text-white"><Anchor className="h-4 w-4"/> iContainers — Brutus API (FCL)</h2>
+            <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300">Piloto Read-Only · China → Paraguay</span>
+          </div>
+          <p className="my-2 text-xs text-slate-400">Consulta directa a iContainers Brutus API. Requiere verificación estricta de destino paraguayo (PYASU) e inclusión de continuación fluvial. No se autoconfírman reservas ni compras.</p>
+          
+          {!icConfigured && (
+            <div className="my-3 rounded border border-amber-800 bg-amber-950/30 p-3 text-xs text-amber-300">
+              <strong className="block font-semibold">iContainers no configurado — requiere credenciales.</strong>
+              <span className="mt-1 block text-slate-400">El proveedor iContainers requiere credenciales de API activas en el entorno del servidor.</span>
+            </div>
+          )}
+
+          <form onSubmit={searchIcontainers} className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <label className="space-y-1 text-xs text-slate-300 xl:col-span-2">
+              <span>Puerto de origen *</span>
+              <input required minLength={2} maxLength={10} value={icOrigin} onChange={(event) => setIcOrigin(event.target.value.toUpperCase())} className={input} placeholder="CNSHA, CNNGB, CNSZX"/>
+            </label>
+            <label className="space-y-1 text-xs text-slate-300 xl:col-span-2">
+              <span>Puerto de destino (Paraguay) *</span>
+              <input required minLength={2} maxLength={10} value={icDestination} onChange={(event) => setIcDestination(event.target.value.toUpperCase())} className={input} placeholder="PYASU (Asunción)"/>
+            </label>
+            <label className="space-y-1 text-xs text-slate-300">
+              <span>Contenedor *</span>
+              <select value={icEquipment} onChange={(event) => setIcEquipment(event.target.value as typeof icEquipment)} className={input}>
+                <option value="20GP">20GP (DV20)</option>
+                <option value="40GP">40GP (DV40)</option>
+                <option value="40HC">40HC (DV40HC)</option>
+              </select>
+            </label>
+            <label className="space-y-1 text-xs text-slate-300">
+              <span>Cantidad *</span>
+              <input required min="1" max="100" type="number" value={icQuantity} onChange={(event) => setIcQuantity(Number(event.target.value))} className={input}/>
+            </label>
+            <label className="space-y-1 text-xs text-slate-300">
+              <span>Peso bruto (kg), opcional</span>
+              <input min="1" max="100000" step="1" type="number" value={icWeight} onChange={(event) => setIcWeight(event.target.value)} className={input} placeholder="Opcional"/>
+            </label>
+            <div className="flex items-end">
+              <button type="submit" disabled={icSearching} className="h-9 w-full rounded bg-red-600 px-4 text-xs font-bold text-white disabled:opacity-50">
+                {icSearching ? 'Consultando…' : 'Consultar'}
+              </button>
+            </div>
+          </form>
+          {icStatus && <p role="status" className="mt-3 text-xs text-slate-300">{icStatus}</p>}
+        </section>
+
+        {icRates.length > 0 && (
+          <section className="overflow-x-auto rounded-lg border border-slate-800 bg-[#141820]">
+            <table className="w-full min-w-[960px] text-left text-xs">
+              <thead className="text-[10px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="p-3">Proveedor</th>
+                  <th className="p-3">Ruta</th>
+                  <th className="p-3">Equipo</th>
+                  <th className="p-3">Flete</th>
+                  <th className="p-3">Precio total</th>
+                  <th className="p-3">Moneda</th>
+                  <th className="p-3">Tránsito</th>
+                  <th className="p-3">Vigencia</th>
+                  <th className="p-3">Alcance</th>
+                  <th className="p-3">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {icRates.map((rate) => (
+                  <React.Fragment key={rate.id}>
+                    <tr className="border-t border-slate-800 align-top text-slate-300">
+                      <td className="p-3 font-semibold text-white">
+                        {rate.provider}
+                        <span className="block text-[10px] font-normal text-slate-400">{rate.carrier_name || 'Naviera no especificada'}</span>
+                      </td>
+                      <td className="p-3">{rate.origin_code || rate.origin} → {rate.destination_code || rate.destination}</td>
+                      <td className="p-3">{rate.quantity} × {rate.equipment}</td>
+                      <td className="p-3">{rate.freight_amount !== undefined && rate.currency ? `${rate.currency} ${rate.freight_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}</td>
+                      <td className="p-3 font-semibold text-white">{rate.total_amount !== undefined && rate.currency ? `${rate.currency} ${rate.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : <span className="text-amber-300 text-[11px]">Sin total comparable</span>}</td>
+                      <td className="p-3">{rate.currency || '—'}</td>
+                      <td className="p-3">{rate.transit_days !== undefined ? `${rate.transit_days} días` : 'No informado'}</td>
+                      <td className="p-3">{rate.valid_until || 'No informada'}</td>
+                      <td className="p-3">
+                        <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-medium ${rate.scope_complete ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800'}`}>
+                          {rate.scope_complete ? 'Completo hasta Paraguay' : 'Incompleto / Fluvial no verificado'}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-medium ${rate.paraguay_status === 'READY' ? 'bg-emerald-950 text-emerald-300' : rate.paraguay_status === 'SCOPE_INCOMPLETE' ? 'bg-amber-950 text-amber-300' : 'bg-slate-800 text-slate-300'}`}>
+                          {rate.paraguay_status}
+                        </span>
+                      </td>
+                    </tr>
+                    <tr className="border-b border-slate-800 bg-[#0c0f14]/40 text-slate-400">
+                      <td colSpan={10} className="px-3 pb-3">
+                        <details className="text-[11px]">
+                          <summary className="cursor-pointer text-sky-400 hover:underline">Ver detalles (cargos, transbordos, inclusiones e identificadores)</summary>
+                          <div className="mt-2 grid gap-3 md:grid-cols-2 lg:grid-cols-4 rounded border border-slate-800 bg-[#10141b] p-3">
+                            <div>
+                              <strong className="block text-slate-300 mb-1">Desglose de cargos ({rate.billing_items.length})</strong>
+                              {rate.billing_items.length === 0 ? <span className="text-slate-500">Sin desglose</span> : (
+                                <ul className="space-y-0.5">
+                                  {rate.billing_items.map((b, i) => (
+                                    <li key={i}>{b.name} ({b.service_item}): {b.currency} {b.amount.toLocaleString()}{b.optional ? ' (Opcional)' : ''}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                            <div>
+                              <strong className="block text-slate-300 mb-1">Transbordos</strong>
+                              {rate.transshipment_ports.length === 0 ? <span className="text-slate-500">Ruta directa o sin transbordos informados</span> : (
+                                <span>{rate.transshipment_ports.join(' → ')}</span>
+                              )}
+                              <strong className="block text-slate-300 mt-2 mb-1">Inclusiones</strong>
+                              <span>{rate.included_services.length > 0 ? rate.included_services.join(', ') : 'No detalladas'}</span>
+                            </div>
+                            <div>
+                              <strong className="block text-slate-300 mb-1">Exclusiones</strong>
+                              <span>{rate.excluded_services.length > 0 ? rate.excluded_services.join(', ') : 'Ninguna informada'}</span>
+                              {rate.unavailable_reason && (
+                                <div className="mt-2 text-amber-400 font-medium">{rate.unavailable_reason}</div>
+                              )}
+                            </div>
+                            <div>
+                              <strong className="block text-slate-300 mb-1">Identificadores</strong>
+                              <span className="block font-mono text-[10px]">Quote UUID: {rate.quote_uuid || '—'}</span>
+                              <span className="block font-mono text-[10px]">Rate UUID: {rate.rate_uuid || '—'}</span>
+                              {rate.quote_url && (
+                                <a href={rate.quote_url} target="_blank" rel="noreferrer" className="mt-1 block text-sky-300 underline">Ver cotización online ↗</a>
+                              )}
+                            </div>
+                          </div>
+                        </details>
+                      </td>
+                    </tr>
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
+      </>
+    )}
+
+    {/* Formulario de tarifa manual / contractual (Preservado) */}
     <form onSubmit={manual} className="rounded-lg border border-slate-800 bg-[#141820] p-4">
       <h2 className="mb-3 font-bold text-white">Tarifa manual / contractual</h2>
       <div className="grid gap-3 md:grid-cols-3"><input required name="origin" placeholder="Origen" className={input}/><input required name="destination" placeholder="Destino" className={input}/><select name="equipment" className={input}><option>20GP</option><option>40GP</option><option>40HC</option><option>LCL</option></select><input required name="amount" type="number" min="0" step="0.01" placeholder="Importe" className={input}/><select name="currency" className={input}><option>USD</option><option>PYG</option></select><input name="valid_until" type="date" className={input}/></div>
