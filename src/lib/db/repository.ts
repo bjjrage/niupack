@@ -31,6 +31,12 @@ import {
   ProductPackagingSpec,
   QuoteMatchResult,
   CostV1Configuration,
+  PlantGeneralParameters,
+  PlantProductionPeriod,
+  PackingSession,
+  PackingSessionStatus,
+  PackingSessionSegment,
+  IndustrialProcessSnapshot,
 } from '@/types';
 import {
   INITIAL_ORG,
@@ -51,6 +57,9 @@ import {
   INITIAL_FX_RATES,
   INITIAL_FX_SETTINGS,
   INITIAL_PACKAGING_SPECS,
+  INITIAL_PLANT_PARAMETERS,
+  INITIAL_PRODUCTION_PERIODS,
+  INITIAL_PACKING_SESSIONS,
 } from './seed-data';
 import { supabase, supabaseAdmin, isSupabaseConfigured, isSupabaseAdminConfigured } from './supabase';
 
@@ -100,6 +109,10 @@ class Store {
   fxSettings: FxSettings = { ...INITIAL_FX_SETTINGS };
   packagingSpecs: ProductPackagingSpec[] = [...INITIAL_PACKAGING_SPECS];
   quoteMatches: QuoteMatchResult[] = [];
+  plantParameters: PlantGeneralParameters = { ...INITIAL_PLANT_PARAMETERS };
+  packingSessions: PackingSession[] = [...INITIAL_PACKING_SESSIONS];
+  productionPeriods: PlantProductionPeriod[] = [...INITIAL_PRODUCTION_PERIODS];
+  industrialSnapshots: IndustrialProcessSnapshot[] = [];
 }
 
 // Global singleton across server restarts during dev
@@ -959,4 +972,587 @@ export const repository = {
     store.quoteMatches.unshift(newMatch);
     return newMatch;
   },
+
+  // Industrial Processes V2 — Plant Parameters
+  async getPlantParameters(organizationId?: string): Promise<PlantGeneralParameters> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('plant_process_parameters')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+      if (error) throw new Error(`plant_process_parameters: ${error.message}`);
+      if (data) {
+        return {
+          id: data.id,
+          organization_id: data.organization_id,
+          electricity_rate_pyg_kwh: Number(data.electricity_rate_pyg_kwh),
+          monthly_salary_hours: Number(data.monthly_salary_hours),
+          labor_charges_percent: Number(data.labor_charges_percent),
+          operator_monthly_salary_pyg: Number(data.operator_monthly_salary_pyg),
+          packer_monthly_salary_pyg: Number(data.packer_monthly_salary_pyg),
+          gen1_machines_count: Number(data.gen1_machines_count),
+          gen1_power_kw: Number(data.gen1_power_kw),
+          gen1_operators_count: Number(data.gen1_operators_count),
+          gen1_operating_hours: Number(data.gen1_operating_hours),
+          gen2_machines_count: Number(data.gen2_machines_count),
+          gen2_power_kw: Number(data.gen2_power_kw),
+          gen2_operators_count: Number(data.gen2_operators_count),
+          gen2_operating_hours: Number(data.gen2_operating_hours),
+          quality_inspectors_count: Number(data.quality_inspectors_count),
+          quality_monthly_salary_pyg: Number(data.quality_monthly_salary_pyg),
+          quality_polypaper_percent: Number(data.quality_polypaper_percent),
+          quality_labor_charges_included: Boolean(data.quality_labor_charges_included),
+          packaging_materials_cost_per_thousand_usd: Number(data.packaging_materials_cost_per_thousand_usd),
+          updated_at: data.updated_at,
+          updated_by: data.updated_by,
+        };
+      }
+      // Insert default if not present
+      const defaultRecord = {
+        ...INITIAL_PLANT_PARAMETERS,
+        id: crypto.randomUUID(),
+        organization_id: organizationId,
+        updated_at: new Date().toISOString(),
+      };
+      const { data: inserted, error: insertError } = await supabaseAdmin
+        .from('plant_process_parameters')
+        .insert(defaultRecord)
+        .select('*')
+        .single();
+      if (insertError) throw new Error(`plant_process_parameters insert: ${insertError.message}`);
+      return inserted as PlantGeneralParameters;
+    }
+    return { ...store.plantParameters };
+  },
+
+  async updatePlantParameters(
+    params: Partial<PlantGeneralParameters>,
+    organizationId?: string,
+    actorId?: string
+  ): Promise<PlantGeneralParameters> {
+    const orgId = organizationId || store.organizations[0].id;
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const record = {
+        ...params,
+        organization_id: orgId,
+        updated_at: new Date().toISOString(),
+        updated_by: actorId,
+      };
+      const { data, error } = await supabaseAdmin
+        .from('plant_process_parameters')
+        .upsert(record, { onConflict: 'organization_id' })
+        .select('*')
+        .single();
+      if (error) throw new Error(`plant_process_parameters update: ${error.message}`);
+      return data as PlantGeneralParameters;
+    }
+    store.plantParameters = {
+      ...store.plantParameters,
+      ...params,
+      updated_at: new Date().toISOString(),
+    };
+    return { ...store.plantParameters };
+  },
+
+  // Industrial Processes V2 — Packing Stopwatch Sessions
+  async getPackingSessions(
+    filters?: { status?: PackingSessionStatus; line_name?: string; period?: string; sku?: string },
+    organizationId?: string
+  ): Promise<PackingSession[]> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      let query = supabaseAdmin
+        .from('packing_sessions')
+        .select('*, packing_session_segments(*)')
+        .eq('organization_id', organizationId);
+      if (filters?.status) query = query.eq('status', filters.status);
+      if (filters?.line_name) query = query.eq('line_name', filters.line_name);
+      if (filters?.sku) query = query.eq('sku', filters.sku);
+      query = query.order('started_at', { ascending: false });
+
+      const { data, error } = await query;
+      if (error) throw new Error(`packing_sessions: ${error.message}`);
+      return (data || []).map((row: any) => ({
+        ...row,
+        total_person_hours: Number(row.total_person_hours),
+        total_duration_minutes: Number(row.total_duration_minutes),
+        segments: (row.packing_session_segments || []).sort(
+          (a: any, b: any) => a.segment_order - b.segment_order
+        ),
+      }));
+    }
+
+    let sessions = [...store.packingSessions];
+    if (filters?.status) sessions = sessions.filter((s) => s.status === filters.status);
+    if (filters?.line_name) sessions = sessions.filter((s) => s.line_name === filters.line_name);
+    if (filters?.sku) sessions = sessions.filter((s) => s.sku === filters.sku);
+    if (filters?.period) {
+      sessions = sessions.filter((s) => s.started_at.startsWith(filters.period!));
+    }
+    return sessions.sort((a, b) => b.started_at.localeCompare(a.started_at));
+  },
+
+  async getPackingSession(id: string, organizationId?: string): Promise<PackingSession | undefined> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('packing_sessions')
+        .select('*, packing_session_segments(*)')
+        .eq('id', id)
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+      if (error) throw new Error(`packing_sessions: ${error.message}`);
+      if (!data) return undefined;
+      return {
+        ...data,
+        total_person_hours: Number(data.total_person_hours),
+        total_duration_minutes: Number(data.total_duration_minutes),
+        segments: (data.packing_session_segments || []).sort(
+          (a: any, b: any) => a.segment_order - b.segment_order
+        ),
+      };
+    }
+    return store.packingSessions.find((s) => s.id === id);
+  },
+
+  async startPackingSession(
+    data: {
+      line_name: string;
+      sku?: string;
+      production_order?: string;
+      initial_headcount: number;
+      reason?: string;
+      operator_user_id?: string;
+    },
+    organizationId?: string
+  ): Promise<PackingSession> {
+    const orgId = organizationId || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const sessionId = crypto.randomUUID();
+    const segmentId = crypto.randomUUID();
+    const codeSuffix = Date.now().toString().slice(-6);
+    const session_code = `SES-${codeSuffix}`;
+    const headcount = Math.max(1, Math.round(data.initial_headcount || 1));
+
+    const initialSegment: PackingSessionSegment = {
+      id: segmentId,
+      session_id: sessionId,
+      segment_order: 1,
+      headcount,
+      started_at: now,
+      duration_minutes: 0,
+      person_hours: 0,
+      reason: data.reason || 'Inicio de sesión',
+    };
+
+    const newSession: PackingSession = {
+      id: sessionId,
+      organization_id: orgId,
+      session_code,
+      line_name: data.line_name,
+      sku: data.sku,
+      production_order: data.production_order,
+      operator_user_id: data.operator_user_id,
+      started_at: now,
+      status: 'RUNNING',
+      total_person_hours: 0,
+      total_duration_minutes: 0,
+      segments: [initialSegment],
+      created_at: now,
+      updated_at: now,
+    };
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const { data: created, error } = await supabaseAdmin
+        .from('packing_sessions')
+        .insert({
+          id: newSession.id,
+          organization_id: newSession.organization_id,
+          session_code: newSession.session_code,
+          line_name: newSession.line_name,
+          sku: newSession.sku,
+          production_order: newSession.production_order,
+          operator_user_id: newSession.operator_user_id,
+          started_at: newSession.started_at,
+          status: newSession.status,
+          total_person_hours: 0,
+          total_duration_minutes: 0,
+          created_at: now,
+          updated_at: now,
+        })
+        .select('*')
+        .single();
+      if (error) throw new Error(`create packing session: ${error.message}`);
+
+      const { error: segError } = await supabaseAdmin
+        .from('packing_session_segments')
+        .insert({
+          id: initialSegment.id,
+          session_id: sessionId,
+          segment_order: 1,
+          headcount,
+          started_at: now,
+          reason: initialSegment.reason,
+        });
+      if (segError) throw new Error(`create initial segment: ${segError.message}`);
+
+      return { ...created, segments: [initialSegment] } as PackingSession;
+    }
+
+    store.packingSessions.unshift(newSession);
+    return newSession;
+  },
+
+  async changePackingHeadcount(
+    sessionId: string,
+    newHeadcount: number,
+    reason?: string,
+    organizationId?: string
+  ): Promise<PackingSession> {
+    const session = await this.getPackingSession(sessionId, organizationId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    if (session.status !== 'RUNNING') throw new Error(`Cannot change headcount on session with status ${session.status}`);
+
+    const now = new Date().toISOString();
+    const segments = session.segments || [];
+    const openSegment = segments.find((s) => !s.ended_at);
+
+    if (openSegment) {
+      openSegment.ended_at = now;
+      const durationMs = Math.max(0, new Date(now).getTime() - new Date(openSegment.started_at).getTime());
+      openSegment.duration_minutes = Number((durationMs / 60000).toFixed(2));
+      openSegment.person_hours = Number(((openSegment.duration_minutes / 60) * openSegment.headcount).toFixed(3));
+    }
+
+    const nextOrder = segments.length + 1;
+    const headcount = Math.max(1, Math.round(newHeadcount));
+    const newSegment: PackingSessionSegment = {
+      id: crypto.randomUUID(),
+      session_id: sessionId,
+      segment_order: nextOrder,
+      headcount,
+      started_at: now,
+      duration_minutes: 0,
+      person_hours: 0,
+      reason: reason || `Cambio de dotación a ${headcount} operarios`,
+    };
+    segments.push(newSegment);
+
+    // Compute totals of closed segments
+    const totalMinutes = segments.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
+    const totalPersonHours = segments.reduce((sum, s) => sum + (s.person_hours || 0), 0);
+
+    session.segments = segments;
+    session.total_duration_minutes = Number(totalMinutes.toFixed(2));
+    session.total_person_hours = Number(totalPersonHours.toFixed(3));
+    session.updated_at = now;
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      if (openSegment) {
+        await supabaseAdmin
+          .from('packing_session_segments')
+          .update({
+            ended_at: openSegment.ended_at,
+            duration_minutes: openSegment.duration_minutes,
+            person_hours: openSegment.person_hours,
+          })
+          .eq('id', openSegment.id);
+      }
+      await supabaseAdmin
+        .from('packing_session_segments')
+        .insert({
+          id: newSegment.id,
+          session_id: sessionId,
+          segment_order: nextOrder,
+          headcount,
+          started_at: now,
+          reason: newSegment.reason,
+        });
+
+      await supabaseAdmin
+        .from('packing_sessions')
+        .update({
+          total_duration_minutes: session.total_duration_minutes,
+          total_person_hours: session.total_person_hours,
+          updated_at: now,
+        })
+        .eq('id', sessionId);
+    }
+
+    return session;
+  },
+
+  async stopPackingSession(sessionId: string, organizationId?: string): Promise<PackingSession> {
+    const session = await this.getPackingSession(sessionId, organizationId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    if (session.status !== 'RUNNING') return session;
+
+    const now = new Date().toISOString();
+    const segments = session.segments || [];
+    const openSegment = segments.find((s) => !s.ended_at);
+
+    if (openSegment) {
+      openSegment.ended_at = now;
+      const durationMs = Math.max(0, new Date(now).getTime() - new Date(openSegment.started_at).getTime());
+      openSegment.duration_minutes = Number((durationMs / 60000).toFixed(2));
+      openSegment.person_hours = Number(((openSegment.duration_minutes / 60) * openSegment.headcount).toFixed(3));
+    }
+
+    const totalMinutes = segments.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
+    const totalPersonHours = segments.reduce((sum, s) => sum + (s.person_hours || 0), 0);
+
+    session.status = 'STOPPED';
+    session.stopped_at = now;
+    session.total_duration_minutes = Number(totalMinutes.toFixed(2));
+    session.total_person_hours = Number(totalPersonHours.toFixed(3));
+    session.updated_at = now;
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      if (openSegment) {
+        await supabaseAdmin
+          .from('packing_session_segments')
+          .update({
+            ended_at: openSegment.ended_at,
+            duration_minutes: openSegment.duration_minutes,
+            person_hours: openSegment.person_hours,
+          })
+          .eq('id', openSegment.id);
+      }
+      await supabaseAdmin
+        .from('packing_sessions')
+        .update({
+          status: 'STOPPED',
+          stopped_at: now,
+          total_duration_minutes: session.total_duration_minutes,
+          total_person_hours: session.total_person_hours,
+          updated_at: now,
+        })
+        .eq('id', sessionId);
+    }
+
+    return session;
+  },
+
+  async approvePackingSession(sessionId: string, approverId?: string, organizationId?: string): Promise<PackingSession> {
+    let session = await this.getPackingSession(sessionId, organizationId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+
+    if (session.status === 'RUNNING') {
+      session = await this.stopPackingSession(sessionId, organizationId);
+    }
+
+    const now = new Date().toISOString();
+    session.status = 'APPROVED';
+    session.approved_at = now;
+    session.approved_by = approverId;
+    session.updated_at = now;
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      await supabaseAdmin
+        .from('packing_sessions')
+        .update({
+          status: 'APPROVED',
+          approved_at: now,
+          approved_by: approverId,
+          updated_at: now,
+        })
+        .eq('id', sessionId);
+    }
+
+    return session;
+  },
+
+  async correctPackingSession(
+    sessionId: string,
+    updates: { total_person_hours?: number; notes?: string },
+    organizationId?: string
+  ): Promise<PackingSession> {
+    const session = await this.getPackingSession(sessionId, organizationId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+
+    const now = new Date().toISOString();
+    session.status = 'CORRECTED';
+    if (updates.total_person_hours !== undefined) {
+      session.total_person_hours = Number(updates.total_person_hours);
+    }
+    if (updates.notes) {
+      session.notes = session.notes ? `${session.notes} | Corrección: ${updates.notes}` : updates.notes;
+    }
+    session.updated_at = now;
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      await supabaseAdmin
+        .from('packing_sessions')
+        .update({
+          status: 'CORRECTED',
+          total_person_hours: session.total_person_hours,
+          notes: session.notes,
+          updated_at: now,
+        })
+        .eq('id', sessionId);
+    }
+
+    return session;
+  },
+
+  async voidPackingSession(sessionId: string, reason?: string, organizationId?: string): Promise<PackingSession> {
+    const session = await this.getPackingSession(sessionId, organizationId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+
+    const now = new Date().toISOString();
+    session.status = 'VOIDED';
+    if (reason) {
+      session.notes = session.notes ? `${session.notes} | Anulada: ${reason}` : `Anulada: ${reason}`;
+    }
+    session.updated_at = now;
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      await supabaseAdmin
+        .from('packing_sessions')
+        .update({
+          status: 'VOIDED',
+          notes: session.notes,
+          updated_at: now,
+        })
+        .eq('id', sessionId);
+    }
+
+    return session;
+  },
+
+  // Industrial Processes V2 — Production Periods
+  async getProductionPeriods(organizationId?: string): Promise<PlantProductionPeriod[]> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('plant_production_periods')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .order('period', { ascending: false });
+      if (error) throw new Error(`plant_production_periods: ${error.message}`);
+      return (data || []).map((row: any) => ({
+        ...row,
+        good_units_produced: Number(row.good_units_produced),
+      }));
+    }
+    return [...store.productionPeriods];
+  },
+
+  async getProductionPeriod(sku: string, period: string, organizationId?: string): Promise<PlantProductionPeriod | undefined> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('plant_production_periods')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .eq('sku', sku)
+        .eq('period', period)
+        .maybeSingle();
+      if (error) throw new Error(`plant_production_periods: ${error.message}`);
+      if (!data) return undefined;
+      return {
+        ...data,
+        good_units_produced: Number(data.good_units_produced),
+      };
+    }
+    return store.productionPeriods.find((p) => p.sku === sku && p.period === period);
+  },
+
+  async saveProductionPeriod(
+    periodData: Partial<PlantProductionPeriod> & { sku: string; period: string },
+    organizationId?: string
+  ): Promise<PlantProductionPeriod> {
+    const orgId = organizationId || store.organizations[0].id;
+    const now = new Date().toISOString();
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const record = {
+        organization_id: orgId,
+        sku: periodData.sku,
+        period: periodData.period,
+        good_units_produced: periodData.good_units_produced ?? 0,
+        updated_at: now,
+      };
+      const { data, error } = await supabaseAdmin
+        .from('plant_production_periods')
+        .upsert(record, { onConflict: 'organization_id,period,sku' })
+        .select('*')
+        .single();
+      if (error) throw new Error(`save production period: ${error.message}`);
+      return {
+        ...data,
+        good_units_produced: Number(data.good_units_produced),
+      };
+    }
+
+    const idx = store.productionPeriods.findIndex(
+      (p) => p.sku === periodData.sku && p.period === periodData.period
+    );
+    const updated: PlantProductionPeriod = {
+      id: idx >= 0 ? store.productionPeriods[idx].id : crypto.randomUUID(),
+      organization_id: orgId,
+      sku: periodData.sku,
+      period: periodData.period,
+      good_units_produced: periodData.good_units_produced ?? 0,
+      created_at: idx >= 0 ? store.productionPeriods[idx].created_at : now,
+      updated_at: now,
+    };
+    if (idx >= 0) {
+      store.productionPeriods[idx] = updated;
+    } else {
+      store.productionPeriods.push(updated);
+    }
+    return updated;
+  },
+
+  // Industrial Processes V2 — Process Snapshots
+  async getIndustrialProcessSnapshot(sku: string, period: string, organizationId?: string): Promise<IndustrialProcessSnapshot | undefined> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('industrial_process_snapshots')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .eq('sku', sku)
+        .eq('period', period)
+        .maybeSingle();
+      if (error) throw new Error(`industrial_process_snapshots: ${error.message}`);
+      return data as IndustrialProcessSnapshot | undefined;
+    }
+    return store.industrialSnapshots.find((s) => s.sku === sku && s.period === period);
+  },
+
+  async saveIndustrialProcessSnapshot(
+    snapshot: Omit<IndustrialProcessSnapshot, 'id'>,
+    organizationId?: string
+  ): Promise<IndustrialProcessSnapshot> {
+    const orgId = organizationId || store.organizations[0].id;
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const record = {
+        ...snapshot,
+        organization_id: orgId,
+        calculated_at: new Date().toISOString(),
+      };
+      const { data, error } = await supabaseAdmin
+        .from('industrial_process_snapshots')
+        .upsert(record, { onConflict: 'organization_id,period,sku' })
+        .select('*')
+        .single();
+      if (error) throw new Error(`save process snapshot: ${error.message}`);
+      return data as IndustrialProcessSnapshot;
+    }
+
+    const idx = store.industrialSnapshots.findIndex(
+      (s) => s.sku === snapshot.sku && s.period === snapshot.period
+    );
+    const item: IndustrialProcessSnapshot = {
+      id: idx >= 0 ? store.industrialSnapshots[idx].id : crypto.randomUUID(),
+      ...snapshot,
+      organization_id: orgId,
+      calculated_at: new Date().toISOString(),
+    };
+    if (idx >= 0) {
+      store.industrialSnapshots[idx] = item;
+    } else {
+      store.industrialSnapshots.push(item);
+    }
+    return item;
+  },
 };
+

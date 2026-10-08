@@ -35,11 +35,14 @@ function rubricResults(
 ): CostV1RubricResult[] {
   return (Object.keys(RUBRIC_LABELS) as CostV1RubricKey[]).map((key) => {
     const config = { ...DEFAULT_RUBRICS[key], ...(input.rubrics?.[key] ?? {}) };
+    let source = config.source;
+    if (key === 'operational' && input.operational_process_enabled) source = 'PROCESS';
+    if (key === 'packaging' && input.packaging_process_enabled) source = 'PROCESS';
     return {
       key,
       label: RUBRIC_LABELS[key],
       enabled: config.enabled,
-      source: config.source,
+      source,
       unit: config.unit,
       notes: config.notes,
       impact_usd_per_unit: config.enabled ? Number(values[key].toFixed(5)) : 0,
@@ -76,9 +79,25 @@ export class IndustrialCostEngine {
     }
 
     if (printingEnabled && input.quoted_printing_rate_usd <= 0) missing.push('Impresión + troquelado');
-    if (operationalEnabled && input.operational_cost_per_thousand_usd <= 0) missing.push('Costos operativos');
+    if (operationalEnabled) {
+      if (input.operational_process_enabled) {
+        if (!input.process_operational_cost_per_thousand_usd || input.process_operational_cost_per_thousand_usd <= 0) {
+          missing.push('Costos operativos (cálculo de Procesos pendiente o incompleto)');
+        }
+      } else {
+        if (input.operational_cost_per_thousand_usd <= 0) missing.push('Costos operativos');
+      }
+    }
     if (depreciationEnabled && input.machine_depreciation_per_thousand_usd <= 0) missing.push('Depreciación');
-    if (packagingEnabled && input.packaging_cost_per_thousand_usd <= 0) missing.push('Embalaje');
+    if (packagingEnabled) {
+      if (input.packaging_process_enabled) {
+        if (!input.process_packaging_cost_per_thousand_usd || input.process_packaging_cost_per_thousand_usd <= 0) {
+          missing.push('Embalaje (cálculo de Procesos pendiente o incompleto)');
+        }
+      } else {
+        if (input.packaging_cost_per_thousand_usd <= 0) missing.push('Embalaje');
+      }
+    }
     if (input.batch_size <= 0) missing.push('Tamaño de lote');
     return missing;
   }
@@ -226,8 +245,11 @@ export class IndustrialCostEngine {
     }
 
     // 4. Costos Operativos (Mano de obra directa, energía, planta)
+    const operationalRatePerThousand = input.operational_process_enabled && (input.process_operational_cost_per_thousand_usd ?? 0) > 0
+      ? input.process_operational_cost_per_thousand_usd!
+      : operational_cost_per_thousand_usd;
     const cost_operational_usd = operationalEnabled
-      ? Number((operational_cost_per_thousand_usd / 1000).toFixed(5))
+      ? Number((operationalRatePerThousand / 1000).toFixed(5))
       : 0;
 
     // 5. Depreciación de Maquinaria
@@ -243,8 +265,11 @@ export class IndustrialCostEngine {
       : 0;
 
     // 7. Empaque (Cajas corrugadas, bolsas polietileno, pallet)
+    const packagingRatePerThousand = input.packaging_process_enabled && (input.process_packaging_cost_per_thousand_usd ?? 0) > 0
+      ? input.process_packaging_cost_per_thousand_usd!
+      : packaging_cost_per_thousand_usd;
     const cost_packaging_usd = packagingEnabled
-      ? Number((packaging_cost_per_thousand_usd / 1000).toFixed(5))
+      ? Number((packagingRatePerThousand / 1000).toFixed(5))
       : 0;
 
     // Total Costo Unitario Industrial (True Cost)

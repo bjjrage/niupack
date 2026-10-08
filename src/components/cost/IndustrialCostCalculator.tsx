@@ -156,7 +156,6 @@ function RubricCard({
   impact,
   unitLabel,
   onEnabledChange,
-  onSourceChange,
   headerExtra,
   children,
 }: {
@@ -165,7 +164,6 @@ function RubricCard({
   impact: number;
   unitLabel?: string;
   onEnabledChange: (enabled: boolean) => void;
-  onSourceChange: (source: CostInputSource) => void;
   headerExtra?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -185,14 +183,6 @@ function RubricCard({
               />
               <span>{config.enabled ? 'ACTIVO' : 'INACTIVO'}</span>
             </label>
-            <select
-              value={config.source}
-              onChange={(event) => onSourceChange(event.target.value as CostInputSource)}
-              aria-label={`Fuente de ${title}`}
-              className="min-h-8 rounded-md border border-slate-700 bg-[#0c0f14] px-2.5 text-[11px] font-semibold text-slate-300 outline-none focus:border-brand-500/70"
-            >
-              {sourceOptions.map((source) => <option key={source} value={source}>{source}</option>)}
-            </select>
             {headerExtra}
           </div>
         </div>
@@ -301,6 +291,48 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
   const updateBottomFormula = (updates: Partial<NonNullable<IndustrialProductCostInput['bottom_formula']>>) => {
     const currentBottom = input?.bottom_formula || emptyInput(sku).bottom_formula!;
     updateInput({ bottom_formula: { ...currentBottom, ...updates } });
+  };
+
+  const toggleOperationalProcess = async (enabled: boolean) => {
+    if (!input) return;
+    if (enabled && (!input.process_operational_cost_per_thousand_usd || input.process_operational_cost_per_thousand_usd <= 0)) {
+      try {
+        const res = await fetch(`/api/cost/processes/calculate?sku=${encodeURIComponent(sku)}`);
+        const data = await res.json();
+        if (data.success && data.calculation) {
+          updateInput({
+            operational_process_enabled: true,
+            process_operational_cost_per_thousand_usd: data.calculation.operational_total_usd_per_thousand,
+            process_calculation_detail: data.calculation,
+          });
+          return;
+        }
+      } catch (err) {
+        console.error('Error fetching process calculation', err);
+      }
+    }
+    updateInput({ operational_process_enabled: enabled });
+  };
+
+  const togglePackagingProcess = async (enabled: boolean) => {
+    if (!input) return;
+    if (enabled && (!input.process_packaging_cost_per_thousand_usd || input.process_packaging_cost_per_thousand_usd <= 0)) {
+      try {
+        const res = await fetch(`/api/cost/processes/calculate?sku=${encodeURIComponent(sku)}`);
+        const data = await res.json();
+        if (data.success && data.calculation) {
+          updateInput({
+            packaging_process_enabled: true,
+            process_packaging_cost_per_thousand_usd: data.calculation.packaging_total_usd_per_thousand,
+            process_calculation_detail: data.calculation,
+          });
+          return;
+        }
+      } catch (err) {
+        console.error('Error fetching process calculation', err);
+      }
+    }
+    updateInput({ packaging_process_enabled: enabled });
   };
 
   const save = async () => {
@@ -525,7 +557,6 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
               config={rawConfig}
               impact={rubricValues.raw_material}
               onEnabledChange={(enabled) => updateRubric('raw_material', { enabled })}
-              onSourceChange={(source) => updateRubric('raw_material', { source })}
               headerExtra={
                 <div role="group" aria-label="Moneda del resumen" title={fxRate !== null ? `Gs. ${fxRate.toLocaleString('es-PY')} = USD 1` : undefined} className="inline-flex min-h-8 items-stretch rounded-md border border-slate-700 bg-[#0c0f14] p-0.5">
                   {([
@@ -654,7 +685,6 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                 impact={rubricValues.printing_die_cut}
                 unitLabel={input.printing_cost_mode === 'PER_UNIT' ? 'USD / unidad' : input.printing_cost_mode === 'TOTAL_BATCH' ? 'USD / lote' : 'USD / 1.000'}
                 onEnabledChange={(enabled) => updateRubric('printing_die_cut', { enabled })}
-                onSourceChange={(source) => updateRubric('printing_die_cut', { source })}
               >
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-slate-300 sm:col-span-2">
@@ -696,9 +726,78 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                 config={operationalConfig}
                 impact={rubricValues.operational}
                 onEnabledChange={(enabled) => updateRubric('operational', { enabled })}
-                onSourceChange={(source) => updateRubric('operational', { source })}
               >
-                <NumberField label="Costo operativo" suffix="USD/1.000" value={input.operational_cost_per_thousand_usd} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ operational_cost_per_thousand_usd: value })} />
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-[#10141b] p-3.5">
+                    <div>
+                      <div className="text-xs font-semibold text-slate-200">Usar cálculo de Procesos</div>
+                      <div className="text-[11px] text-slate-400">
+                        {input.operational_process_enabled
+                          ? 'Cálculo activo desde Procesos Industriales (Formado + Control de calidad)'
+                          : 'Cálculo manual ingresado en USD / 1.000'}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-mono font-semibold ${!input.operational_process_enabled ? 'text-brand-400' : 'text-slate-500'}`}>OFF</span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={Boolean(input.operational_process_enabled)}
+                        onClick={() => toggleOperationalProcess(!input.operational_process_enabled)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${input.operational_process_enabled ? 'bg-brand-600' : 'bg-slate-700'}`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${input.operational_process_enabled ? 'translate-x-5' : 'translate-x-0'}`}
+                        />
+                      </button>
+                      <span className={`text-xs font-mono font-semibold ${input.operational_process_enabled ? 'text-brand-400' : 'text-slate-500'}`}>ON</span>
+                    </div>
+                  </div>
+
+                  {!input.operational_process_enabled ? (
+                    <div>
+                      <NumberField
+                        label="Costo operativo manual"
+                        suffix="USD / 1.000"
+                        value={input.operational_cost_per_thousand_usd}
+                        emptyWhenZero={emptyValues}
+                        onChange={(value) => updateInput({ operational_cost_per_thousand_usd: value })}
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-brand-900/40 bg-brand-950/20 p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-brand-300">Formado de vasos + Control de calidad</span>
+                        <Badge variant="brand" size="sm">PROCESOS</Badge>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2 text-xs">
+                        <div className="rounded bg-black/30 p-2.5">
+                          <div className="text-[11px] text-slate-400">Costo operativo calculado</div>
+                          <div className="mt-1 font-mono text-base font-bold text-white">
+                            ${(input.process_operational_cost_per_thousand_usd || 0).toFixed(4)} <span className="text-xs font-normal text-slate-400">USD/1.000</span>
+                          </div>
+                          <div className="text-[11px] text-emerald-400 font-mono">
+                            ${((input.process_operational_cost_per_thousand_usd || 0) / 1000).toFixed(5)} /u
+                          </div>
+                        </div>
+                        <div className="rounded bg-black/30 p-2.5">
+                          <div className="text-[11px] text-slate-400">Origen &amp; Prorrateo</div>
+                          <div className="mt-1 text-xs text-slate-300 font-mono">
+                            {input.process_calculation_detail?.status === 'COMPLETE'
+                              ? `Base: ${(input.process_calculation_detail.good_units_basis || 0).toLocaleString('es-PY')} u`
+                              : 'Pendiente de parametrización en Procesos'}
+                          </div>
+                          <a
+                            href="/cost/processes"
+                            className="mt-1 inline-block text-[11px] text-brand-400 hover:text-brand-300 underline"
+                          >
+                            Configurar en Procesos &rarr;
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </RubricCard>
 
               <RubricCard
@@ -707,7 +806,6 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                 impact={rubricValues.scrap}
                 unitLabel="% sobre materia prima"
                 onEnabledChange={(enabled) => updateRubric('scrap', { enabled })}
-                onSourceChange={(source) => updateRubric('scrap', { source })}
               >
                 <div className="grid gap-3 sm:grid-cols-2">
                   <NumberField label="Merma" suffix="%" value={input.scrap_rate_percent} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ scrap_rate_percent: value })} />
@@ -720,7 +818,6 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                 config={depreciationConfig}
                 impact={rubricValues.depreciation}
                 onEnabledChange={(enabled) => updateRubric('depreciation', { enabled })}
-                onSourceChange={(source) => updateRubric('depreciation', { source })}
               >
                 <NumberField label="Costo de depreciación" suffix="USD/1.000" value={input.machine_depreciation_per_thousand_usd} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ machine_depreciation_per_thousand_usd: value })} />
               </RubricCard>
@@ -730,9 +827,78 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                 config={packagingConfig}
                 impact={rubricValues.packaging}
                 onEnabledChange={(enabled) => updateRubric('packaging', { enabled })}
-                onSourceChange={(source) => updateRubric('packaging', { source })}
               >
-                <NumberField label="Costo de embalaje" suffix="USD/1.000" value={input.packaging_cost_per_thousand_usd} emptyWhenZero={emptyValues} onChange={(value) => updateInput({ packaging_cost_per_thousand_usd: value })} />
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-[#10141b] p-3.5">
+                    <div>
+                      <div className="text-xs font-semibold text-slate-200">Usar cálculo de Procesos</div>
+                      <div className="text-[11px] text-slate-400">
+                        {input.packaging_process_enabled
+                          ? 'Cálculo activo desde Procesos Industriales (Mano de obra aprobada + Materiales)'
+                          : 'Cálculo manual ingresado en USD / 1.000'}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-mono font-semibold ${!input.packaging_process_enabled ? 'text-brand-400' : 'text-slate-500'}`}>OFF</span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={Boolean(input.packaging_process_enabled)}
+                        onClick={() => togglePackagingProcess(!input.packaging_process_enabled)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${input.packaging_process_enabled ? 'bg-brand-600' : 'bg-slate-700'}`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${input.packaging_process_enabled ? 'translate-x-5' : 'translate-x-0'}`}
+                        />
+                      </button>
+                      <span className={`text-xs font-mono font-semibold ${input.packaging_process_enabled ? 'text-brand-400' : 'text-slate-500'}`}>ON</span>
+                    </div>
+                  </div>
+
+                  {!input.packaging_process_enabled ? (
+                    <div>
+                      <NumberField
+                        label="Costo de embalaje manual"
+                        suffix="USD / 1.000"
+                        value={input.packaging_cost_per_thousand_usd}
+                        emptyWhenZero={emptyValues}
+                        onChange={(value) => updateInput({ packaging_cost_per_thousand_usd: value })}
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-brand-900/40 bg-brand-950/20 p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-brand-300">MO Empaque (cronómetro aprobado) + Materiales</span>
+                        <Badge variant="brand" size="sm">PROCESOS</Badge>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2 text-xs">
+                        <div className="rounded bg-black/30 p-2.5">
+                          <div className="text-[11px] text-slate-400">Costo embalaje calculado</div>
+                          <div className="mt-1 font-mono text-base font-bold text-white">
+                            ${(input.process_packaging_cost_per_thousand_usd || 0).toFixed(4)} <span className="text-xs font-normal text-slate-400">USD/1.000</span>
+                          </div>
+                          <div className="text-[11px] text-emerald-400 font-mono">
+                            ${((input.process_packaging_cost_per_thousand_usd || 0) / 1000).toFixed(5)} /u
+                          </div>
+                        </div>
+                        <div className="rounded bg-black/30 p-2.5">
+                          <div className="text-[11px] text-slate-400">Origen &amp; Prorrateo</div>
+                          <div className="mt-1 text-xs text-slate-300 font-mono">
+                            {input.process_calculation_detail?.status === 'COMPLETE'
+                              ? `Base: ${(input.process_calculation_detail.good_units_basis || 0).toLocaleString('es-PY')} u`
+                              : 'Pendiente de parametrización en Procesos'}
+                          </div>
+                          <a
+                            href="/cost/processes"
+                            className="mt-1 inline-block text-[11px] text-brand-400 hover:text-brand-300 underline"
+                          >
+                            Configurar en Procesos &rarr;
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </RubricCard>
             </div>
           </section>

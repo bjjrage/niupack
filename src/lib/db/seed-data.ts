@@ -18,6 +18,9 @@ import {
   ProductPackagingSpec,
   FxRate,
   FxSettings,
+  PlantGeneralParameters,
+  PlantProductionPeriod,
+  PackingSession,
 } from '@/types';
 
 export const INITIAL_ORG: Organization = {
@@ -1218,4 +1221,80 @@ export const INITIAL_PACKAGING_SPECS: ProductPackagingSpec[] = [
   },
 ];
 
+export const INITIAL_PLANT_PARAMETERS: PlantGeneralParameters = {
+  id: '00000000-0000-0000-0000-000000000090',
+  organization_id: INITIAL_ORG.id,
+  electricity_rate_pyg_kwh: 450,
+  monthly_salary_hours: 200,
+  labor_charges_percent: 16.5,
+  operator_monthly_salary_pyg: 3500000,
+  packer_monthly_salary_pyg: 2800000,
+  gen1_machines_count: 4,
+  gen1_power_kw: 4.5,
+  gen1_operators_count: 2,
+  gen1_operating_hours: 160,
+  gen2_machines_count: 2,
+  gen2_power_kw: 6.0,
+  gen2_operators_count: 1,
+  gen2_operating_hours: 160,
+  quality_inspectors_count: 2,
+  quality_monthly_salary_pyg: 3200000,
+  quality_polypaper_percent: 70,
+  quality_labor_charges_included: true,
+  packaging_materials_cost_per_thousand_usd: 3.50,
+  updated_at: new Date().toISOString(),
+};
 
+export const INITIAL_PRODUCTION_PERIODS: PlantProductionPeriod[] = [
+  {
+    id: '00000000-0000-0000-0000-000000000091',
+    organization_id: INITIAL_ORG.id,
+    period: '2026-10',
+    sku: 'CUP-12OZ-SW',
+    good_units_produced: 300000,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: '00000000-0000-0000-0000-000000000092',
+    organization_id: INITIAL_ORG.id,
+    period: '2026-10',
+    sku: 'CUP-8OZ-SW',
+    good_units_produced: 200000,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+];
+
+export const INITIAL_PACKING_SESSIONS: PackingSession[] = [
+  {
+    id: '00000000-0000-0000-0000-000000000095',
+    organization_id: INITIAL_ORG.id,
+    session_code: 'SES-202610-001',
+    line_name: 'Polipapel',
+    sku: 'CUP-12OZ-SW',
+    production_order: 'OP-2026-84',
+    started_at: '2026-10-01T08:00:00.000Z',
+    stopped_at: '2026-10-01T16:00:00.000Z',
+    status: 'APPROVED',
+    total_person_hours: 16,
+    total_duration_minutes: 480,
+    segments: [
+      {
+        id: 'seg-1',
+        session_id: '00000000-0000-0000-0000-000000000095',
+        segment_order: 1,
+        headcount: 2,
+        started_at: '2026-10-01T08:00:00.000Z',
+        ended_at: '2026-10-01T16:00:00.000Z',
+        duration_minutes: 480,
+        person_hours: 16,
+        reason: 'Turno estándar completo',
+      },
+    ],
+    notes: 'Sesión inicial aprobada de empaque',
+    created_at: '2026-10-01T08:00:00.000Z',
+    updated_at: '2026-10-01T16:30:00.000Z',
+    approved_at: '2026-10-01T16:30:00.000Z',
+  },
+];

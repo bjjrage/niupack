@@ -412,7 +412,7 @@ export type CostV1RubricKey =
   | 'depreciation'
   | 'packaging';
 
-export type CostInputSource = 'MANUAL' | 'FORMULA' | 'QUOTE';
+export type CostInputSource = 'MANUAL' | 'FORMULA' | 'QUOTE' | 'PROCESS';
 export type CostV1Unit = 'PER_UNIT' | 'PER_1000' | 'TOTAL_BATCH' | 'PERCENT';
 
 export interface CostV1RubricConfig {
@@ -865,6 +865,13 @@ export interface IndustrialProductCostInput {
   batch_size: number;                       // Tamaño de lote a cotizar
   /** V1 control plane. Missing entries remain enabled for backwards compatibility. */
   rubrics?: Partial<CostV1RubricConfigMap>;
+  /** Industrial Processes V2 switches & calculated cache */
+  operational_process_enabled?: boolean;
+  packaging_process_enabled?: boolean;
+  process_operational_cost_per_thousand_usd?: number;
+  process_packaging_cost_per_thousand_usd?: number;
+  process_snapshot_id?: string;
+  process_calculation_detail?: IndustrialProcessCalculationDetail;
 }
 
 export interface IndustrialCostBreakdown {
@@ -923,6 +930,157 @@ export interface CostV1Configuration {
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
+}
+
+// ==========================================
+// 8. INDUSTRIAL PROCESSES V2 TYPES
+// ==========================================
+
+export interface PlantGeneralParameters {
+  id?: string;
+  organization_id?: string;
+  // Shared global parameters
+  electricity_rate_pyg_kwh: number;      // Tarifa eléctrica global Gs./kWh
+  monthly_salary_hours: number;          // Horas salariales al mes (e.g. 192)
+  labor_charges_percent: number;         // Cargas laborales % (e.g. 16.5)
+  // Forming machine operators
+  operator_monthly_salary_pyg: number;   // Salario mensual de referencia para operador de formado Gs.
+  // Forming machines - Generation 1
+  gen1_machines_count: number;           // Cantidad de máquinas de 1.ª gen activas
+  gen1_power_kw: number;                  // Potencia kW por máquina 1.ª gen
+  gen1_operators_count: number;          // Cantidad de operadores 1.ª gen
+  gen1_operating_hours: number;          // Horas de operación aplicables 1.ª gen
+  // Forming machines - Generation 2
+  gen2_machines_count: number;           // Cantidad de máquinas de 2.ª gen activas
+  gen2_power_kw: number;                  // Potencia kW por máquina 2.ª gen
+  gen2_operators_count: number;          // Cantidad de operadores 2.ª gen
+  gen2_operating_hours: number;          // Horas de operación aplicables 2.ª gen
+  // Quality control
+  quality_inspectors_count: number;      // Cantidad de personas en calidad (default 2)
+  quality_monthly_salary_pyg: number;    // Salario mensual por persona calidad Gs.
+  quality_polypaper_percent: number;     // % asignado a polipapel (0-100)
+  quality_labor_charges_included?: boolean;
+  // Packing labor
+  packer_monthly_salary_pyg: number;     // Salario mensual empacador Gs. (default 3.100.000)
+  // Packaging materials
+  packaging_materials_cost_per_thousand_usd: number; // Costo materiales por 1.000 u USD
+  packaging_boxes_cost_usd?: number;
+  packaging_bags_cost_usd?: number;
+  packaging_other_cost_usd?: number;
+  packaging_units_per_presentation?: number;
+  updated_at?: string;
+  updated_by?: string;
+}
+
+export type PackingSessionStatus = 'RUNNING' | 'STOPPED' | 'APPROVED' | 'CORRECTED' | 'VOIDED';
+
+export interface PackingSessionSegment {
+  id: string;
+  session_id: string;
+  segment_order: number;
+  headcount: number;
+  started_at: string;                   // Server-side ISO timestamp
+  ended_at?: string;                    // Server-side ISO timestamp
+  stopped_at?: string;                  // Server-side ISO timestamp
+  duration_minutes?: number;
+  duration_seconds?: number;
+  person_hours: number;
+  reason?: string;
+}
+
+export interface PackingSession {
+  id: string;
+  organization_id: string;
+  session_code?: string;
+  line_name?: string;                   // e.g. 'Polipapel'
+  line_id?: string;                     // legacy alias
+  sku?: string;
+  production_order?: string;
+  operator_user_id?: string;
+  status: PackingSessionStatus;
+  started_at: string;                   // Server-side ISO timestamp
+  stopped_at?: string;                  // Server-side ISO timestamp
+  total_duration_minutes?: number;
+  total_duration_seconds?: number;
+  total_person_hours: number;
+  notes?: string;
+  supervisor_name?: string;
+  approved_by?: string;
+  approved_at?: string;
+  correction_notes?: string;
+  segments: PackingSessionSegment[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlantProductionPeriod {
+  id?: string;
+  organization_id?: string;
+  period: string;                        // e.g. '2026-10'
+  sku: string;
+  good_units_produced: number;           // Unidades buenas producidas en el período
+  operating_hours?: number;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface IndustrialProcessCalculationDetail {
+  period?: string;
+  sku?: string;
+  calculation_date: string;
+  fx_rate: number;
+  fx_source: string;
+  status: 'COMPLETE' | 'SIN_BASE_PRORRATEO' | 'CONFIGURACION_INCOMPLETA';
+  missing_fields?: string[];
+  good_units_basis: number;
+  forming: {
+    energy_kwh_gen1: number;
+    energy_kwh_gen2: number;
+    total_energy_kwh: number;
+    electricity_cost_pyg: number;
+    operator_hourly_cost_pyg: number;
+    mod_forming_cost_pyg: number;
+    total_forming_pyg: number;
+    total_forming_usd: number;
+  };
+  quality: {
+    inspectors_count: number;
+    monthly_salary_pyg: number;
+    polypaper_percent: number;
+    assigned_monthly_pyg: number;
+    assigned_usd: number;
+  };
+  packing_labor: {
+    approved_person_hours: number;
+    packer_hourly_cost_pyg: number;
+    packing_labor_pyg: number;
+    packing_labor_usd: number;
+    sessions_count: number;
+  };
+  packaging_materials: {
+    cost_per_thousand_usd: number;
+  };
+  // Summary outputs
+  operational_total_usd_per_thousand: number;
+  operational_total_pyg_per_thousand: number;
+  packaging_total_usd_per_thousand: number;
+  packaging_total_pyg_per_thousand: number;
+  true_unit_operational_usd: number;
+  true_unit_packaging_usd: number;
+}
+
+export interface IndustrialProcessSnapshot {
+  id: string;
+  organization_id: string;
+  sku: string;
+  period: string;
+  parameters_snapshot?: PlantGeneralParameters;
+  calculation_detail?: IndustrialProcessCalculationDetail;
+  detail_json?: IndustrialProcessCalculationDetail | any;
+  calculated_at?: string;
+  created_by?: string;
+  created_at?: string;
 }
 
 // ==========================================
