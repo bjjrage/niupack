@@ -62,10 +62,11 @@ export interface IContainersBillingItem {
   name: string;
   service_item: string;
   optional: boolean;
-  amount: number;
+  amount?: number;
   taxes?: number;
-  total: number;
-  currency: string;
+  total?: number;
+  currency?: string;
+  has_valid_price?: boolean;
 }
 
 export interface IContainersNormalizedRate {
@@ -79,7 +80,7 @@ export interface IContainersNormalizedRate {
   origin_code: string;
   destination_code: string;
 
-  equipment: Exclude<OceanEquipment, 'LCL'>;
+  equipment?: Exclude<OceanEquipment, 'LCL'>;
   quantity: number;
 
   freight_amount?: number;
@@ -118,7 +119,7 @@ export interface IContainersQuoteInput {
     name?: string;
     country_code?: string;
   };
-  equipment: Exclude<OceanEquipment, 'LCL'>;
+  equipment?: Exclude<OceanEquipment, 'LCL'>;
   quantity: number;
   shipment_date?: string;
   weight_kg?: number;
@@ -402,13 +403,15 @@ export class IContainersProvider {
       };
     }
 
-    const containerType = NIUPACK_TO_ICONTAINERS_EQUIPMENT[input.equipment];
+    const containerType = input.equipment ? NIUPACK_TO_ICONTAINERS_EQUIPMENT[input.equipment] : undefined;
     if (!containerType) {
       return {
         provider: 'iContainers',
         status: 'ERROR',
         rates: [],
-        message: `Tipo de contenedor ${input.equipment} no soportado por iContainers Brutus.`,
+        message: input.equipment
+          ? `Tipo de contenedor ${input.equipment} no soportado por iContainers Brutus.`
+          : 'Debe especificarse el tipo de contenedor (20GP, 40GP o 40HC).',
         error_code: 'UNSUPPORTED_EQUIPMENT',
       };
     }
@@ -469,14 +472,25 @@ export class IContainersProvider {
       const rates = this.normalizeRates(quoteData ?? {}, input, retrievedAt);
 
       if (rates.length === 0) {
+        if (!isCompleted) {
+          return {
+            provider: 'iContainers',
+            status: 'PARTIAL_QUOTE',
+            quote_uuid: quoteUuid,
+            rates: [],
+            message: 'Cotización en proceso con el proveedor (pendiente de finalización). Podés consultar nuevamente en unos instantes con el identificador.',
+            completed: false,
+            is_partial: true,
+          };
+        }
         return {
           provider: 'iContainers',
           status: 'NO_RESULTS',
           quote_uuid: quoteUuid,
           rates: [],
           message: 'No se encontraron tarifas de flete para la ruta y equipo solicitados.',
-          completed: isCompleted,
-          is_partial: !isCompleted,
+          completed: true,
+          is_partial: false,
         };
       }
 
@@ -486,10 +500,10 @@ export class IContainersProvider {
       const anyPartial = rates.some((r) => r.is_partial);
 
       let overallStatus: ParaguayValidationStatus = 'READY';
-      if (!anyReady && anyScopeIncomplete) {
-        overallStatus = 'SCOPE_INCOMPLETE';
-      } else if (!isCompleted || anyPartial) {
+      if (!isCompleted || anyPartial) {
         overallStatus = 'PARTIAL_QUOTE';
+      } else if (!anyReady && anyScopeIncomplete) {
+        overallStatus = 'SCOPE_INCOMPLETE';
       }
 
       return {
@@ -543,32 +557,73 @@ export class IContainersProvider {
       const quoteData = object(root?.data) ?? root;
 
       const retrievedAt = new Date().toISOString();
-      const originPort = text(object(quoteData?.origin)?.portIsoCode) || 'ORIGIN';
-      const destPort = text(object(quoteData?.destination)?.portIsoCode) || 'PYASU';
+      const firstRate = object(array(quoteData?.rates)[0]);
+      const firstSchedule = object(firstRate?.schedule);
 
-      const itemsArr = array(quoteData?.items);
-      const firstItem = object(itemsArr[0]);
+      const originPort = text(
+        object(quoteData?.origin)?.portIsoCode,
+        object(quoteData?.origin)?.code,
+        object(firstSchedule?.origin)?.code,
+      ) || '';
+      const destPort = text(
+        object(quoteData?.destination)?.portIsoCode,
+        object(quoteData?.destination)?.code,
+        object(firstSchedule?.destination)?.code,
+      ) || '';
+
+      const containersArr = array(quoteData?.containers).length > 0
+        ? array(quoteData?.containers)
+        : array(quoteData?.items);
+      const firstItem = object(containersArr[0]);
       const rawType = text(firstItem?.type) as 'DV20' | 'DV40' | 'DV40HC' | undefined;
-      const niuEquipment: Exclude<OceanEquipment, 'LCL'> = (rawType && ICONTAINERS_TO_NIUPACK_EQUIPMENT[rawType]) || '40HC';
-      const qty = numeric(firstItem?.quantity) || 1;
+      const niuEquipment: Exclude<OceanEquipment, 'LCL'> | undefined =
+        rawType && rawType in ICONTAINERS_TO_NIUPACK_EQUIPMENT
+          ? ICONTAINERS_TO_NIUPACK_EQUIPMENT[rawType]
+          : undefined;
+      const qty = numeric(firstItem?.quantity) ?? 1;
 
       const synthInput: IContainersQuoteInput = {
         origin: { port_code: originPort },
         destination: { port_code: destPort },
         equipment: niuEquipment,
         quantity: qty,
-        validate_paraguay: true,
+        validate_paraguay: Boolean(destPort),
       };
 
-      const rates = this.normalizeRates(quoteData ?? {}, synthInput, retrievedAt);
       const isCompleted = Boolean(quoteData?.completed);
+      const rates = this.normalizeRates(quoteData ?? {}, synthInput, retrievedAt);
+
+      if (rates.length === 0) {
+        if (!isCompleted) {
+          return {
+            provider: 'iContainers',
+            status: 'PARTIAL_QUOTE',
+            quote_uuid: uuid,
+            rates: [],
+            message: 'Cotización en proceso con el proveedor (pendiente de finalización).',
+            completed: false,
+            is_partial: true,
+          };
+        }
+        return {
+          provider: 'iContainers',
+          status: 'NO_RESULTS',
+          quote_uuid: uuid,
+          rates: [],
+          message: 'No se encontraron tarifas para esta cotización.',
+          completed: true,
+          is_partial: false,
+        };
+      }
+
+      const overallStatus: ParaguayValidationStatus = !isCompleted ? 'PARTIAL_QUOTE' : rates[0].paraguay_status;
 
       return {
         provider: 'iContainers',
-        status: rates.length > 0 ? (rates[0].paraguay_status) : 'NO_RESULTS',
+        status: overallStatus,
         quote_uuid: uuid,
         rates,
-        message: rates.length > 0 ? 'Cotización recuperada.' : 'No se encontraron tarifas para esta cotización.',
+        message: !isCompleted ? 'Cotización en proceso con el proveedor (pendiente de finalización).' : 'Cotización recuperada.',
         completed: isCompleted,
         is_partial: !isCompleted,
       };
@@ -613,8 +668,11 @@ export class IContainersProvider {
       const departureDate = text(schedule.departureDate);
       const transitDays = numeric(rateObj.transitTime, schedule.transitDays);
 
-      const originCode = text(object(schedule.origin)?.code, input.origin.port_code) || '';
-      const destCode = text(object(schedule.destination)?.code, input.destination.port_code) || '';
+      const scheduleOriginCode = text(object(schedule.origin)?.code);
+      const scheduleDestCode = text(object(schedule.destination)?.code);
+
+      const originCode = scheduleOriginCode || input.origin.port_code || '';
+      const destCode = scheduleDestCode || input.destination.port_code || '';
 
       const supplierInfo = object(rateObj.suppliersInformation);
       const carrierName = text(
@@ -640,20 +698,24 @@ export class IContainersProvider {
         const serviceItem = text(bObj.serviceItem) || 'Others';
         const optional = Boolean(bObj.optional);
 
-        const priceObj = object(bObj.price) ?? {};
-        const currency = text(priceObj.currency, object(rateObj.total)?.currency, quoteData.currency, 'USD')!.toUpperCase();
-        const amount = numeric(priceObj.amount, priceObj.total) ?? 0;
-        const taxes = numeric(priceObj.taxes);
-        const total = numeric(priceObj.total, amount) ?? amount;
+        const priceObj = object(bObj.price);
+        const itemCurrency = text(priceObj?.currency)?.toUpperCase();
+        const itemAmount = numeric(priceObj?.amount, priceObj?.total);
+        const taxes = numeric(priceObj?.taxes);
+        const itemTotal = numeric(priceObj?.total, itemAmount);
+
+        // 3. Cargos sin precio o moneda válida NO deben convertirse en cero ni en 'USD'
+        const hasValidPrice = itemAmount !== undefined && Number.isFinite(itemAmount) && Boolean(itemCurrency);
 
         const parsedItem: IContainersBillingItem = {
           name,
           service_item: serviceItem,
           optional,
-          amount,
+          ...(itemAmount !== undefined ? { amount: itemAmount } : {}),
           ...(taxes !== undefined ? { taxes } : {}),
-          total,
-          currency,
+          ...(itemTotal !== undefined ? { total: itemTotal } : {}),
+          ...(itemCurrency ? { currency: itemCurrency } : {}),
+          has_valid_price: hasValidPrice,
         };
 
         billingItems.push(parsedItem);
@@ -675,7 +737,9 @@ export class IContainersProvider {
 
       // Calculate freight amount and total amount without duplicating charges or combining mixed currencies
       const mandatoryItems = billingItems.filter((b) => !b.optional);
-      const currencies = [...new Set(mandatoryItems.map((b) => b.currency))];
+      const invalidMandatoryCharges = mandatoryItems.filter(
+        (b) => !b.has_valid_price || b.amount === undefined || !b.currency,
+      );
 
       let freightAmount: number | undefined;
       let totalAmount: number | undefined;
@@ -683,77 +747,131 @@ export class IContainersProvider {
       let isComparable = true;
       let unavailableReason: string | undefined;
 
-      if (currencies.length > 1) {
+      // 3. Los cargos sin precio o moneda válida no deben convertirse en cero ni generar una tarifa comparable.
+      if (invalidMandatoryCharges.length > 0) {
         isComparable = false;
-        unavailableReason = 'La tarifa contiene cargos en varias monedas sin conversión unificada.';
-      } else if (currencies.length === 1) {
-        rateCurrency = currencies[0];
-        const freightItems = mandatoryItems.filter(
-          (b) => b.service_item.toLowerCase() === 'freight' || /flete|freight|ocean/i.test(b.name),
-        );
-        freightAmount = freightItems.length > 0
-          ? freightItems.reduce((acc, curr) => acc + curr.amount, 0)
-          : numeric(object(rateObj.total)?.amount);
+        unavailableReason = 'La cotización contiene cargos obligatorios sin precio o moneda válida informada por el proveedor.';
+      } else if (mandatoryItems.length > 0) {
+        const currencies = [...new Set(mandatoryItems.map((b) => b.currency!))];
+        if (currencies.length > 1) {
+          isComparable = false;
+          unavailableReason = 'La tarifa contiene cargos en varias monedas sin conversión unificada.';
+        } else if (currencies.length === 1) {
+          rateCurrency = currencies[0];
+          const freightItems = mandatoryItems.filter(
+            (b) => b.service_item.toLowerCase() === 'freight' || /flete|freight|ocean/i.test(b.name),
+          );
+          freightAmount = freightItems.length > 0
+            ? freightItems.reduce((acc, curr) => acc + (curr.amount ?? 0), 0)
+            : numeric(object(rateObj.total)?.amount);
 
-        // Sum mandatory charges excluding taxes (no VAT / customs import taxes added to freight)
-        totalAmount = mandatoryItems.length > 0
-          ? mandatoryItems.reduce((acc, curr) => acc + curr.amount, 0)
-          : numeric(object(rateObj.total)?.amount, object(rateObj.total)?.total);
+          // Sum mandatory charges excluding taxes (no VAT / customs import taxes added to freight)
+          totalAmount = mandatoryItems.reduce((acc, curr) => acc + (curr.amount ?? 0), 0);
+        }
       } else if (mandatoryItems.length === 0 && object(rateObj.total)) {
         // Fallback to rateObj.total if no explicit billing items
         const totalObj = object(rateObj.total)!;
-        rateCurrency = text(totalObj.currency)?.toUpperCase();
-        totalAmount = numeric(totalObj.amount, totalObj.total);
-        freightAmount = totalAmount;
+        const totalCur = text(totalObj.currency)?.toUpperCase();
+        const totalNum = numeric(totalObj.amount, totalObj.total);
+        if (totalCur && totalNum !== undefined) {
+          rateCurrency = totalCur;
+          totalAmount = totalNum;
+          freightAmount = totalNum;
+        } else {
+          isComparable = false;
+          unavailableReason = 'No se informaron cargos ni total con precio y moneda válidos para la tarifa.';
+        }
       } else {
         isComparable = false;
         unavailableReason = 'No se informaron cargos suficientes para totalizar la tarifa.';
       }
 
+      // Check equipment validity (Eliminar fallbacks inventados)
+      const containerItems = array(rateObj.containers).length > 0
+        ? array(rateObj.containers)
+        : array(quoteData.containers).length > 0
+        ? array(quoteData.containers)
+        : array(quoteData.items);
+      const rawRateType = text(object(containerItems[0])?.type) as 'DV20' | 'DV40' | 'DV40HC' | undefined;
+      const resolvedEquipment = input.equipment || (rawRateType && rawRateType in ICONTAINERS_TO_NIUPACK_EQUIPMENT ? ICONTAINERS_TO_NIUPACK_EQUIPMENT[rawRateType] : undefined);
+
+      if (!resolvedEquipment) {
+        isComparable = false;
+        if (!unavailableReason) {
+          unavailableReason = 'Tipo de equipo no identificado o no soportado en la cotización.';
+        }
+      }
+
       // Expiration check
       if (expirationDate && new Date(expirationDate).getTime() < Date.now()) {
         isComparable = false;
-        unavailableReason = 'La tarifa se encuentra vencida según la vigencia informada por el proveedor.';
+        if (!unavailableReason) {
+          unavailableReason = 'La tarifa se encuentra vencida según la vigencia informada por el proveedor.';
+        }
       }
 
-      // Paraguay Specific Scope Check:
-      // A rate that terminates at Santos (BRSSZ), Paranaguá (BRPNG), Buenos Aires (ARBUE) or Montevideo (UYMVD)
-      // without confirmed continuation fluvial is SCOPE_INCOMPLETE!
-      let scopeComplete = true;
-      let paraguayStatus: ParaguayValidationStatus = 'READY';
+      // 1. scope_complete debe ser false por defecto hasta comprobar destino final paraguayo y alcance del transporte.
+      // No inferir cobertura fluvial solamente del código solicitado.
+      let scopeComplete = false;
+      let paraguayStatus: ParaguayValidationStatus = 'SCOPE_INCOMPLETE';
 
-      const isRequestedDestPy = this.isParaguayDestination(input.destination);
+      const isRequestedDestPy = input.destination && this.isParaguayDestination(input.destination);
       if (isRequestedDestPy) {
         const destUpper = destCode.toUpperCase();
         const terminatesInRegionalPort = (REGIONAL_TRANSSHIPMENT_PORTS as readonly string[]).includes(destUpper);
 
-        // Check if there is river transport / delivery to Paraguay
-        const hasRiverBargeDelivery =
+        // Destino paraguayo comprobado en la cotización devuelta
+        const isConfirmedParaguayDest =
+          Boolean(destUpper) &&
+          (destUpper.startsWith('PY') || this.isParaguayDestination(destUpper)) &&
+          !terminatesInRegionalPort;
+
+        // Alcance del transporte: comprobar que la barcaza/feeder fluvial hasta Paraguay está cubierta
+        // No inferir cobertura fluvial solo porque input o destCode diga PYASU
+        const hasRiverBargeTransport =
           mandatoryItems.some(
             (b) =>
-              /fluvial|barge|barcaza|feeder.*asunci[oó]n|feeder.*paraguay|transbordo.*asunci[oó]n/i.test(b.name) ||
-              (/paraguay|asunci[oó]n/i.test(b.name) && (b.service_item === 'Delivery' || b.service_item === 'PortDestinationCharges')),
+              /fluvial|barge|barcaza|feeder.*asunci[oó]n|feeder.*paraguay|transbordo.*asunci[oó]n|river.*feeder|river.*barge/i.test(b.name) ||
+              (/paraguay|asunci[oó]n/i.test(b.name) &&
+                (b.service_item === 'Delivery' ||
+                  b.service_item === 'PortDestinationCharges' ||
+                  b.service_item === 'InlandTransport')),
           ) ||
-          includedServices.some((s) => /fluvial|barcaza/i.test(s));
+          includedServices.some((s) => /fluvial|barcaza|barge.*asunci[oó]n|barge.*paraguay/i.test(s));
 
-        if (terminatesInRegionalPort && !hasRiverBargeDelivery) {
+        if (isConfirmedParaguayDest && hasRiverBargeTransport && !isRatePartial) {
+          scopeComplete = true;
+          paraguayStatus = 'READY';
+        } else {
           scopeComplete = false;
           isComparable = false;
-          paraguayStatus = 'SCOPE_INCOMPLETE';
-          unavailableReason = `La tarifa finaliza en puerto marítimo regional (${destUpper}) y no incluye el tramo fluvial hasta Paraguay.`;
-        } else if (!destUpper.startsWith('PY') && !hasRiverBargeDelivery) {
-          scopeComplete = false;
-          isComparable = false;
-          paraguayStatus = 'SCOPE_INCOMPLETE';
-          unavailableReason = 'Falta verificar la inclusión del transporte fluvial hasta puerto paraguayo.';
+          if (isRatePartial) {
+            paraguayStatus = 'PARTIAL_QUOTE';
+            if (!unavailableReason) unavailableReason = 'Cotización parcial devuelta por el proveedor.';
+          } else {
+            paraguayStatus = 'SCOPE_INCOMPLETE';
+            if (!unavailableReason) {
+              if (terminatesInRegionalPort) {
+                unavailableReason = `La tarifa finaliza en puerto marítimo regional (${destUpper}) y no incluye el tramo fluvial hasta Paraguay.`;
+              } else if (!isConfirmedParaguayDest) {
+                unavailableReason = `El destino de la tarifa (${destUpper || 'no especificado'}) no corresponde a un puerto en Paraguay.`;
+              } else {
+                unavailableReason = 'Falta comprobar el alcance del transporte fluvial hasta puerto paraguayo (no se infiere del código solicitado).';
+              }
+            }
+          }
         }
-      }
-
-      if (isRatePartial) {
-        scopeComplete = false;
-        isComparable = false;
-        paraguayStatus = 'PARTIAL_QUOTE';
-        unavailableReason = unavailableReason || 'Cotización parcial devuelta por el proveedor.';
+      } else {
+        // Rutas que no solicitan Paraguay (ej. validate_paraguay: false)
+        if (isRatePartial) {
+          scopeComplete = false;
+          isComparable = false;
+          paraguayStatus = 'PARTIAL_QUOTE';
+          if (!unavailableReason) unavailableReason = 'Cotización parcial devuelta por el proveedor.';
+        } else {
+          scopeComplete = Boolean(destCode);
+          paraguayStatus = 'READY';
+        }
       }
 
       normalizedList.push({
@@ -765,7 +883,7 @@ export class IContainersProvider {
         destination: input.destination.name || destCode,
         origin_code: originCode,
         destination_code: destCode,
-        equipment: input.equipment,
+        ...(resolvedEquipment ? { equipment: resolvedEquipment } : {}),
         quantity: input.quantity,
         carrier_name: carrierName,
         ...(freightAmount !== undefined ? { freight_amount: freightAmount } : {}),

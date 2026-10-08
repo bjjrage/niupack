@@ -41,6 +41,9 @@ const mockChinaToParaguayQuote = {
     quoteResultMovement: 'P2P',
     quoteOnlineUrl: 'https://my.icontainers.com/quotes/quote-ic-001',
     completed: true,
+    containers: [
+      { quantity: 1, type: 'DV40HC' },
+    ],
     rates: [
       {
         uuid: 'rate-ic-001',
@@ -460,5 +463,134 @@ describe('iContainers Brutus API Provider', () => {
     const result = await new CargoFiveProvider().searchPlaces('Barcelona');
     expect(result.status).toBe('NOT_CONFIGURED');
     expect(result.places).toEqual([]);
+  });
+
+  // TEST 22 — Hardening 1: scope_complete false por defecto y no inferir cobertura fluvial solo del código solicitado
+  it('TEST 22 — scope_complete es false por defecto hasta comprobar destino paraguayo y transporte fluvial (no inferir del código solicitado)', async () => {
+    const quoteWithoutFluvial = structuredClone(mockChinaToParaguayQuote);
+    // Requested destination and schedule destination are PYASU, but billingItems do NOT contain river transport
+    quoteWithoutFluvial.data.rates[0].schedule.destination = { code: 'PYASU' };
+    quoteWithoutFluvial.data.rates[0].billingItems = [
+      {
+        name: 'Ocean Freight',
+        serviceItem: 'Freight',
+        optional: false,
+        price: { currency: 'USD', amount: 2600, taxes: 0, total: 2600 },
+      },
+      {
+        name: 'Terminal Handling Origin',
+        serviceItem: 'PortOriginCharges',
+        optional: false,
+        price: { currency: 'USD', amount: 200, taxes: 0, total: 200 },
+      },
+    ];
+
+    const { provider } = mockProvider([jsonResponse(quoteWithoutFluvial)]);
+    const res = await provider.createFclQuote(defaultInput);
+
+    expect(res.status).toBe('SCOPE_INCOMPLETE');
+    expect(res.rates[0].scope_complete).toBe(false);
+    expect(res.rates[0].is_comparable).toBe(false);
+    expect(res.rates[0].paraguay_status).toBe('SCOPE_INCOMPLETE');
+    expect(res.rates[0].unavailable_reason).toContain('alcance del transporte fluvial');
+  });
+
+  // TEST 23 — Hardening 2: getQuote() no inventa fallbacks para PYASU ni 40HC
+  it('TEST 23 — getQuote() no inventa fallbacks para destino PYASU ni equipo 40HC si el payload no los especifica', async () => {
+    const rawQuoteWithoutFallbacks = {
+      data: {
+        uuid: 'quote-no-defaults',
+        completed: true,
+        origin: { portIsoCode: 'CNSHA' },
+        // destination is omitted
+        // items / containers are omitted
+        rates: [
+          {
+            uuid: 'rate-no-defaults-1',
+            expirationDate: '2026-12-31',
+            billingItems: [
+              {
+                name: 'Freight',
+                serviceItem: 'Freight',
+                optional: false,
+                price: { currency: 'USD', amount: 2000, taxes: 0, total: 2000 },
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    const { provider } = mockProvider([jsonResponse(rawQuoteWithoutFallbacks)]);
+    const res = await provider.getQuote('quote-no-defaults');
+
+    expect(res.rates).toHaveLength(1);
+    const rate = res.rates[0];
+    expect(rate.destination_code).not.toBe('PYASU');
+    expect(rate.destination_code).toBe('');
+    expect(rate.equipment).toBeUndefined();
+    expect(rate.scope_complete).toBe(false);
+    expect(rate.is_comparable).toBe(false);
+    expect(rate.unavailable_reason).toContain('equipo');
+  });
+
+  // TEST 24 — Hardening 3: cargos sin precio o moneda válida no se convierten a cero ni generan tarifa comparable
+  it('TEST 24 — cargos sin precio o moneda válida no se convierten a cero ni generan una tarifa comparable', async () => {
+    const quoteWithInvalidCharge = structuredClone(mockChinaToParaguayQuote);
+    // Add a mandatory charge without valid price or currency
+    quoteWithInvalidCharge.data.rates[0].billingItems.push({
+      name: 'Mandatory Documentation Fee',
+      serviceItem: 'PortOriginCharges',
+      optional: false,
+      price: { currency: '', amount: undefined, taxes: 0, total: null },
+    } as any);
+
+    const { provider } = mockProvider([jsonResponse(quoteWithInvalidCharge)]);
+    const res = await provider.createFclQuote(defaultInput);
+
+    expect(res.rates).toHaveLength(1);
+    const rate = res.rates[0];
+    const invalidItem = rate.billing_items.find((b) => b.name === 'Mandatory Documentation Fee');
+    expect(invalidItem).toBeDefined();
+    expect(invalidItem?.amount).toBeUndefined();
+    expect(invalidItem?.has_valid_price).toBe(false);
+    expect(rate.is_comparable).toBe(false);
+    expect(rate.total_amount).toBeUndefined();
+    expect(rate.unavailable_reason).toContain('cargos obligatorios sin precio o moneda válida');
+  });
+
+  // TEST 25 — Hardening 4: cotización asíncrona pendiente (completed=false) nunca devuelve NO_RESULTS definitivo
+  it('TEST 25 — cotización asíncrona pendiente (completed=false) nunca se devuelve como NO_RESULTS definitivo', async () => {
+    const pendingAsyncPayload = {
+      data: {
+        uuid: 'quote-still-pending',
+        completed: false,
+        rates: [],
+      },
+    };
+
+    // Both initial call and poll retries return completed: false
+    const { provider: pCreate } = mockProvider([
+      jsonResponse(pendingAsyncPayload),
+      jsonResponse(pendingAsyncPayload),
+      jsonResponse(pendingAsyncPayload),
+      jsonResponse(pendingAsyncPayload),
+    ]);
+
+    const resCreate = await pCreate.createFclQuote(defaultInput);
+    expect(resCreate.status).toBe('PARTIAL_QUOTE');
+    expect(resCreate.status).not.toBe('NO_RESULTS');
+    expect(resCreate.completed).toBe(false);
+    expect(resCreate.is_partial).toBe(true);
+    expect(resCreate.rates).toEqual([]);
+    expect(resCreate.message).toContain('pendiente');
+
+    // Also verify getQuote with completed: false
+    const { provider: pGet } = mockProvider([jsonResponse(pendingAsyncPayload)]);
+    const resGet = await pGet.getQuote('quote-still-pending');
+    expect(resGet.status).toBe('PARTIAL_QUOTE');
+    expect(resGet.status).not.toBe('NO_RESULTS');
+    expect(resGet.completed).toBe(false);
+    expect(resGet.is_partial).toBe(true);
   });
 });

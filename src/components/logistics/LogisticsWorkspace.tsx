@@ -428,7 +428,7 @@ function FreightosOceanPanel({ rates, reload, setFeedback }: { rates: LogisticsR
                         <span className="block text-[10px] font-normal text-slate-400">{rate.carrier_name || 'Naviera no especificada'}</span>
                       </td>
                       <td className="p-3">{rate.origin_code || rate.origin} → {rate.destination_code || rate.destination}</td>
-                      <td className="p-3">{rate.quantity} × {rate.equipment}</td>
+                      <td className="p-3">{rate.quantity} × {rate.equipment || 'No especificado'}</td>
                       <td className="p-3">{rate.freight_amount !== undefined && rate.currency ? `${rate.currency} ${rate.freight_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}</td>
                       <td className="p-3 font-semibold text-white">{rate.total_amount !== undefined && rate.currency ? `${rate.currency} ${rate.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : <span className="text-amber-300 text-[11px]">Sin total comparable</span>}</td>
                       <td className="p-3">{rate.currency || '—'}</td>
@@ -455,7 +455,7 @@ function FreightosOceanPanel({ rates, reload, setFeedback }: { rates: LogisticsR
                               {rate.billing_items.length === 0 ? <span className="text-slate-500">Sin desglose</span> : (
                                 <ul className="space-y-0.5">
                                   {rate.billing_items.map((b, i) => (
-                                    <li key={i}>{b.name} ({b.service_item}): {b.currency} {b.amount.toLocaleString()}{b.optional ? ' (Opcional)' : ''}</li>
+                                    <li key={i}>{b.name} ({b.service_item}): {b.currency || '—'} {b.amount !== undefined ? b.amount.toLocaleString() : 'Sin precio'}{b.optional ? ' (Opcional)' : ''}</li>
                                   ))}
                                 </ul>
                               )}
