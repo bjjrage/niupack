@@ -302,8 +302,14 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
   const requestIdRef = useRef(0);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const currentInputRef = useRef<IndustrialProductCostInput | null>(null);
+  const skuRef = useRef(sku);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Keep ref up to date
+  // Keep refs up to date
+  useEffect(() => {
+    skuRef.current = sku;
+  }, [sku]);
+
   useEffect(() => {
     currentInputRef.current = input;
   }, [input]);
@@ -314,11 +320,20 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
     else if (summaryCurrency === 'PYG' && fxRate !== null) setInputCurrency('PYG');
   }, [summaryCurrency, fxRate]);
 
-  // Core persistence function
+  // Core persistence function with concurrent write protection
   const persist = async (
     targetInput: IndustrialProductCostInput,
     publishOfficial = false
   ) => {
+    // Prevent cross-SKU race conditions
+    if (targetInput.sku !== skuRef.current) return;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     const currentReqId = ++requestIdRef.current;
     if (publishOfficial) setPublishing(true);
     else setSaveStatus('SAVING_DRAFT');
@@ -328,10 +343,12 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input: targetInput, publishOfficial }),
+        signal: abortController.signal,
       });
       const data = await response.json();
 
       if (currentReqId !== requestIdRef.current) return;
+      if (targetInput.sku !== skuRef.current) return;
 
       if (!response.ok) {
         throw new Error(data.message || data.error || 'Error al persistir');
@@ -352,6 +369,9 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
         setFeedback(null);
       }
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return; // Stale in-flight request aborted
+      }
       if (currentReqId !== requestIdRef.current) return;
       setSaveStatus('ERROR');
       setFeedback(error instanceof Error ? error.message : 'Error al guardar configuración');
@@ -557,12 +577,17 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
   };
 
   const handleSkuChange = async (newSku: string) => {
-    // If pending save, flush now
-    if (debounceTimerRef.current && currentInputRef.current) {
+    if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
-      await persist(currentInputRef.current, false);
+      debounceTimerRef.current = null;
     }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setSaveStatus('IDLE');
     setSku(newSku);
+    skuRef.current = newSku;
     void loadSku(newSku);
   };
 
@@ -618,7 +643,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 [zoom:0.9] origin-top">
       {/* Header with SKU Selector and Status */}
       <header className="rounded-xl border border-slate-800 bg-[#141820] p-5 sm:p-6 shadow-sm">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
@@ -759,7 +784,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
               className="min-w-0 space-y-4 xl:col-start-2 xl:row-start-1 xl:sticky xl:top-4"
             >
               {/* TRUE COST TOTAL Highlighted Card */}
-              <article className="relative overflow-hidden rounded-xl border-2 border-brand-500/50 bg-[#161c26] p-5 shadow-lg">
+              <article className="niu-kpi relative overflow-hidden rounded-xl border-2 border-brand-500/50 bg-[#161c26] p-5 shadow-lg">
                 <span className="absolute inset-x-0 top-0 h-1 bg-brand-500" />
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand-300">
@@ -827,7 +852,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
               </article>
 
               {/* DESGLOSE POR RUBRO */}
-              <article className="rounded-xl border border-slate-800 bg-[#141820] p-4 sm:p-5 shadow-sm space-y-3">
+              <article className="niu-kpi rounded-xl border border-slate-800 bg-[#141820] p-4 sm:p-5 shadow-sm space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">
                     DESGLOSE POR RUBRO
@@ -881,7 +906,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
               </article>
 
               {/* TOTAL DEL LOTE */}
-              <article className="rounded-xl border border-slate-800 bg-[#141820] p-4 sm:p-5 shadow-sm">
+              <article className="niu-kpi rounded-xl border border-slate-800 bg-[#141820] p-4 sm:p-5 shadow-sm">
                 <div className="flex items-center justify-between text-xs text-slate-400">
                   <span className="font-semibold text-slate-300">Total del lote</span>
                   <div className="text-right font-mono font-bold tabular-nums text-white text-sm sm:text-base">
@@ -1096,7 +1121,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                       </div>
 
                       {/* BLOQUE DESTACADO: COSTO DEL PAPEL PUESTO EN PLANTA */}
-                      <div className="rounded-xl border border-brand-500/40 bg-[#0a0e16] p-4 sm:p-5 shadow-inner">
+                      <div className="niu-kpi rounded-xl border border-brand-500/40 bg-[#0a0e16] p-4 sm:p-5 shadow-inner">
                         <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-300">
                           COSTO DEL PAPEL PUESTO EN PLANTA
                         </div>

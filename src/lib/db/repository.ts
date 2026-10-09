@@ -625,6 +625,21 @@ export const repository = {
     });
     return sheet;
   },
+  async archiveCostSheet(id: string, organizationId?: string): Promise<void> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const { error } = await supabaseAdmin
+        .from('cost_sheet_versions')
+        .update({ status: 'ARCHIVED', updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('organization_id', organizationId);
+      if (error) throw new Error(`cost_sheet_versions archive: ${error.message}`);
+      return;
+    }
+    const target = store.costSheets.find((c) => c.id === id);
+    if (target) {
+      target.status = 'ARCHIVED';
+    }
+  },
   async getIndustrialCostInputs(): Promise<IndustrialProductCostInput[]> {
     return [...store.industrialCostInputs];
   },
@@ -638,11 +653,7 @@ export const repository = {
         .eq('is_active', true)
         .maybeSingle();
       if (error) {
-        if (isSchemaMissingError(error)) {
-          console.warn('[repository] cost_v1_configurations schema missing, using memory store fallback');
-        } else {
-          throw new Error(`cost_v1_configurations: ${error.message}`);
-        }
+        throw new Error(`cost_v1_configurations: ${error.message}`);
       }
       if (data) {
         return {
@@ -701,10 +712,6 @@ export const repository = {
         .select('*')
         .single();
       if (error) {
-        if (isSchemaMissingError(error)) {
-          console.warn('[repository] cost_v1_configurations schema missing, using memory store fallback');
-          return configuration;
-        }
         throw new Error(`cost_v1_configurations: ${error.message}`);
       }
       const { error: auditError } = await supabaseAdmin.from('audit_events').insert({

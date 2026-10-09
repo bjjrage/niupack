@@ -86,30 +86,37 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      sheet = await repository.getActiveCostSheetForSKU(input.sku, identity.organizationId);
-      if (!sheet) {
-        sheet = {
-          id: crypto.randomUUID(),
-          organization_id: identity.organizationId,
-          product_id: skuMaster.product_id,
-          sku: input.sku,
-          version: 1,
-          name: `Hoja de costo V1 · ${input.sku}`,
-          batch_size: input.batch_size,
-          effective_date: new Date().toISOString().split('T')[0],
-          status: 'ACTIVE',
-          true_unit_cost_usd: breakdown.true_unit_cost_usd,
-          minimum_sustainable_price_usd: breakdown.true_unit_cost_usd,
-          break_even_units: 0,
-          components: [],
-        };
+      const existingActiveSheet = await repository.getActiveCostSheetForSKU(input.sku, identity.organizationId);
+      const nextVersion = existingActiveSheet ? (Number(existingActiveSheet.version) || 1) + 1 : 1;
+
+      if (existingActiveSheet) {
+        // Archivar la versión anterior activa para preservar su histórico intacto
+        await repository.archiveCostSheet(existingActiveSheet.id, identity.organizationId);
       }
-      sheet.true_unit_cost_usd = breakdown.true_unit_cost_usd;
-      sheet.batch_size = input.batch_size;
-      sheet.minimum_sustainable_price_usd = breakdown.true_unit_cost_usd;
-      sheet.components = IndustrialCostEngine.toV1CostComponents(breakdown, sheet.id);
-      sheet.notes = 'Cost Intelligence V1: seis rubros configurables por SKU (publicado oficialmente).';
-      await repository.saveCostSheet(sheet, identity.organizationId);
+
+      const newSheetId = crypto.randomUUID();
+      const newComponents = IndustrialCostEngine.toV1CostComponents(breakdown, newSheetId);
+
+      const newSheet = {
+        id: newSheetId,
+        organization_id: identity.organizationId,
+        product_id: skuMaster.product_id,
+        sku: input.sku,
+        version: nextVersion,
+        name: `Hoja de costo V1 · ${input.sku} (v${nextVersion})`,
+        batch_size: input.batch_size,
+        effective_date: new Date().toISOString().split('T')[0],
+        status: 'ACTIVE' as const,
+        true_unit_cost_usd: breakdown.true_unit_cost_usd,
+        true_unit_cost_pyg: input.fx_rate_applied ? Math.round(breakdown.true_unit_cost_usd * input.fx_rate_applied) : undefined,
+        fx_rate_used: input.fx_rate_applied,
+        minimum_sustainable_price_usd: breakdown.true_unit_cost_usd,
+        break_even_units: 0,
+        components: newComponents,
+        notes: `Cost Intelligence V1: versión oficial v${nextVersion}. Seis rubros configurables por SKU.`,
+      };
+
+      sheet = await repository.saveCostSheet(newSheet, identity.organizationId);
     }
 
     return NextResponse.json({

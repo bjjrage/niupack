@@ -251,5 +251,23 @@ describe('Cost Sheet Remediation: 5. Separación Borrador Autosave vs Publicaci�
     const sumComponents = components.reduce((sum, c) => sum + c.rate_usd, 0);
     expect(sumComponents).toBeCloseTo(breakdown.true_unit_cost_usd, 4);
   });
+
+  it('preserva las versiones históricas asignando nuevo UUID y version N+1 sin sobreescritura', () => {
+    const v1Id = 'sheet-v1-uuid';
+    const v2Id = 'sheet-v2-uuid';
+    const input = createCompleteFixture();
+    const breakdown = IndustrialCostEngine.calculateCost(input);
+
+    const v1Components = IndustrialCostEngine.toV1CostComponents(breakdown, v1Id);
+    expect(v1Components.every((c) => c.cost_sheet_id === v1Id)).toBe(true);
+
+    const v2Components = IndustrialCostEngine.toV1CostComponents(breakdown, v2Id);
+    expect(v2Components.every((c) => c.cost_sheet_id === v2Id)).toBe(true);
+
+    // Los componentes de v2 no interfieren ni sobrescriben los de v1
+    expect(v1Components[0].cost_sheet_id).not.toBe(v2Components[0].cost_sheet_id);
+    expect(v1Components[0].id).not.toBe(v2Components[0].id);
+  });
 });
+
 
