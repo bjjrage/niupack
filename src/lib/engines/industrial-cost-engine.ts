@@ -245,8 +245,8 @@ export class IndustrialCostEngine {
     }
 
     // 4. Costos Operativos (Mano de obra directa, energía, planta)
-    const operationalRatePerThousand = input.operational_process_enabled && (input.process_operational_cost_per_thousand_usd ?? 0) > 0
-      ? input.process_operational_cost_per_thousand_usd!
+    const operationalRatePerThousand = input.operational_process_enabled
+      ? Number(input.process_operational_cost_per_thousand_usd ?? 0)
       : operational_cost_per_thousand_usd;
     const cost_operational_usd = operationalEnabled
       ? Number((operationalRatePerThousand / 1000).toFixed(5))
@@ -265,8 +265,8 @@ export class IndustrialCostEngine {
       : 0;
 
     // 7. Empaque (Cajas corrugadas, bolsas polietileno, pallet)
-    const packagingRatePerThousand = input.packaging_process_enabled && (input.process_packaging_cost_per_thousand_usd ?? 0) > 0
-      ? input.process_packaging_cost_per_thousand_usd!
+    const packagingRatePerThousand = input.packaging_process_enabled
+      ? Number(input.process_packaging_cost_per_thousand_usd ?? 0)
       : packaging_cost_per_thousand_usd;
     const cost_packaging_usd = packagingEnabled
       ? Number((packagingRatePerThousand / 1000).toFixed(5))

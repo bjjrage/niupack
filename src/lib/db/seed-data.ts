@@ -1228,7 +1228,7 @@ export const INITIAL_PLANT_PARAMETERS: PlantGeneralParameters = {
   monthly_salary_hours: 200,
   labor_charges_percent: 16.5,
   operator_monthly_salary_pyg: 3500000,
-  packer_monthly_salary_pyg: 2800000,
+  packer_monthly_salary_pyg: 3100000,
   gen1_machines_count: 4,
   gen1_power_kw: 4.5,
   gen1_operators_count: 2,

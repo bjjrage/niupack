@@ -1062,6 +1062,15 @@ export interface IndustrialProcessCalculationDetail {
     cost_per_thousand_usd: number;
   };
   // Summary outputs
+  total_period_units?: number;
+  forming_hourly_cost_pyg?: number;
+  allocated_forming_pyg?: number;
+  allocated_forming_usd?: number;
+  allocated_quality_pyg?: number;
+  allocated_quality_usd?: number;
+  allocated_operational_pyg?: number;
+  allocated_operational_usd?: number;
+  schema_warning?: string;
   operational_total_usd_per_thousand: number;
   operational_total_pyg_per_thousand: number;
   packaging_total_usd_per_thousand: number;

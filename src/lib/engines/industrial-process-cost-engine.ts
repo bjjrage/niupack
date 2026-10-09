@@ -9,7 +9,9 @@ export interface IndustrialProcessEngineInput {
   parameters: Partial<PlantGeneralParameters>;
   fxRate: number;
   fxSource?: string;
-  production: Partial<PlantProductionPeriod>;
+  production: Partial<PlantProductionPeriod> & {
+    total_period_units?: number;
+  };
   packingSessions?: PackingSession[];
   calculationDate?: string;
 }
@@ -50,7 +52,8 @@ export class IndustrialProcessCostEngine {
   }
 
   /**
-   * Deterministic calculation of industrial operational and packaging costs.
+   * Deterministic calculation of industrial operational and packaging costs with multi-SKU shared prorating.
+   * Guarantees exact conservation of total shared period costs across all produced SKUs.
    */
   public static calculate(input: IndustrialProcessEngineInput): IndustrialProcessCalculationDetail {
     const { parameters: p, fxRate, fxSource = 'FX_OS', production, packingSessions = [] } = input;
@@ -58,6 +61,8 @@ export class IndustrialProcessCostEngine {
 
     const missing = this.getMissingConfiguration(p, fxRate);
     const goodUnits = Number(production.good_units_produced || 0);
+    // Multi-SKU total production base: sum of good units across all SKUs in period (defaults to goodUnits)
+    const totalPeriodUnits = Number(production.total_period_units || goodUnits);
 
     const monthlySalaryHours = Number(p.monthly_salary_hours || 0);
     const laborMultiplier = 1 + Number(p.labor_charges_percent || 0) / 100;
@@ -90,6 +95,10 @@ export class IndustrialProcessCostEngine {
     const totalFormingPyg = electricityCostPyg + modFormingCostPyg;
     const totalFormingUsd = fxRate > 0 ? totalFormingPyg / fxRate : 0;
 
+    // Forming hourly cost
+    const formingLineHours = Math.max(gen1Hours, gen2Hours, 0);
+    const formingHourlyCostPyg = formingLineHours > 0 ? totalFormingPyg / formingLineHours : 0;
+
     // 2. Control de Calidad
     const qualityInspectors = Number(p.quality_inspectors_count || 0);
     const qualitySalaryPyg = Number(p.quality_monthly_salary_pyg || 0);
@@ -99,9 +108,17 @@ export class IndustrialProcessCostEngine {
       qualityInspectors * qualitySalaryPyg * qualityMultiplier * (qualityPolypaperPercent / 100);
     const qualityAssignedUsd = fxRate > 0 ? qualityAssignedMonthlyPyg / fxRate : 0;
 
+    // Total shared operational period cost (Forming + Quality)
+    const totalOperationalSharedUsd = totalFormingUsd + qualityAssignedUsd;
+    const totalOperationalSharedPyg = totalFormingPyg + qualityAssignedMonthlyPyg;
+
     // 3. Mano de Obra de Empaque (sólo sesiones con status APPROVED)
     const approvedSessions = packingSessions.filter((s) => s.status === 'APPROVED');
-    const approvedPersonHours = approvedSessions.reduce((acc, s) => acc + (s.total_person_hours || 0), 0);
+    // If sessions have SKU specified, filter by SKU; otherwise consider line-wide
+    const relevantSessions = approvedSessions.filter(
+      (s) => !production.sku || !s.sku || s.sku === production.sku
+    );
+    const approvedPersonHours = relevantSessions.reduce((acc, s) => acc + (s.total_person_hours || 0), 0);
 
     const packerMonthlySalaryPyg = Number(p.packer_monthly_salary_pyg || 0);
     const packerMonthlyTotalPyg = packerMonthlySalaryPyg * laborMultiplier;
@@ -116,7 +133,7 @@ export class IndustrialProcessCostEngine {
     let status: IndustrialProcessCalculationDetail['status'] = 'COMPLETE';
     if (missing.length > 0) {
       status = 'CONFIGURACION_INCOMPLETA';
-    } else if (goodUnits <= 0) {
+    } else if (goodUnits <= 0 && totalPeriodUnits <= 0) {
       status = 'SIN_BASE_PRORRATEO';
     }
 
@@ -126,12 +143,33 @@ export class IndustrialProcessCostEngine {
     let trueUnitOperationalUsd = 0;
     let trueUnitPackagingUsd = materialsCostPerThousandUsd / 1000;
 
-    if (goodUnits > 0 && status === 'COMPLETE') {
-      const operationalTotalUsd = totalFormingUsd + qualityAssignedUsd;
-      trueUnitOperationalUsd = operationalTotalUsd / goodUnits;
+    let allocatedFormingPyg = 0;
+    let allocatedFormingUsd = 0;
+    let allocatedQualityPyg = 0;
+    let allocatedQualityUsd = 0;
+    let allocatedOperationalPyg = 0;
+    let allocatedOperationalUsd = 0;
+
+    const proratingUnitsBasis = totalPeriodUnits > 0 ? totalPeriodUnits : goodUnits;
+
+    if (proratingUnitsBasis > 0 && status === 'COMPLETE') {
+      // Unit rate based on total period units produced across line/plant
+      trueUnitOperationalUsd = totalOperationalSharedUsd / proratingUnitsBasis;
       operationalTotalUsdPerThousand = trueUnitOperationalUsd * 1000;
 
-      const packingLaborUnitUsd = packingLaborUsd / goodUnits;
+      // Allocated amounts for this target SKU
+      if (goodUnits > 0) {
+        allocatedFormingUsd = (totalFormingUsd / proratingUnitsBasis) * goodUnits;
+        allocatedFormingPyg = (totalFormingPyg / proratingUnitsBasis) * goodUnits;
+        allocatedQualityUsd = (qualityAssignedUsd / proratingUnitsBasis) * goodUnits;
+        allocatedQualityPyg = (qualityAssignedMonthlyPyg / proratingUnitsBasis) * goodUnits;
+        allocatedOperationalUsd = trueUnitOperationalUsd * goodUnits;
+        allocatedOperationalPyg = allocatedOperationalUsd * fxRate;
+      }
+
+      // Packing labor unit rate: allocated to SKU good units (or period units if line-wide)
+      const packingLaborBasis = goodUnits > 0 ? goodUnits : proratingUnitsBasis;
+      const packingLaborUnitUsd = packingLaborBasis > 0 ? packingLaborUsd / packingLaborBasis : 0;
       const materialsUnitUsd = materialsCostPerThousandUsd / 1000;
       trueUnitPackagingUsd = packingLaborUnitUsd + materialsUnitUsd;
       packagingTotalUsdPerThousand = trueUnitPackagingUsd * 1000;
@@ -149,6 +187,7 @@ export class IndustrialProcessCostEngine {
       status,
       missing_fields: missing.length > 0 ? missing : undefined,
       good_units_basis: goodUnits,
+      total_period_units: totalPeriodUnits,
       forming: {
         energy_kwh_gen1: Number(energyKwhGen1.toFixed(2)),
         energy_kwh_gen2: Number(energyKwhGen2.toFixed(2)),
@@ -159,6 +198,7 @@ export class IndustrialProcessCostEngine {
         total_forming_pyg: Number(totalFormingPyg.toFixed(0)),
         total_forming_usd: Number(totalFormingUsd.toFixed(4)),
       },
+      forming_hourly_cost_pyg: Number(formingHourlyCostPyg.toFixed(0)),
       quality: {
         inspectors_count: qualityInspectors,
         monthly_salary_pyg: qualitySalaryPyg,
@@ -171,11 +211,17 @@ export class IndustrialProcessCostEngine {
         packer_hourly_cost_pyg: Number(packerHourlyCostPyg.toFixed(2)),
         packing_labor_pyg: Number(packingLaborPyg.toFixed(0)),
         packing_labor_usd: Number(packingLaborUsd.toFixed(4)),
-        sessions_count: approvedSessions.length,
+        sessions_count: relevantSessions.length,
       },
       packaging_materials: {
         cost_per_thousand_usd: Number(materialsCostPerThousandUsd.toFixed(4)),
       },
+      allocated_forming_pyg: Number(allocatedFormingPyg.toFixed(0)),
+      allocated_forming_usd: Number(allocatedFormingUsd.toFixed(4)),
+      allocated_quality_pyg: Number(allocatedQualityPyg.toFixed(0)),
+      allocated_quality_usd: Number(allocatedQualityUsd.toFixed(4)),
+      allocated_operational_pyg: Number(allocatedOperationalPyg.toFixed(0)),
+      allocated_operational_usd: Number(allocatedOperationalUsd.toFixed(4)),
       operational_total_usd_per_thousand: Number(operationalTotalUsdPerThousand.toFixed(5)),
       operational_total_pyg_per_thousand: Number(operationalTotalPygPerThousand.toFixed(0)),
       packaging_total_usd_per_thousand: Number(packagingTotalUsdPerThousand.toFixed(5)),
@@ -183,5 +229,48 @@ export class IndustrialProcessCostEngine {
       true_unit_operational_usd: Number(trueUnitOperationalUsd.toFixed(5)),
       true_unit_packaging_usd: Number(trueUnitPackagingUsd.toFixed(5)),
     };
+  }
+
+  /**
+   * Fast inline provisional calculation for immediate UI preview as inputs change.
+   */
+  public static calculateProvisional(
+    params: Partial<PlantGeneralParameters>,
+    fxRate: number,
+    options?: {
+      goodUnits?: number;
+      totalPeriodUnits?: number;
+      approvedPersonHours?: number;
+    }
+  ) {
+    const dummyProduction: PlantProductionPeriod = {
+      period: 'PROVISIONAL',
+      sku: 'PROVISIONAL',
+      good_units_produced: options?.goodUnits || 0,
+    };
+    const dummySessions: PackingSession[] = (options?.approvedPersonHours ?? 0) > 0
+      ? [
+          {
+            id: 'dummy',
+            organization_id: 'dummy',
+            status: 'APPROVED',
+            started_at: new Date().toISOString(),
+            total_person_hours: options!.approvedPersonHours!,
+            segments: [],
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        ]
+      : [];
+
+    return this.calculate({
+      parameters: params,
+      fxRate,
+      production: {
+        ...dummyProduction,
+        total_period_units: options?.totalPeriodUnits,
+      },
+      packingSessions: dummySessions,
+    });
   }
 }

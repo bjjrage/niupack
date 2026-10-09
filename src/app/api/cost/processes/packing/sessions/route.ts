@@ -1,15 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { repository } from '@/lib/db/repository';
-import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
+import { authErrorResponse, requireNiuIdentity, NiuIdentity } from '@/lib/auth/identity';
+import { verifyPackingToken } from '@/lib/auth/packing-token';
 import { PackingSessionStatus } from '@/types';
+
+async function resolveCallerIdentity(req: NextRequest): Promise<{
+  identity: NiuIdentity;
+  isPackingOperator: boolean;
+  operatorLine?: string;
+}> {
+  const tokenHeader = req.headers.get('x-packing-token');
+  const authHeader = req.headers.get('authorization') || '';
+  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const urlToken = new URL(req.url).searchParams.get('token');
+
+  const candidateToken = tokenHeader || bearerToken || urlToken;
+  if (candidateToken) {
+    const verified = verifyPackingToken(candidateToken);
+    if (verified) {
+      return {
+        identity: {
+          userId: 'packing-operator',
+          organizationId: verified.org,
+          profileId: 'packing-operator',
+          email: 'operador@planta.niupack.com',
+        },
+        isPackingOperator: true,
+        operatorLine: verified.line,
+      };
+    }
+  }
+
+  // Fall back to standard session identity (dashboard user / supervisor)
+  const identity = await requireNiuIdentity();
+  return { identity, isPackingOperator: false };
+}
 
 export async function GET(req: NextRequest) {
   try {
-    const identity = await requireNiuIdentity();
+    const { identity, isPackingOperator, operatorLine } = await resolveCallerIdentity(req);
     const { searchParams } = new URL(req.url);
 
     const status = searchParams.get('status') as PackingSessionStatus | null;
-    const line_name = searchParams.get('line_name') || undefined;
+    const line_name = isPackingOperator ? operatorLine : (searchParams.get('line_name') || undefined);
     const period = searchParams.get('period') || undefined;
     const sku = searchParams.get('sku') || undefined;
 
@@ -34,7 +67,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const identity = await requireNiuIdentity();
+    const { identity, isPackingOperator, operatorLine } = await resolveCallerIdentity(req);
     const body = await req.json();
     const { action } = body;
 
@@ -42,18 +75,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'ACTION_REQUIRED' }, { status: 400 });
     }
 
+    // Role Enforcement: Packing operators CANNOT approve, correct, or void sessions
+    if (isPackingOperator && (action === 'approve' || action === 'correct' || action === 'void')) {
+      return NextResponse.json(
+        { error: 'FORBIDDEN_OPERATOR_CANNOT_APPROVE', message: 'La encargada de empaque no puede aprobar registros. Aprobación reservada al supervisor.' },
+        { status: 403 }
+      );
+    }
+
     let session;
     switch (action) {
       case 'start': {
-        const line_name = body.line_name?.trim() || 'Polipapel';
-        const initial_headcount = Number(body.initial_headcount) || 1;
+        const line_name = isPackingOperator ? (operatorLine || 'Polipapel') : (body.line_name?.trim() || 'Polipapel');
+        const initial_headcount = Math.max(1, Number(body.initial_headcount) || 1);
         session = await repository.startPackingSession(
           {
             line_name,
             sku: body.sku?.trim() || undefined,
             production_order: body.production_order?.trim() || undefined,
             initial_headcount,
-            reason: body.reason?.trim() || undefined,
+            reason: body.reason?.trim() || 'Inicio de sesión de empaque',
             operator_user_id: identity.profileId,
           },
           identity.organizationId

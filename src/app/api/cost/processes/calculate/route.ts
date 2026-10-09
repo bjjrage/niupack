@@ -4,57 +4,111 @@ import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
 import { FxEngine } from '@/lib/fx/fx-provider';
 import { IndustrialProcessCostEngine } from '@/lib/engines/industrial-process-cost-engine';
 import { IndustrialCostEngine } from '@/lib/engines/industrial-cost-engine';
-import { CostSheetVersion } from '@/types';
 
+/**
+ * GET is strictly read-only: calculates industrial processes cost preview.
+ * Never mutates database state, never saves snapshots automatically.
+ */
 export async function GET(req: NextRequest) {
   try {
     const identity = await requireNiuIdentity();
     const { searchParams } = new URL(req.url);
-    const sku = searchParams.get('sku')?.trim() || 'CUP-12OZ-SW';
+    const sku = searchParams.get('sku')?.trim() || '';
     const period = searchParams.get('period')?.trim() || new Date().toISOString().slice(0, 7);
+    const totalPeriodUnitsParam = searchParams.get('total_period_units');
+    const overrideGoodUnitsParam = searchParams.get('good_units_produced');
 
-    return handleCalculation(identity, sku, period, false);
+    const totalPeriodUnits = totalPeriodUnitsParam !== null && totalPeriodUnitsParam !== undefined
+      ? Number(totalPeriodUnitsParam)
+      : undefined;
+    const overrideGoodUnits = overrideGoodUnitsParam !== null && overrideGoodUnitsParam !== undefined
+      ? Number(overrideGoodUnitsParam)
+      : undefined;
+
+    return handleCalculation({
+      identity,
+      sku,
+      period,
+      applyToCostSheet: false,
+      persistSnapshot: false,
+      overrideGoodUnits,
+      totalPeriodUnits,
+    });
   } catch (error) {
     return authErrorResponse(error);
   }
 }
 
+/**
+ * POST triggers official calculation: optionally saves snapshot and optionally applies
+ * to Cost Intelligence according to independent user switch choices.
+ */
 export async function POST(req: NextRequest) {
   try {
     const identity = await requireNiuIdentity();
     const body = await req.json();
-    const sku = body.sku?.trim() || 'CUP-12OZ-SW';
+    const sku = body.sku?.trim() || '';
     const period = body.period?.trim() || new Date().toISOString().slice(0, 7);
     const applyToCostSheet = Boolean(body.apply_to_cost_sheet);
+    const persistSnapshot = body.persist_snapshot !== false; // Default true on official POST
     const overrideGoodUnits = body.good_units_produced !== undefined ? Number(body.good_units_produced) : undefined;
+    const totalPeriodUnits = body.total_period_units !== undefined ? Number(body.total_period_units) : undefined;
+    const enableOperational = body.enable_operational !== undefined ? Boolean(body.enable_operational) : undefined;
+    const enablePackaging = body.enable_packaging !== undefined ? Boolean(body.enable_packaging) : undefined;
 
-    return handleCalculation(identity, sku, period, applyToCostSheet, overrideGoodUnits);
+    return handleCalculation({
+      identity,
+      sku,
+      period,
+      applyToCostSheet,
+      persistSnapshot,
+      overrideGoodUnits,
+      totalPeriodUnits,
+      enableOperational,
+      enablePackaging,
+    });
   } catch (error) {
     return authErrorResponse(error);
   }
 }
 
-async function handleCalculation(
-  identity: { organizationId: string; profileId?: string },
-  sku: string,
-  period: string,
-  applyToCostSheet: boolean,
-  overrideGoodUnits?: number
-) {
+async function handleCalculation({
+  identity,
+  sku,
+  period,
+  applyToCostSheet,
+  persistSnapshot,
+  overrideGoodUnits,
+  totalPeriodUnits,
+  enableOperational,
+  enablePackaging,
+}: {
+  identity: { organizationId: string; profileId?: string };
+  sku: string;
+  period: string;
+  applyToCostSheet: boolean;
+  persistSnapshot: boolean;
+  overrideGoodUnits?: number;
+  totalPeriodUnits?: number;
+  enableOperational?: boolean;
+  enablePackaging?: boolean;
+}) {
   const parameters = await repository.getPlantParameters(identity.organizationId);
   const fxQuote = await FxEngine.getEffectiveQuote();
 
-  const periodRecord = await repository.getProductionPeriod(sku, period, identity.organizationId);
+  const periodRecord = sku && period ? await repository.getProductionPeriod(sku, period, identity.organizationId) : undefined;
   const goodUnits = overrideGoodUnits !== undefined
     ? overrideGoodUnits
     : (periodRecord?.good_units_produced ?? 0);
 
   // Fetch approved packing sessions for period/sku
   const allSessions = await repository.getPackingSessions(
-    { status: 'APPROVED', sku },
+    { status: 'APPROVED' },
     identity.organizationId
   );
-  const packingSessions = allSessions.filter((s) => !period || s.started_at.startsWith(period));
+  const packingSessions = allSessions.filter(
+    (s) => (!period || s.started_at.startsWith(period)) && (!sku || !s.sku || s.sku === sku)
+  );
 
   const calculation = IndustrialProcessCostEngine.calculate({
     parameters,
@@ -64,36 +118,49 @@ async function handleCalculation(
       period,
       sku,
       good_units_produced: goodUnits,
+      total_period_units: totalPeriodUnits,
     },
     packingSessions,
   });
 
-  // Persist snapshot
-  await repository.saveIndustrialProcessSnapshot(
-    {
-      organization_id: identity.organizationId,
-      sku,
-      period,
-      parameters_snapshot: parameters,
-      calculation_detail: calculation,
-      detail_json: calculation,
-      created_by: identity.profileId,
-    },
-    identity.organizationId
-  );
+  // Only persist snapshot if explicitly requested (e.g. POST), NEVER on read-only GET!
+  let savedSnapshot = null;
+  if (persistSnapshot && sku && period) {
+    savedSnapshot = await repository.saveIndustrialProcessSnapshot(
+      {
+        organization_id: identity.organizationId,
+        sku,
+        period,
+        parameters_snapshot: parameters,
+        calculation_detail: calculation,
+        detail_json: calculation,
+        created_by: identity.profileId,
+      },
+      identity.organizationId
+    );
+  }
 
   let updatedCostInput = null;
   let updatedSheet = null;
 
-  if (applyToCostSheet && calculation.status === 'COMPLETE') {
+  // Apply to Cost Intelligence ONLY if explicitly requested and calculation is valid
+  if (applyToCostSheet && calculation.status === 'COMPLETE' && sku) {
     const currentConfig = await repository.getCostV1Configuration(sku, identity.organizationId);
     if (currentConfig?.input) {
       const input = { ...currentConfig.input };
-      input.operational_process_enabled = true;
+
+      // Update calculated rates
       input.process_operational_cost_per_thousand_usd = calculation.operational_total_usd_per_thousand;
-      input.packaging_process_enabled = true;
       input.process_packaging_cost_per_thousand_usd = calculation.packaging_total_usd_per_thousand;
       input.process_calculation_detail = calculation;
+
+      // Update switch states independently — DO NOT force both ON!
+      if (enableOperational !== undefined) {
+        input.operational_process_enabled = enableOperational;
+      }
+      if (enablePackaging !== undefined) {
+        input.packaging_process_enabled = enablePackaging;
+      }
 
       const savedConfig = await repository.saveCostV1Configuration(
         {
@@ -144,6 +211,7 @@ async function handleCalculation(
     sku,
     period,
     calculation,
+    snapshot: savedSnapshot,
     applied: applyToCostSheet,
     updated_cost_input: updatedCostInput,
     updated_sheet: updatedSheet,

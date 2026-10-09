@@ -74,6 +74,22 @@ function normalizeDomain(input?: string | null): string {
   return cleaned;
 }
 
+function isSchemaMissingError(error: any): boolean {
+  if (!error) return false;
+  const msg = String(error.message || '').toLowerCase();
+  const code = String(error.code || '');
+  return (
+    code === '42P01' || // PostgreSQL: undefined_table
+    code === 'PGRST205' || // PostgREST: table not in schema cache
+    code === 'PGRST204' ||
+    code === 'PGRST200' ||
+    msg.includes('schema cache') ||
+    msg.includes('does not exist') ||
+    msg.includes('not find the table') ||
+    msg.includes('could not find the table')
+  );
+}
+
 const allowCostFixtures = process.env.NODE_ENV !== 'production' || process.env.NIU_ENABLE_COST_SEED_FIXTURES === 'true';
 
 // Persistent in-process store for zero-friction local dev, tests, and CI
@@ -976,52 +992,76 @@ export const repository = {
   // Industrial Processes V2 — Plant Parameters
   async getPlantParameters(organizationId?: string): Promise<PlantGeneralParameters> {
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      const { data, error } = await supabaseAdmin
-        .from('plant_process_parameters')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .maybeSingle();
-      if (error) throw new Error(`plant_process_parameters: ${error.message}`);
-      if (data) {
-        return {
-          id: data.id,
-          organization_id: data.organization_id,
-          electricity_rate_pyg_kwh: Number(data.electricity_rate_pyg_kwh),
-          monthly_salary_hours: Number(data.monthly_salary_hours),
-          labor_charges_percent: Number(data.labor_charges_percent),
-          operator_monthly_salary_pyg: Number(data.operator_monthly_salary_pyg),
-          packer_monthly_salary_pyg: Number(data.packer_monthly_salary_pyg),
-          gen1_machines_count: Number(data.gen1_machines_count),
-          gen1_power_kw: Number(data.gen1_power_kw),
-          gen1_operators_count: Number(data.gen1_operators_count),
-          gen1_operating_hours: Number(data.gen1_operating_hours),
-          gen2_machines_count: Number(data.gen2_machines_count),
-          gen2_power_kw: Number(data.gen2_power_kw),
-          gen2_operators_count: Number(data.gen2_operators_count),
-          gen2_operating_hours: Number(data.gen2_operating_hours),
-          quality_inspectors_count: Number(data.quality_inspectors_count),
-          quality_monthly_salary_pyg: Number(data.quality_monthly_salary_pyg),
-          quality_polypaper_percent: Number(data.quality_polypaper_percent),
-          quality_labor_charges_included: Boolean(data.quality_labor_charges_included),
-          packaging_materials_cost_per_thousand_usd: Number(data.packaging_materials_cost_per_thousand_usd),
-          updated_at: data.updated_at,
-          updated_by: data.updated_by,
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('plant_process_parameters')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .maybeSingle();
+
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla plant_process_parameters no encontrada en Supabase (migración 20261008000001_industrial_processes_v2.sql pendiente). Usando store en memoria.');
+            return { ...store.plantParameters };
+          }
+          throw new Error(`plant_process_parameters: ${error.message}`);
+        }
+
+        if (data) {
+          return {
+            id: data.id,
+            organization_id: data.organization_id,
+            electricity_rate_pyg_kwh: Number(data.electricity_rate_pyg_kwh),
+            monthly_salary_hours: Number(data.monthly_salary_hours),
+            labor_charges_percent: Number(data.labor_charges_percent),
+            operator_monthly_salary_pyg: Number(data.operator_monthly_salary_pyg),
+            packer_monthly_salary_pyg: Number(data.packer_monthly_salary_pyg),
+            gen1_machines_count: Number(data.gen1_machines_count),
+            gen1_power_kw: Number(data.gen1_power_kw),
+            gen1_operators_count: Number(data.gen1_operators_count),
+            gen1_operating_hours: Number(data.gen1_operating_hours),
+            gen2_machines_count: Number(data.gen2_machines_count),
+            gen2_power_kw: Number(data.gen2_power_kw),
+            gen2_operators_count: Number(data.gen2_operators_count),
+            gen2_operating_hours: Number(data.gen2_operating_hours),
+            quality_inspectors_count: Number(data.quality_inspectors_count),
+            quality_monthly_salary_pyg: Number(data.quality_monthly_salary_pyg),
+            quality_polypaper_percent: Number(data.quality_polypaper_percent),
+            quality_labor_charges_included: Boolean(data.quality_labor_charges_included),
+            packaging_materials_cost_per_thousand_usd: Number(data.packaging_materials_cost_per_thousand_usd),
+            updated_at: data.updated_at,
+            updated_by: data.updated_by,
+          };
+        }
+
+        // Insert default if not present
+        const defaultRecord = {
+          ...INITIAL_PLANT_PARAMETERS,
+          id: crypto.randomUUID(),
+          organization_id: organizationId,
+          updated_at: new Date().toISOString(),
         };
+        const { data: inserted, error: insertError } = await supabaseAdmin
+          .from('plant_process_parameters')
+          .insert(defaultRecord)
+          .select('*')
+          .single();
+
+        if (insertError) {
+          if (isSchemaMissingError(insertError)) {
+            console.warn('[Industrial Processes V2] Tabla plant_process_parameters pendiente en Supabase. Usando store en memoria.');
+            return { ...store.plantParameters };
+          }
+          throw new Error(`plant_process_parameters insert: ${insertError.message}`);
+        }
+        return inserted as PlantGeneralParameters;
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema en plant_process_parameters. Usando store en memoria.', err.message);
+          return { ...store.plantParameters };
+        }
+        throw err;
       }
-      // Insert default if not present
-      const defaultRecord = {
-        ...INITIAL_PLANT_PARAMETERS,
-        id: crypto.randomUUID(),
-        organization_id: organizationId,
-        updated_at: new Date().toISOString(),
-      };
-      const { data: inserted, error: insertError } = await supabaseAdmin
-        .from('plant_process_parameters')
-        .insert(defaultRecord)
-        .select('*')
-        .single();
-      if (insertError) throw new Error(`plant_process_parameters insert: ${insertError.message}`);
-      return inserted as PlantGeneralParameters;
     }
     return { ...store.plantParameters };
   },
@@ -1033,19 +1073,36 @@ export const repository = {
   ): Promise<PlantGeneralParameters> {
     const orgId = organizationId || store.organizations[0].id;
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      const record = {
-        ...params,
-        organization_id: orgId,
-        updated_at: new Date().toISOString(),
-        updated_by: actorId,
-      };
-      const { data, error } = await supabaseAdmin
-        .from('plant_process_parameters')
-        .upsert(record, { onConflict: 'organization_id' })
-        .select('*')
-        .single();
-      if (error) throw new Error(`plant_process_parameters update: ${error.message}`);
-      return data as PlantGeneralParameters;
+      try {
+        const record = {
+          ...params,
+          organization_id: orgId,
+          updated_at: new Date().toISOString(),
+          updated_by: actorId,
+        };
+        const { data, error } = await supabaseAdmin
+          .from('plant_process_parameters')
+          .upsert(record, { onConflict: 'organization_id' })
+          .select('*')
+          .single();
+
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla plant_process_parameters no encontrada en Supabase. Guardando en memoria local.');
+            store.plantParameters = { ...store.plantParameters, ...params, updated_at: new Date().toISOString() };
+            return { ...store.plantParameters };
+          }
+          throw new Error(`plant_process_parameters update: ${error.message}`);
+        }
+        return data as PlantGeneralParameters;
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al actualizar parámetros. Guardando en memoria local.', err.message);
+          store.plantParameters = { ...store.plantParameters, ...params, updated_at: new Date().toISOString() };
+          return { ...store.plantParameters };
+        }
+        throw err;
+      }
     }
     store.plantParameters = {
       ...store.plantParameters,
@@ -1061,25 +1118,40 @@ export const repository = {
     organizationId?: string
   ): Promise<PackingSession[]> {
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      let query = supabaseAdmin
-        .from('packing_sessions')
-        .select('*, packing_session_segments(*)')
-        .eq('organization_id', organizationId);
-      if (filters?.status) query = query.eq('status', filters.status);
-      if (filters?.line_name) query = query.eq('line_name', filters.line_name);
-      if (filters?.sku) query = query.eq('sku', filters.sku);
-      query = query.order('started_at', { ascending: false });
+      try {
+        let query = supabaseAdmin
+          .from('packing_sessions')
+          .select('*, packing_session_segments(*)')
+          .eq('organization_id', organizationId);
+        if (filters?.status) query = query.eq('status', filters.status);
+        if (filters?.line_name) query = query.eq('line_name', filters.line_name);
+        if (filters?.sku) query = query.eq('sku', filters.sku);
+        query = query.order('started_at', { ascending: false });
 
-      const { data, error } = await query;
-      if (error) throw new Error(`packing_sessions: ${error.message}`);
-      return (data || []).map((row: any) => ({
-        ...row,
-        total_person_hours: Number(row.total_person_hours),
-        total_duration_minutes: Number(row.total_duration_minutes),
-        segments: (row.packing_session_segments || []).sort(
-          (a: any, b: any) => a.segment_order - b.segment_order
-        ),
-      }));
+        const { data, error } = await query;
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla packing_sessions pendiente en Supabase. Usando store en memoria.');
+          } else {
+            throw new Error(`packing_sessions: ${error.message}`);
+          }
+        } else if (data) {
+          return (data || []).map((row: any) => ({
+            ...row,
+            total_person_hours: Number(row.total_person_hours),
+            total_duration_minutes: Number(row.total_duration_minutes),
+            segments: (row.packing_session_segments || []).sort(
+              (a: any, b: any) => a.segment_order - b.segment_order
+            ),
+          }));
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema en packing_sessions. Usando store en memoria.', err.message);
+        } else {
+          throw err;
+        }
+      }
     }
 
     let sessions = [...store.packingSessions];
@@ -1094,22 +1166,36 @@ export const repository = {
 
   async getPackingSession(id: string, organizationId?: string): Promise<PackingSession | undefined> {
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      const { data, error } = await supabaseAdmin
-        .from('packing_sessions')
-        .select('*, packing_session_segments(*)')
-        .eq('id', id)
-        .eq('organization_id', organizationId)
-        .maybeSingle();
-      if (error) throw new Error(`packing_sessions: ${error.message}`);
-      if (!data) return undefined;
-      return {
-        ...data,
-        total_person_hours: Number(data.total_person_hours),
-        total_duration_minutes: Number(data.total_duration_minutes),
-        segments: (data.packing_session_segments || []).sort(
-          (a: any, b: any) => a.segment_order - b.segment_order
-        ),
-      };
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('packing_sessions')
+          .select('*, packing_session_segments(*)')
+          .eq('id', id)
+          .eq('organization_id', organizationId)
+          .maybeSingle();
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla packing_sessions pendiente. Usando store en memoria.');
+          } else {
+            throw new Error(`packing_sessions: ${error.message}`);
+          }
+        } else if (data) {
+          return {
+            ...data,
+            total_person_hours: Number(data.total_person_hours),
+            total_duration_minutes: Number(data.total_duration_minutes),
+            segments: (data.packing_session_segments || []).sort(
+              (a: any, b: any) => a.segment_order - b.segment_order
+            ),
+          };
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al leer sesión. Usando memoria.', err.message);
+        } else {
+          throw err;
+        }
+      }
     }
     return store.packingSessions.find((s) => s.id === id);
   },
@@ -1162,40 +1248,58 @@ export const repository = {
     };
 
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      const { data: created, error } = await supabaseAdmin
-        .from('packing_sessions')
-        .insert({
-          id: newSession.id,
-          organization_id: newSession.organization_id,
-          session_code: newSession.session_code,
-          line_name: newSession.line_name,
-          sku: newSession.sku,
-          production_order: newSession.production_order,
-          operator_user_id: newSession.operator_user_id,
-          started_at: newSession.started_at,
-          status: newSession.status,
-          total_person_hours: 0,
-          total_duration_minutes: 0,
-          created_at: now,
-          updated_at: now,
-        })
-        .select('*')
-        .single();
-      if (error) throw new Error(`create packing session: ${error.message}`);
+      try {
+        const { data: created, error } = await supabaseAdmin
+          .from('packing_sessions')
+          .insert({
+            id: newSession.id,
+            organization_id: newSession.organization_id,
+            session_code: newSession.session_code,
+            line_name: newSession.line_name,
+            sku: newSession.sku,
+            production_order: newSession.production_order,
+            operator_user_id: newSession.operator_user_id,
+            started_at: newSession.started_at,
+            status: newSession.status,
+            total_person_hours: 0,
+            total_duration_minutes: 0,
+            created_at: now,
+            updated_at: now,
+          })
+          .select('*')
+          .single();
 
-      const { error: segError } = await supabaseAdmin
-        .from('packing_session_segments')
-        .insert({
-          id: initialSegment.id,
-          session_id: sessionId,
-          segment_order: 1,
-          headcount,
-          started_at: now,
-          reason: initialSegment.reason,
-        });
-      if (segError) throw new Error(`create initial segment: ${segError.message}`);
-
-      return { ...created, segments: [initialSegment] } as PackingSession;
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla packing_sessions pendiente en Supabase. Guardando en memoria local.');
+          } else {
+            throw new Error(`create packing session: ${error.message}`);
+          }
+        } else {
+          const { error: segError } = await supabaseAdmin
+            .from('packing_session_segments')
+            .insert({
+              id: initialSegment.id,
+              session_id: sessionId,
+              segment_order: 1,
+              headcount,
+              started_at: now,
+              reason: initialSegment.reason,
+            });
+          if (segError && !isSchemaMissingError(segError)) {
+            throw new Error(`create initial segment: ${segError.message}`);
+          }
+          if (created) {
+            return { ...created, segments: [initialSegment] } as PackingSession;
+          }
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al iniciar sesión. Guardando en memoria.', err.message);
+        } else {
+          throw err;
+        }
+      }
     }
 
     store.packingSessions.unshift(newSession);
@@ -1237,7 +1341,6 @@ export const repository = {
     };
     segments.push(newSegment);
 
-    // Compute totals of closed segments
     const totalMinutes = segments.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
     const totalPersonHours = segments.reduce((sum, s) => sum + (s.person_hours || 0), 0);
 
@@ -1247,35 +1350,43 @@ export const repository = {
     session.updated_at = now;
 
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      if (openSegment) {
+      try {
+        if (openSegment) {
+          await supabaseAdmin
+            .from('packing_session_segments')
+            .update({
+              ended_at: openSegment.ended_at,
+              duration_minutes: openSegment.duration_minutes,
+              person_hours: openSegment.person_hours,
+            })
+            .eq('id', openSegment.id);
+        }
         await supabaseAdmin
           .from('packing_session_segments')
-          .update({
-            ended_at: openSegment.ended_at,
-            duration_minutes: openSegment.duration_minutes,
-            person_hours: openSegment.person_hours,
-          })
-          .eq('id', openSegment.id);
-      }
-      await supabaseAdmin
-        .from('packing_session_segments')
-        .insert({
-          id: newSegment.id,
-          session_id: sessionId,
-          segment_order: nextOrder,
-          headcount,
-          started_at: now,
-          reason: newSegment.reason,
-        });
+          .insert({
+            id: newSegment.id,
+            session_id: sessionId,
+            segment_order: nextOrder,
+            headcount,
+            started_at: now,
+            reason: newSegment.reason,
+          });
 
-      await supabaseAdmin
-        .from('packing_sessions')
-        .update({
-          total_duration_minutes: session.total_duration_minutes,
-          total_person_hours: session.total_person_hours,
-          updated_at: now,
-        })
-        .eq('id', sessionId);
+        await supabaseAdmin
+          .from('packing_sessions')
+          .update({
+            total_duration_minutes: session.total_duration_minutes,
+            total_person_hours: session.total_person_hours,
+            updated_at: now,
+          })
+          .eq('id', sessionId);
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Supabase schema pendiente al actualizar segmentos. Guardando en memoria.');
+        } else {
+          throw err;
+        }
+      }
     }
 
     return session;
@@ -1307,26 +1418,34 @@ export const repository = {
     session.updated_at = now;
 
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      if (openSegment) {
+      try {
+        if (openSegment) {
+          await supabaseAdmin
+            .from('packing_session_segments')
+            .update({
+              ended_at: openSegment.ended_at,
+              duration_minutes: openSegment.duration_minutes,
+              person_hours: openSegment.person_hours,
+            })
+            .eq('id', openSegment.id);
+        }
         await supabaseAdmin
-          .from('packing_session_segments')
+          .from('packing_sessions')
           .update({
-            ended_at: openSegment.ended_at,
-            duration_minutes: openSegment.duration_minutes,
-            person_hours: openSegment.person_hours,
+            status: 'STOPPED',
+            stopped_at: now,
+            total_duration_minutes: session.total_duration_minutes,
+            total_person_hours: session.total_person_hours,
+            updated_at: now,
           })
-          .eq('id', openSegment.id);
+          .eq('id', sessionId);
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Supabase schema pendiente al detener sesión. Guardando en memoria.');
+        } else {
+          throw err;
+        }
       }
-      await supabaseAdmin
-        .from('packing_sessions')
-        .update({
-          status: 'STOPPED',
-          stopped_at: now,
-          total_duration_minutes: session.total_duration_minutes,
-          total_person_hours: session.total_person_hours,
-          updated_at: now,
-        })
-        .eq('id', sessionId);
     }
 
     return session;
@@ -1347,15 +1466,23 @@ export const repository = {
     session.updated_at = now;
 
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      await supabaseAdmin
-        .from('packing_sessions')
-        .update({
-          status: 'APPROVED',
-          approved_at: now,
-          approved_by: approverId,
-          updated_at: now,
-        })
-        .eq('id', sessionId);
+      try {
+        await supabaseAdmin
+          .from('packing_sessions')
+          .update({
+            status: 'APPROVED',
+            approved_at: now,
+            approved_by: approverId,
+            updated_at: now,
+          })
+          .eq('id', sessionId);
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Supabase schema pendiente al aprobar sesión. Guardando en memoria.');
+        } else {
+          throw err;
+        }
+      }
     }
 
     return session;
@@ -1380,15 +1507,23 @@ export const repository = {
     session.updated_at = now;
 
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      await supabaseAdmin
-        .from('packing_sessions')
-        .update({
-          status: 'CORRECTED',
-          total_person_hours: session.total_person_hours,
-          notes: session.notes,
-          updated_at: now,
-        })
-        .eq('id', sessionId);
+      try {
+        await supabaseAdmin
+          .from('packing_sessions')
+          .update({
+            status: 'CORRECTED',
+            total_person_hours: session.total_person_hours,
+            notes: session.notes,
+            updated_at: now,
+          })
+          .eq('id', sessionId);
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Supabase schema pendiente al corregir sesión.');
+        } else {
+          throw err;
+        }
+      }
     }
 
     return session;
@@ -1406,14 +1541,22 @@ export const repository = {
     session.updated_at = now;
 
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      await supabaseAdmin
-        .from('packing_sessions')
-        .update({
-          status: 'VOIDED',
-          notes: session.notes,
-          updated_at: now,
-        })
-        .eq('id', sessionId);
+      try {
+        await supabaseAdmin
+          .from('packing_sessions')
+          .update({
+            status: 'VOIDED',
+            notes: session.notes,
+            updated_at: now,
+          })
+          .eq('id', sessionId);
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Supabase schema pendiente al anular sesión.');
+        } else {
+          throw err;
+        }
+      }
     }
 
     return session;
@@ -1422,35 +1565,64 @@ export const repository = {
   // Industrial Processes V2 — Production Periods
   async getProductionPeriods(organizationId?: string): Promise<PlantProductionPeriod[]> {
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      const { data, error } = await supabaseAdmin
-        .from('plant_production_periods')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .order('period', { ascending: false });
-      if (error) throw new Error(`plant_production_periods: ${error.message}`);
-      return (data || []).map((row: any) => ({
-        ...row,
-        good_units_produced: Number(row.good_units_produced),
-      }));
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('plant_production_periods')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .order('period', { ascending: false });
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla plant_production_periods pendiente en Supabase.');
+          } else {
+            throw new Error(`plant_production_periods: ${error.message}`);
+          }
+        } else if (data) {
+          return (data || []).map((row: any) => ({
+            ...row,
+            good_units_produced: Number(row.good_units_produced),
+          }));
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al leer períodos.');
+        } else {
+          throw err;
+        }
+      }
     }
     return [...store.productionPeriods];
   },
 
   async getProductionPeriod(sku: string, period: string, organizationId?: string): Promise<PlantProductionPeriod | undefined> {
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      const { data, error } = await supabaseAdmin
-        .from('plant_production_periods')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .eq('sku', sku)
-        .eq('period', period)
-        .maybeSingle();
-      if (error) throw new Error(`plant_production_periods: ${error.message}`);
-      if (!data) return undefined;
-      return {
-        ...data,
-        good_units_produced: Number(data.good_units_produced),
-      };
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('plant_production_periods')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .eq('sku', sku)
+          .eq('period', period)
+          .maybeSingle();
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla plant_production_periods pendiente en Supabase.');
+          } else {
+            throw new Error(`plant_production_periods: ${error.message}`);
+          }
+        } else if (data) {
+          return {
+            ...data,
+            good_units_produced: Number(data.good_units_produced),
+          };
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al leer período.');
+        } else {
+          throw err;
+        }
+      }
     }
     return store.productionPeriods.find((p) => p.sku === sku && p.period === period);
   },
@@ -1463,23 +1635,38 @@ export const repository = {
     const now = new Date().toISOString();
 
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      const record = {
-        organization_id: orgId,
-        sku: periodData.sku,
-        period: periodData.period,
-        good_units_produced: periodData.good_units_produced ?? 0,
-        updated_at: now,
-      };
-      const { data, error } = await supabaseAdmin
-        .from('plant_production_periods')
-        .upsert(record, { onConflict: 'organization_id,period,sku' })
-        .select('*')
-        .single();
-      if (error) throw new Error(`save production period: ${error.message}`);
-      return {
-        ...data,
-        good_units_produced: Number(data.good_units_produced),
-      };
+      try {
+        const record = {
+          organization_id: orgId,
+          sku: periodData.sku,
+          period: periodData.period,
+          good_units_produced: periodData.good_units_produced ?? 0,
+          updated_at: now,
+        };
+        const { data, error } = await supabaseAdmin
+          .from('plant_production_periods')
+          .upsert(record, { onConflict: 'organization_id,period,sku' })
+          .select('*')
+          .single();
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla plant_production_periods pendiente en Supabase. Guardando en memoria local.');
+          } else {
+            throw new Error(`save production period: ${error.message}`);
+          }
+        } else if (data) {
+          return {
+            ...data,
+            good_units_produced: Number(data.good_units_produced),
+          };
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al guardar período. Guardando en memoria.');
+        } else {
+          throw err;
+        }
+      }
     }
 
     const idx = store.productionPeriods.findIndex(
@@ -1505,15 +1692,33 @@ export const repository = {
   // Industrial Processes V2 — Process Snapshots
   async getIndustrialProcessSnapshot(sku: string, period: string, organizationId?: string): Promise<IndustrialProcessSnapshot | undefined> {
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      const { data, error } = await supabaseAdmin
-        .from('industrial_process_snapshots')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .eq('sku', sku)
-        .eq('period', period)
-        .maybeSingle();
-      if (error) throw new Error(`industrial_process_snapshots: ${error.message}`);
-      return data as IndustrialProcessSnapshot | undefined;
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('industrial_process_snapshots')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .eq('sku', sku)
+          .eq('period', period)
+          .maybeSingle();
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla industrial_process_snapshots pendiente en Supabase.');
+          } else {
+            throw new Error(`industrial_process_snapshots: ${error.message}`);
+          }
+        } else if (data) {
+          return {
+            ...data,
+            calculation_detail: data.detail_json,
+          } as IndustrialProcessSnapshot;
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al leer snapshot.');
+        } else {
+          throw err;
+        }
+      }
     }
     return store.industrialSnapshots.find((s) => s.sku === sku && s.period === period);
   },
@@ -1523,19 +1728,44 @@ export const repository = {
     organizationId?: string
   ): Promise<IndustrialProcessSnapshot> {
     const orgId = organizationId || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const detailJson = snapshot.detail_json || snapshot.calculation_detail || {};
+
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      const record = {
-        ...snapshot,
-        organization_id: orgId,
-        calculated_at: new Date().toISOString(),
-      };
-      const { data, error } = await supabaseAdmin
-        .from('industrial_process_snapshots')
-        .upsert(record, { onConflict: 'organization_id,period,sku' })
-        .select('*')
-        .single();
-      if (error) throw new Error(`save process snapshot: ${error.message}`);
-      return data as IndustrialProcessSnapshot;
+      try {
+        // Table schema has EXACTLY: organization_id, sku, period, detail_json, calculated_at, created_by
+        const record = {
+          organization_id: orgId,
+          sku: snapshot.sku,
+          period: snapshot.period,
+          detail_json: detailJson,
+          calculated_at: now,
+          created_by: snapshot.created_by || null,
+        };
+        const { data, error } = await supabaseAdmin
+          .from('industrial_process_snapshots')
+          .upsert(record, { onConflict: 'organization_id,period,sku' })
+          .select('*')
+          .single();
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla industrial_process_snapshots pendiente en Supabase. Guardando en memoria local.');
+          } else {
+            throw new Error(`save process snapshot: ${error.message}`);
+          }
+        } else if (data) {
+          return {
+            ...data,
+            calculation_detail: data.detail_json,
+          } as IndustrialProcessSnapshot;
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al guardar snapshot. Guardando en memoria local.', err.message);
+        } else {
+          throw err;
+        }
+      }
     }
 
     const idx = store.industrialSnapshots.findIndex(
@@ -1543,9 +1773,15 @@ export const repository = {
     );
     const item: IndustrialProcessSnapshot = {
       id: idx >= 0 ? store.industrialSnapshots[idx].id : crypto.randomUUID(),
-      ...snapshot,
       organization_id: orgId,
-      calculated_at: new Date().toISOString(),
+      sku: snapshot.sku,
+      period: snapshot.period,
+      detail_json: detailJson,
+      calculation_detail: detailJson,
+      parameters_snapshot: snapshot.parameters_snapshot,
+      calculated_at: now,
+      created_by: snapshot.created_by,
+      created_at: idx >= 0 ? store.industrialSnapshots[idx].created_at : now,
     };
     if (idx >= 0) {
       store.industrialSnapshots[idx] = item;
