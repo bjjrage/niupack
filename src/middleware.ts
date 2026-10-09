@@ -5,9 +5,13 @@ export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request });
   const pathname = request.nextUrl.pathname;
   const isLogin = pathname === '/login';
-  const isPublicMagicLink = pathname.startsWith('/api/logistics/public/') || pathname.startsWith('/logistics/quote/');
-  // Callers sin sesión de usuario: Twilio (inbound + status callback) y el scheduler de campañas.
-  // Cada ruta se autentica sola: firma X-Twilio-Signature o Bearer CRON_SECRET / sesión.
+  const isPublicMagicLink =
+    pathname.startsWith('/api/logistics/public/') ||
+    pathname.startsWith('/logistics/quote/') ||
+    pathname.startsWith('/planta/empaque') ||
+    pathname.startsWith('/api/cost/processes/packing/sessions');
+  // Callers sin sesión de usuario: Twilio (inbound + status callback), scheduler de campañas y operadoras de empaque (token QR HMAC).
+  // Cada ruta se autentica sola: firma X-Twilio-Signature o Bearer CRON_SECRET / x-packing-token / sesión.
   const isMachineEndpoint =
     pathname === '/api/niupackbot/whatsapp' ||
     pathname === '/api/niupackbot/whatsapp/status' ||
