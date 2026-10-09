@@ -850,6 +850,18 @@ export interface IndustrialBottomFormula {
   yield_units_per_ton?: number;        // Rendimiento total culitos x ton calculado
 }
 
+export interface IndustrialCostCurrencyMeta {
+  currency: 'USD' | 'PYG';
+  fx_rate: number;
+  fob_price_ton_original?: number;
+  freight_ton_original?: number;
+  bottom_paper_cost_ton_original?: number;
+  quoted_printing_rate_original?: number;
+  operational_cost_per_thousand_original?: number;
+  machine_depreciation_per_thousand_original?: number;
+  packaging_cost_per_thousand_original?: number;
+}
+
 export interface IndustrialProductCostInput {
   sku: string;
   paper_formula: IndustrialPaperFormula;
@@ -865,6 +877,11 @@ export interface IndustrialProductCostInput {
   batch_size: number;                       // Tamaño de lote a cotizar
   /** V1 control plane. Missing entries remain enabled for backwards compatibility. */
   rubrics?: Partial<CostV1RubricConfigMap>;
+  /** Currency load and presentation metadata */
+  currency_mode?: 'USD' | 'PYG' | 'BOTH';
+  input_currency?: 'USD' | 'PYG';
+  fx_rate_applied?: number;
+  currency_meta?: IndustrialCostCurrencyMeta;
 }
 
 export interface IndustrialCostBreakdown {
@@ -894,6 +911,17 @@ export interface IndustrialCostBreakdown {
   cost_bottom_sheet_usd?: number;
   bottom_units_per_m2?: number;
   bottom_units_per_sheet?: number;
+  // Component status and traceability
+  cost_paper_cone_status?: 'COMPLETE' | 'INCOMPLETE';
+  cost_bottom_status?: 'COMPLETE' | 'INCOMPLETE';
+  cost_raw_material_status?: 'COMPLETE' | 'INCOMPLETE';
+  cost_paper_cone_missing?: string[];
+  cost_bottom_missing?: string[];
+  exact_cost_paper_cone_usd?: number;
+  exact_cost_bottom_usd?: number;
+  exact_true_unit_cost_usd?: number;
+  currency_mode?: 'USD' | 'PYG' | 'BOTH';
+  fx_rate?: number;
   // Share percentages
   share_paper_cone_percent: number;
   share_bottom_percent: number;

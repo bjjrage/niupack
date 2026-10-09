@@ -65,6 +65,21 @@ function normalizeDomain(input?: string | null): string {
   return cleaned;
 }
 
+function isSchemaMissingError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const msg = String((error as { message?: string }).message || '').toLowerCase();
+  const code = String((error as { code?: string }).code || '');
+  return (
+    code === 'PGRST204' ||
+    code === 'PGRST205' ||
+    code === '42P01' ||
+    msg.includes('schema cache') ||
+    msg.includes('relation') ||
+    msg.includes('does not exist') ||
+    msg.includes('could not find the table')
+  );
+}
+
 const allowCostFixtures = process.env.NODE_ENV !== 'production' || process.env.NIU_ENABLE_COST_SEED_FIXTURES === 'true';
 
 // Persistent in-process store for zero-friction local dev, tests, and CI
@@ -622,19 +637,26 @@ export const repository = {
         .eq('sku', sku)
         .eq('is_active', true)
         .maybeSingle();
-      if (error) throw new Error(`cost_v1_configurations: ${error.message}`);
-      if (!data) return undefined;
-      return {
-        id: data.id,
-        organization_id: data.organization_id,
-        product_id: data.product_id,
-        sku: data.sku,
-        input: data.input_json as IndustrialProductCostInput,
-        version: Number(data.version),
-        is_active: Boolean(data.is_active),
-        created_at: data.created_at,
-        updated_at: data.updated_at,
-      };
+      if (error) {
+        if (isSchemaMissingError(error)) {
+          console.warn('[repository] cost_v1_configurations schema missing, using memory store fallback');
+        } else {
+          throw new Error(`cost_v1_configurations: ${error.message}`);
+        }
+      }
+      if (data) {
+        return {
+          id: data.id,
+          organization_id: data.organization_id,
+          product_id: data.product_id,
+          sku: data.sku,
+          input: data.input_json as IndustrialProductCostInput,
+          version: Number(data.version),
+          is_active: Boolean(data.is_active),
+          created_at: data.created_at,
+          updated_at: data.updated_at,
+        };
+      }
     }
 
     const input = store.industrialCostInputs.find((candidate) => candidate.sku === sku);
@@ -651,6 +673,14 @@ export const repository = {
     organizationId?: string,
     actorId?: string
   ): Promise<CostV1Configuration> {
+    // Keep in-memory store synchronized as fallback/cache
+    const memIndex = store.industrialCostInputs.findIndex((i) => i.sku === configuration.sku);
+    if (memIndex >= 0) {
+      store.industrialCostInputs[memIndex] = configuration.input;
+    } else {
+      store.industrialCostInputs.push(configuration.input);
+    }
+
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
       const skuRecord = (await this.getSKUs(organizationId)).find((candidate) => candidate.sku === configuration.sku);
       if (!skuRecord?.product_id) throw new Error(`SKU ${configuration.sku} is not present in the product master`);
@@ -670,7 +700,13 @@ export const repository = {
         .upsert(record, { onConflict: 'organization_id,sku' })
         .select('*')
         .single();
-      if (error) throw new Error(`cost_v1_configurations: ${error.message}`);
+      if (error) {
+        if (isSchemaMissingError(error)) {
+          console.warn('[repository] cost_v1_configurations schema missing, using memory store fallback');
+          return configuration;
+        }
+        throw new Error(`cost_v1_configurations: ${error.message}`);
+      }
       const { error: auditError } = await supabaseAdmin.from('audit_events').insert({
         organization_id: organizationId,
         actor_id: actorId,
