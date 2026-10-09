@@ -97,6 +97,10 @@ function emptyInput(sku: string): IndustrialProductCostInput {
     machine_depreciation_per_thousand_usd: 0,
     scrap_rate_percent: 0,
     packaging_cost_per_thousand_usd: 0,
+    operational_process_enabled: false,
+    packaging_process_enabled: false,
+    process_operational_cost_per_thousand_usd: 0,
+    process_packaging_cost_per_thousand_usd: 0,
     batch_size: 0,
     currency_mode: 'BOTH',
     input_currency: 'USD',
@@ -214,7 +218,7 @@ function RubricCard({
   summaryCurrency: SummaryCurrency;
   fxRate: number | null;
   onEnabledChange: (enabled: boolean) => void;
-  onSourceChange: (source: CostInputSource) => void;
+  onSourceChange?: (source: CostInputSource) => void;
   headerExtra?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -240,18 +244,11 @@ function RubricCard({
               />
               <span>{config.enabled ? 'ACTIVO' : 'INACTIVO'}</span>
             </label>
-            <select
-              value={config.source}
-              onChange={(event) => onSourceChange(event.target.value as CostInputSource)}
-              aria-label={`Fuente de ${title}`}
-              className="min-h-8 rounded-md border border-slate-700 bg-[#0c0f14] px-2.5 text-[11px] font-semibold text-slate-300 outline-none focus:border-brand-500/70"
-            >
-              {sourceOptions.map((source) => (
-                <option key={source} value={source}>
-                  {source}
-                </option>
-              ))}
-            </select>
+            {config.source === 'PROCESS' && (
+              <span className="rounded bg-brand-500/20 border border-brand-500/40 px-2 py-0.5 text-[10px] font-bold text-brand-300">
+                PROCESOS
+              </span>
+            )}
             {headerExtra}
           </div>
         </div>
@@ -520,6 +517,72 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
   ) => {
     const currentBottom = input?.bottom_formula || emptyInput(sku).bottom_formula!;
     updateInput({ bottom_formula: { ...currentBottom, ...updates } }, isImmediate);
+  };
+
+  const toggleOperationalProcess = async (enabled: boolean) => {
+    if (!input) return;
+    if (enabled) {
+      try {
+        const res = await fetch(`/api/cost/processes/calculate?sku=${encodeURIComponent(sku)}`);
+        const data = await res.json();
+        if (data.success && data.calculation && Number(data.calculation.operational_total_usd_per_thousand) > 0) {
+          updateInput(
+            {
+              operational_process_enabled: true,
+              process_operational_cost_per_thousand_usd: Number(data.calculation.operational_total_usd_per_thousand),
+              process_calculation_detail: data.calculation,
+              process_snapshot_id: data.calculation.snapshot_id || undefined,
+            },
+            true
+          );
+        } else {
+          setFeedback('No se puede activar el cálculo de procesos: no existe un costo operativo calculado válido en Procesos Industriales para este SKU.');
+        }
+      } catch (err) {
+        console.error('Error fetching process calculation', err);
+        setFeedback('Error al consultar el cálculo de procesos industriales.');
+      }
+    } else {
+      updateInput(
+        {
+          operational_process_enabled: false,
+        },
+        true
+      );
+    }
+  };
+
+  const togglePackagingProcess = async (enabled: boolean) => {
+    if (!input) return;
+    if (enabled) {
+      try {
+        const res = await fetch(`/api/cost/processes/calculate?sku=${encodeURIComponent(sku)}`);
+        const data = await res.json();
+        if (data.success && data.calculation && Number(data.calculation.packaging_total_usd_per_thousand) > 0) {
+          updateInput(
+            {
+              packaging_process_enabled: true,
+              process_packaging_cost_per_thousand_usd: Number(data.calculation.packaging_total_usd_per_thousand),
+              process_calculation_detail: data.calculation,
+              process_snapshot_id: data.calculation.snapshot_id || undefined,
+            },
+            true
+          );
+        } else {
+          setFeedback('No se puede activar el cálculo de procesos: no existe un costo de embalaje calculado válido en Procesos Industriales para este SKU.');
+        }
+      } catch (err) {
+        console.error('Error fetching process calculation', err);
+        setFeedback('Error al consultar el cálculo de procesos industriales.');
+      }
+    } else {
+      updateInput(
+        {
+          packaging_process_enabled: false,
+        },
+        true
+      );
+    }
   };
 
   // Monetary field helpers (USD <-> Gs.)
@@ -1596,29 +1659,104 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                     onEnabledChange={(enabled) => updateRubric('operational', { enabled })}
                     onSourceChange={(source) => updateRubric('operational', { source })}
                   >
-                    <NumberField
-                      label="Costo operativo"
-                      suffix={getMonetarySuffix('1000')}
-                      value={getMonetaryValue(
-                        input.operational_cost_per_thousand_usd,
-                        input.currency_meta?.operational_cost_per_thousand_original
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-[#10141b] p-3.5">
+                        <div>
+                          <div className="text-xs font-semibold text-slate-200">Usar cálculo de Procesos</div>
+                          <div className="text-[11px] text-slate-400">
+                            {input.operational_process_enabled
+                              ? 'Cálculo activo desde Procesos Industriales (Formado, Electricidad, Operadores y Calidad)'
+                              : `Cálculo manual ingresado en ${inputCurrency === 'PYG' ? 'Gs. / 1.000' : 'USD / 1.000'}`}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-mono font-semibold ${!input.operational_process_enabled ? 'text-brand-400' : 'text-slate-500'}`}>OFF</span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={Boolean(input.operational_process_enabled)}
+                            onClick={() => toggleOperationalProcess(!input.operational_process_enabled)}
+                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${input.operational_process_enabled ? 'bg-brand-600' : 'bg-slate-700'}`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${input.operational_process_enabled ? 'translate-x-5' : 'translate-x-0'}`}
+                            />
+                          </button>
+                          <span className={`text-xs font-mono font-semibold ${input.operational_process_enabled ? 'text-brand-400' : 'text-slate-500'}`}>ON</span>
+                        </div>
+                      </div>
+
+                      {!input.operational_process_enabled ? (
+                        <NumberField
+                          label="Costo operativo manual"
+                          suffix={getMonetarySuffix('1000')}
+                          value={getMonetaryValue(
+                            input.operational_cost_per_thousand_usd,
+                            input.currency_meta?.operational_cost_per_thousand_original
+                          )}
+                          emptyWhenZero={emptyValues}
+                          secondaryText={getSecondaryEquivalence(input.operational_cost_per_thousand_usd)}
+                          onChange={(val) =>
+                            handleMonetaryChange(val, (usdVal, origVal) => {
+                              updateInput({
+                                operational_cost_per_thousand_usd: usdVal,
+                                currency_meta: {
+                                  ...input.currency_meta,
+                                  operational_cost_per_thousand_original: origVal,
+                                  currency: inputCurrency,
+                                  fx_rate: fxRate || 1,
+                                },
+                              });
+                            })
+                          }
+                        />
+                      ) : (
+                        <div className="rounded-lg border border-brand-900/40 bg-brand-950/20 p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-brand-300">Formado + Operadores + Energía + Calidad</span>
+                            <span className="rounded bg-brand-500/20 border border-brand-500/40 px-2 py-0.5 text-[10px] font-bold text-brand-300">PROCESOS</span>
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2 text-xs">
+                            <div className="rounded bg-black/30 p-2.5">
+                              <div className="text-[11px] text-slate-400">Costo operativo calculado</div>
+                              <div className="mt-1 font-mono text-base font-bold text-white">
+                                {summaryCurrency === 'PYG' && fxRate !== null ? (
+                                  <span>Gs. {Math.round((input.process_operational_cost_per_thousand_usd || 0) * fxRate).toLocaleString('es-PY')} <span className="text-xs font-normal text-slate-400">/1.000</span></span>
+                                ) : (
+                                  <span>${(input.process_operational_cost_per_thousand_usd || 0).toFixed(4)} <span className="text-xs font-normal text-slate-400">USD/1.000</span></span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-emerald-400 font-mono">
+                                {summaryCurrency === 'PYG' && fxRate !== null ? (
+                                  <span>Gs. {Math.round(((input.process_operational_cost_per_thousand_usd || 0) / 1000) * fxRate).toLocaleString('es-PY')} /u</span>
+                                ) : (
+                                  <span>${((input.process_operational_cost_per_thousand_usd || 0) / 1000).toFixed(5)} /u</span>
+                                )}
+                              </div>
+                              {summaryCurrency === 'BOTH' && fxRate !== null && (
+                                <div className="mt-1 text-[11px] font-mono text-slate-400">
+                                  Gs. {Math.round((input.process_operational_cost_per_thousand_usd || 0) * fxRate).toLocaleString('es-PY')} /1.000
+                                </div>
+                              )}
+                            </div>
+                            <div className="rounded bg-black/30 p-2.5">
+                              <div className="text-[11px] text-slate-400">Origen &amp; Prorrateo</div>
+                              <div className="mt-1 text-xs text-slate-300 font-mono">
+                                {input.process_calculation_detail?.status === 'COMPLETE'
+                                  ? `Base: ${(input.process_calculation_detail.good_units_basis || 0).toLocaleString('es-PY')} u`
+                                  : 'Pendiente de parametrización en Procesos'}
+                              </div>
+                              <a
+                                href="/cost/processes"
+                                className="mt-1 inline-block text-[11px] text-brand-400 hover:text-brand-300 underline"
+                              >
+                                Configurar en Procesos &rarr;
+                              </a>
+                            </div>
+                          </div>
+                        </div>
                       )}
-                      emptyWhenZero={emptyValues}
-                      secondaryText={getSecondaryEquivalence(input.operational_cost_per_thousand_usd)}
-                      onChange={(val) =>
-                        handleMonetaryChange(val, (usdVal, origVal) => {
-                          updateInput({
-                            operational_cost_per_thousand_usd: usdVal,
-                            currency_meta: {
-                              ...input.currency_meta,
-                              operational_cost_per_thousand_original: origVal,
-                              currency: inputCurrency,
-                              fx_rate: fxRate || 1,
-                            },
-                          });
-                        })
-                      }
-                    />
+                    </div>
                   </RubricCard>
 
                   {/* Merma */}
@@ -1701,29 +1839,104 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                     onEnabledChange={(enabled) => updateRubric('packaging', { enabled })}
                     onSourceChange={(source) => updateRubric('packaging', { source })}
                   >
-                    <NumberField
-                      label="Costo de embalaje"
-                      suffix={getMonetarySuffix('1000')}
-                      value={getMonetaryValue(
-                        input.packaging_cost_per_thousand_usd,
-                        input.currency_meta?.packaging_cost_per_thousand_original
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-[#10141b] p-3.5">
+                        <div>
+                          <div className="text-xs font-semibold text-slate-200">Usar cálculo de Procesos</div>
+                          <div className="text-[11px] text-slate-400">
+                            {input.packaging_process_enabled
+                              ? 'Cálculo activo desde Procesos Industriales (Mano de obra aprobada + Materiales)'
+                              : `Cálculo manual ingresado en ${inputCurrency === 'PYG' ? 'Gs. / 1.000' : 'USD / 1.000'}`}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-mono font-semibold ${!input.packaging_process_enabled ? 'text-brand-400' : 'text-slate-500'}`}>OFF</span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={Boolean(input.packaging_process_enabled)}
+                            onClick={() => togglePackagingProcess(!input.packaging_process_enabled)}
+                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${input.packaging_process_enabled ? 'bg-brand-600' : 'bg-slate-700'}`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${input.packaging_process_enabled ? 'translate-x-5' : 'translate-x-0'}`}
+                            />
+                          </button>
+                          <span className={`text-xs font-mono font-semibold ${input.packaging_process_enabled ? 'text-brand-400' : 'text-slate-500'}`}>ON</span>
+                        </div>
+                      </div>
+
+                      {!input.packaging_process_enabled ? (
+                        <NumberField
+                          label="Costo de embalaje manual"
+                          suffix={getMonetarySuffix('1000')}
+                          value={getMonetaryValue(
+                            input.packaging_cost_per_thousand_usd,
+                            input.currency_meta?.packaging_cost_per_thousand_original
+                          )}
+                          emptyWhenZero={emptyValues}
+                          secondaryText={getSecondaryEquivalence(input.packaging_cost_per_thousand_usd)}
+                          onChange={(val) =>
+                            handleMonetaryChange(val, (usdVal, origVal) => {
+                              updateInput({
+                                packaging_cost_per_thousand_usd: usdVal,
+                                currency_meta: {
+                                  ...input.currency_meta,
+                                  packaging_cost_per_thousand_original: origVal,
+                                  currency: inputCurrency,
+                                  fx_rate: fxRate || 1,
+                                },
+                              });
+                            })
+                          }
+                        />
+                      ) : (
+                        <div className="rounded-lg border border-brand-900/40 bg-brand-950/20 p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-brand-300">MO Empaque (cronómetro aprobado) + Materiales</span>
+                            <span className="rounded bg-brand-500/20 border border-brand-500/40 px-2 py-0.5 text-[10px] font-bold text-brand-300">PROCESOS</span>
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2 text-xs">
+                            <div className="rounded bg-black/30 p-2.5">
+                              <div className="text-[11px] text-slate-400">Costo embalaje calculado</div>
+                              <div className="mt-1 font-mono text-base font-bold text-white">
+                                {summaryCurrency === 'PYG' && fxRate !== null ? (
+                                  <span>Gs. {Math.round((input.process_packaging_cost_per_thousand_usd || 0) * fxRate).toLocaleString('es-PY')} <span className="text-xs font-normal text-slate-400">/1.000</span></span>
+                                ) : (
+                                  <span>${(input.process_packaging_cost_per_thousand_usd || 0).toFixed(4)} <span className="text-xs font-normal text-slate-400">USD/1.000</span></span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-emerald-400 font-mono">
+                                {summaryCurrency === 'PYG' && fxRate !== null ? (
+                                  <span>Gs. {Math.round(((input.process_packaging_cost_per_thousand_usd || 0) / 1000) * fxRate).toLocaleString('es-PY')} /u</span>
+                                ) : (
+                                  <span>${((input.process_packaging_cost_per_thousand_usd || 0) / 1000).toFixed(5)} /u</span>
+                                )}
+                              </div>
+                              {summaryCurrency === 'BOTH' && fxRate !== null && (
+                                <div className="mt-1 text-[11px] font-mono text-slate-400">
+                                  Gs. {Math.round((input.process_packaging_cost_per_thousand_usd || 0) * fxRate).toLocaleString('es-PY')} /1.000
+                                </div>
+                              )}
+                            </div>
+                            <div className="rounded bg-black/30 p-2.5">
+                              <div className="text-[11px] text-slate-400">Origen &amp; Prorrateo</div>
+                              <div className="mt-1 text-xs text-slate-300 font-mono">
+                                {input.process_calculation_detail?.status === 'COMPLETE'
+                                  ? `Base: ${(input.process_calculation_detail.good_units_basis || 0).toLocaleString('es-PY')} u`
+                                  : 'Pendiente de parametrización en Procesos'}
+                              </div>
+                              <a
+                                href="/cost/processes"
+                                className="mt-1 inline-block text-[11px] text-brand-400 hover:text-brand-300 underline"
+                              >
+                                Configurar en Procesos &rarr;
+                              </a>
+                            </div>
+                          </div>
+                        </div>
                       )}
-                      emptyWhenZero={emptyValues}
-                      secondaryText={getSecondaryEquivalence(input.packaging_cost_per_thousand_usd)}
-                      onChange={(val) =>
-                        handleMonetaryChange(val, (usdVal, origVal) => {
-                          updateInput({
-                            packaging_cost_per_thousand_usd: usdVal,
-                            currency_meta: {
-                              ...input.currency_meta,
-                              packaging_cost_per_thousand_original: origVal,
-                              currency: inputCurrency,
-                              fx_rate: fxRate || 1,
-                            },
-                          });
-                        })
-                      }
-                    />
+                    </div>
                   </RubricCard>
                 </div>
               </section>

@@ -31,6 +31,13 @@ import {
   ProductPackagingSpec,
   QuoteMatchResult,
   CostV1Configuration,
+  PlantGeneralParameters,
+  PlantProductionPeriod,
+  PackingSession,
+  PackingSessionSegment,
+  PackingSessionStatus,
+  IndustrialProcessSnapshot,
+  IndustrialCostBreakdown,
 } from '@/types';
 import {
   INITIAL_ORG,
@@ -51,8 +58,12 @@ import {
   INITIAL_FX_RATES,
   INITIAL_FX_SETTINGS,
   INITIAL_PACKAGING_SPECS,
+  INITIAL_PLANT_PARAMETERS,
+  INITIAL_PRODUCTION_PERIODS,
+  INITIAL_PACKING_SESSIONS,
 } from './seed-data';
 import { supabase, supabaseAdmin, isSupabaseConfigured, isSupabaseAdminConfigured } from './supabase';
+import { IndustrialCostEngine } from '@/lib/engines/industrial-cost-engine';
 
 function normalizeDomain(input?: string | null): string {
   if (!input) return '';
@@ -115,6 +126,10 @@ class Store {
   fxSettings: FxSettings = { ...INITIAL_FX_SETTINGS };
   packagingSpecs: ProductPackagingSpec[] = [...INITIAL_PACKAGING_SPECS];
   quoteMatches: QuoteMatchResult[] = [];
+  plantParameters: PlantGeneralParameters = { ...INITIAL_PLANT_PARAMETERS };
+  productionPeriods: PlantProductionPeriod[] = [...INITIAL_PRODUCTION_PERIODS];
+  packingSessions: PackingSession[] = [...INITIAL_PACKING_SESSIONS];
+  industrialSnapshots: IndustrialProcessSnapshot[] = [];
 }
 
 // Global singleton across server restarts during dev
@@ -514,8 +529,10 @@ export const repository = {
   },
 
   // Cost Sheets & Process
-  async getCostSheets(): Promise<CostSheetVersion[]> {
-    return [...store.costSheets];
+  async getCostSheets(organizationId?: string, sku?: string): Promise<CostSheetVersion[]> {
+    let sheets = [...store.costSheets];
+    if (sku) sheets = sheets.filter((s) => s.sku === sku);
+    return sheets;
   },
   async getCostSheet(id: string): Promise<CostSheetVersion | undefined> {
     return store.costSheets.find((c) => c.id === id);
@@ -545,6 +562,12 @@ export const repository = {
       } as CostSheetVersion;
     }
     return store.costSheets.find((c) => c.sku === sku && c.status === 'ACTIVE');
+  },
+  async getActiveCostSheet(first: string, second?: string): Promise<CostSheetVersion | undefined> {
+    const looksLikeSku = store.skus.some((s) => s.sku === first);
+    const sku = looksLikeSku ? first : (second || first);
+    const orgId = looksLikeSku ? second : first;
+    return this.getActiveCostSheetForSKU(sku, orgId);
   },
   async saveCostSheet(sheet: CostSheetVersion, organizationId?: string): Promise<CostSheetVersion> {
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
@@ -639,6 +662,151 @@ export const repository = {
     if (target) {
       target.status = 'ARCHIVED';
     }
+  },
+  async publishOfficialCostSheet(
+    params: {
+      sku: string;
+      batchSize: number;
+      breakdown: IndustrialCostBreakdown;
+      fxRate?: number;
+      actorId?: string;
+    },
+    organizationId: string
+  ): Promise<CostSheetVersion> {
+    const { sku, batchSize, breakdown, fxRate, actorId } = params;
+    if (!breakdown.configured) {
+      throw new Error('CANNOT_PUBLISH_INCOMPLETE: No se puede publicar la hoja oficial: faltan parámetros requeridos.');
+    }
+
+    const skus = await this.getSKUs(organizationId);
+    const skuRecord = skus.find((candidate) => candidate.sku === sku);
+    if (!skuRecord) throw new Error(`SKU ${sku} is not present in the product master`);
+
+    const existingActive = await this.getActiveCostSheetForSKU(sku, organizationId);
+    const nextVersion = existingActive ? (Number(existingActive.version) || 1) + 1 : 1;
+    const newSheetId = crypto.randomUUID();
+    const components = IndustrialCostEngine.toV1CostComponents(breakdown, newSheetId);
+    const now = new Date().toISOString();
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      // 1. Insert new sheet with temporary status 'DRAFT' to ensure components insert before any activation
+      const newSheetRecord = {
+        id: newSheetId,
+        organization_id: organizationId,
+        product_id: skuRecord.product_id,
+        sku,
+        version: nextVersion,
+        name: `Hoja de costo V1 · ${sku} (v${nextVersion})`,
+        batch_size: batchSize,
+        effective_date: now.split('T')[0],
+        status: 'DRAFT' as const,
+        true_unit_cost_usd: breakdown.true_unit_cost_usd,
+        true_unit_cost_pyg: fxRate ? Math.round(breakdown.true_unit_cost_usd * fxRate) : undefined,
+        fx_rate_used: fxRate,
+        minimum_sustainable_price_usd: breakdown.true_unit_cost_usd,
+        break_even_units: 0,
+        notes: `Cost Intelligence V1: versión oficial v${nextVersion}. Seis rubros configurables por SKU.`,
+        updated_at: now,
+      };
+
+      const { data: savedSheet, error: sheetError } = await supabaseAdmin
+        .from('cost_sheet_versions')
+        .insert(newSheetRecord)
+        .select('*')
+        .single();
+      if (sheetError) throw new Error(`cost_sheet_versions insert: ${sheetError.message}`);
+
+      try {
+        // 2. Insert components for the new sheet
+        for (const comp of components) {
+          const { error: compError } = await supabaseAdmin.from('cost_components').insert({
+            id: comp.id,
+            cost_sheet_id: newSheetId,
+            category: comp.category,
+            name: comp.name,
+            component_type: comp.component_type,
+            basis: comp.basis,
+            rate_usd: comp.rate_usd,
+            quantity: comp.quantity,
+            unit_of_measure: comp.unit_of_measure,
+            effective_date: comp.effective_date,
+            notes: comp.notes,
+            updated_at: now,
+          });
+          if (compError) throw new Error(`cost_components insert: ${compError.message}`);
+        }
+
+        // 3. Archive previous active version (if any)
+        if (existingActive) {
+          const { error: archiveError } = await supabaseAdmin
+            .from('cost_sheet_versions')
+            .update({ status: 'ARCHIVED', updated_at: now })
+            .eq('id', existingActive.id)
+            .eq('organization_id', organizationId);
+          if (archiveError) throw new Error(`cost_sheet_versions archive: ${archiveError.message}`);
+        }
+
+        // 4. Activate the new version
+        const { error: activateError } = await supabaseAdmin
+          .from('cost_sheet_versions')
+          .update({ status: 'ACTIVE', updated_at: now })
+          .eq('id', newSheetId)
+          .eq('organization_id', organizationId);
+        if (activateError) throw new Error(`cost_sheet_versions activate: ${activateError.message}`);
+      } catch (innerError) {
+        // Rollback: delete the incomplete pending sheet to prevent orphaned corrupted state
+        await supabaseAdmin.from('cost_components').delete().eq('cost_sheet_id', newSheetId);
+        await supabaseAdmin.from('cost_sheet_versions').delete().eq('id', newSheetId);
+        throw innerError;
+      }
+
+      await this.logAuditEvent({
+        event_type: 'cost_edit',
+        target_entity: 'cost_sheet_versions',
+        entity_id: newSheetId,
+        metadata: { sku, version: nextVersion, true_cost: breakdown.true_unit_cost_usd, action: 'PUBLISH_OFFICIAL' },
+      });
+
+      return {
+        ...savedSheet,
+        status: 'ACTIVE',
+        components,
+      } as CostSheetVersion;
+    }
+
+    // In-memory store transaction
+    if (existingActive) {
+      existingActive.status = 'ARCHIVED';
+    }
+
+    const officialSheet: CostSheetVersion = {
+      id: newSheetId,
+      organization_id: organizationId,
+      product_id: skuRecord.product_id,
+      sku,
+      version: nextVersion,
+      name: `Hoja de costo V1 · ${sku} (v${nextVersion})`,
+      batch_size: batchSize,
+      effective_date: now.split('T')[0],
+      status: 'ACTIVE',
+      true_unit_cost_usd: breakdown.true_unit_cost_usd,
+      true_unit_cost_pyg: fxRate ? Math.round(breakdown.true_unit_cost_usd * fxRate) : undefined,
+      fx_rate_used: fxRate,
+      minimum_sustainable_price_usd: breakdown.true_unit_cost_usd,
+      break_even_units: 0,
+      components,
+      notes: `Cost Intelligence V1: versión oficial v${nextVersion}. Seis rubros configurables por SKU.`,
+      };
+    store.costSheets.push(officialSheet);
+
+    await this.logAuditEvent({
+      event_type: 'cost_edit',
+      target_entity: 'cost_sheet_versions',
+      entity_id: newSheetId,
+      metadata: { sku, version: nextVersion, true_cost: breakdown.true_unit_cost_usd, action: 'PUBLISH_OFFICIAL' },
+    });
+
+    return officialSheet;
   },
   async getIndustrialCostInputs(): Promise<IndustrialProductCostInput[]> {
     return [...store.industrialCostInputs];
@@ -1001,5 +1169,837 @@ export const repository = {
     };
     store.quoteMatches.unshift(newMatch);
     return newMatch;
+  },
+
+  // Industrial Processes V2 — Plant Parameters
+  async getPlantParameters(organizationId?: string): Promise<PlantGeneralParameters> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('plant_process_parameters')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .maybeSingle();
+
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla plant_process_parameters no encontrada en Supabase (migración 20261008000001_industrial_processes_v2.sql pendiente). Usando store en memoria.');
+            return { ...store.plantParameters };
+          }
+          throw new Error(`plant_process_parameters: ${error.message}`);
+        }
+
+        if (data) {
+          return {
+            id: data.id,
+            organization_id: data.organization_id,
+            electricity_rate_pyg_kwh: Number(data.electricity_rate_pyg_kwh),
+            monthly_salary_hours: Number(data.monthly_salary_hours),
+            labor_charges_percent: Number(data.labor_charges_percent),
+            operator_monthly_salary_pyg: Number(data.operator_monthly_salary_pyg),
+            packer_monthly_salary_pyg: Number(data.packer_monthly_salary_pyg),
+            gen1_machines_count: Number(data.gen1_machines_count),
+            gen1_power_kw: Number(data.gen1_power_kw),
+            gen1_operators_count: Number(data.gen1_operators_count),
+            gen1_operating_hours: Number(data.gen1_operating_hours),
+            gen2_machines_count: Number(data.gen2_machines_count),
+            gen2_power_kw: Number(data.gen2_power_kw),
+            gen2_operators_count: Number(data.gen2_operators_count),
+            gen2_operating_hours: Number(data.gen2_operating_hours),
+            quality_inspectors_count: Number(data.quality_inspectors_count),
+            quality_monthly_salary_pyg: Number(data.quality_monthly_salary_pyg),
+            quality_polypaper_percent: Number(data.quality_polypaper_percent),
+            quality_labor_charges_included: Boolean(data.quality_labor_charges_included),
+            packaging_materials_cost_per_thousand_usd: Number(data.packaging_materials_cost_per_thousand_usd),
+            updated_at: data.updated_at,
+            updated_by: data.updated_by,
+          };
+        }
+
+        // Insert default if not present
+        const defaultRecord = {
+          ...INITIAL_PLANT_PARAMETERS,
+          id: crypto.randomUUID(),
+          organization_id: organizationId,
+          updated_at: new Date().toISOString(),
+        };
+        const { data: inserted, error: insertError } = await supabaseAdmin
+          .from('plant_process_parameters')
+          .insert(defaultRecord)
+          .select('*')
+          .single();
+
+        if (insertError) {
+          if (isSchemaMissingError(insertError)) {
+            console.warn('[Industrial Processes V2] Tabla plant_process_parameters pendiente en Supabase. Usando store en memoria.');
+            return { ...store.plantParameters };
+          }
+          throw new Error(`plant_process_parameters insert: ${insertError.message}`);
+        }
+        return inserted as PlantGeneralParameters;
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema en plant_process_parameters. Usando store en memoria.', err.message);
+          return { ...store.plantParameters };
+        }
+        throw err;
+      }
+    }
+    return { ...store.plantParameters };
+  },
+
+  async updatePlantParameters(
+    params: Partial<PlantGeneralParameters>,
+    organizationId?: string,
+    actorId?: string
+  ): Promise<PlantGeneralParameters> {
+    const orgId = organizationId || store.organizations[0].id;
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const record = {
+          ...params,
+          organization_id: orgId,
+          updated_at: new Date().toISOString(),
+          updated_by: actorId,
+        };
+        const { data, error } = await supabaseAdmin
+          .from('plant_process_parameters')
+          .upsert(record, { onConflict: 'organization_id' })
+          .select('*')
+          .single();
+
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla plant_process_parameters no encontrada en Supabase. Guardando en memoria local.');
+            store.plantParameters = { ...store.plantParameters, ...params, updated_at: new Date().toISOString() };
+            return { ...store.plantParameters };
+          }
+          throw new Error(`plant_process_parameters update: ${error.message}`);
+        }
+        return data as PlantGeneralParameters;
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al actualizar parámetros. Guardando en memoria local.', err.message);
+          store.plantParameters = { ...store.plantParameters, ...params, updated_at: new Date().toISOString() };
+          return { ...store.plantParameters };
+        }
+        throw err;
+      }
+    }
+    store.plantParameters = {
+      ...store.plantParameters,
+      ...params,
+      updated_at: new Date().toISOString(),
+    };
+    return { ...store.plantParameters };
+  },
+
+  // Industrial Processes V2 — Packing Stopwatch Sessions
+  async getPackingSessions(
+    filters?: { status?: PackingSessionStatus; line_name?: string; period?: string; sku?: string },
+    organizationId?: string
+  ): Promise<PackingSession[]> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        let query = supabaseAdmin
+          .from('packing_sessions')
+          .select('*, packing_session_segments(*)')
+          .eq('organization_id', organizationId);
+        if (filters?.status) query = query.eq('status', filters.status);
+        if (filters?.line_name) query = query.eq('line_name', filters.line_name);
+        if (filters?.sku) query = query.eq('sku', filters.sku);
+        query = query.order('started_at', { ascending: false });
+
+        const { data, error } = await query;
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla packing_sessions pendiente en Supabase. Usando store en memoria.');
+          } else {
+            throw new Error(`packing_sessions: ${error.message}`);
+          }
+        } else if (data) {
+          return (data || []).map((row: any) => ({
+            ...row,
+            total_person_hours: Number(row.total_person_hours),
+            total_duration_minutes: Number(row.total_duration_minutes),
+            segments: (row.packing_session_segments || []).sort(
+              (a: any, b: any) => a.segment_order - b.segment_order
+            ),
+          }));
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema en packing_sessions. Usando store en memoria.', err.message);
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    let sessions = [...store.packingSessions];
+    if (filters?.status) sessions = sessions.filter((s) => s.status === filters.status);
+    if (filters?.line_name) sessions = sessions.filter((s) => s.line_name === filters.line_name);
+    if (filters?.sku) sessions = sessions.filter((s) => s.sku === filters.sku);
+    if (filters?.period) {
+      sessions = sessions.filter((s) => s.started_at.startsWith(filters.period!));
+    }
+    return sessions.sort((a, b) => b.started_at.localeCompare(a.started_at));
+  },
+
+  async getPackingSession(id: string, organizationId?: string): Promise<PackingSession | undefined> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('packing_sessions')
+          .select('*, packing_session_segments(*)')
+          .eq('id', id)
+          .eq('organization_id', organizationId)
+          .maybeSingle();
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla packing_sessions pendiente. Usando store en memoria.');
+          } else {
+            throw new Error(`packing_sessions: ${error.message}`);
+          }
+        } else if (data) {
+          return {
+            ...data,
+            total_person_hours: Number(data.total_person_hours),
+            total_duration_minutes: Number(data.total_duration_minutes),
+            segments: (data.packing_session_segments || []).sort(
+              (a: any, b: any) => a.segment_order - b.segment_order
+            ),
+          };
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al leer sesión. Usando memoria.', err.message);
+        } else {
+          throw err;
+        }
+      }
+    }
+    return store.packingSessions.find((s) => s.id === id);
+  },
+
+  async createPackingSession(
+    data: {
+      line_name: string;
+      sku?: string;
+      production_order?: string;
+      initial_headcount?: number;
+      headcount?: number;
+      reason?: string;
+      operator_user_id?: string;
+      organization_id?: string;
+    },
+    organizationId?: string
+  ): Promise<PackingSession> {
+    return this.startPackingSession(
+      {
+        ...data,
+        initial_headcount: data.initial_headcount ?? data.headcount ?? 1,
+      },
+      organizationId || data.organization_id
+    );
+  },
+
+  async startPackingSession(
+    data: {
+      line_name: string;
+      sku?: string;
+      production_order?: string;
+      initial_headcount: number;
+      reason?: string;
+      operator_user_id?: string;
+    },
+    organizationId?: string
+  ): Promise<PackingSession> {
+    const orgId = organizationId || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const sessionId = crypto.randomUUID();
+    const segmentId = crypto.randomUUID();
+    const codeSuffix = Date.now().toString().slice(-6);
+    const session_code = `SES-${codeSuffix}`;
+    const headcount = Math.max(1, Math.round(data.initial_headcount || 1));
+
+    const initialSegment: PackingSessionSegment = {
+      id: segmentId,
+      session_id: sessionId,
+      segment_order: 1,
+      headcount,
+      started_at: now,
+      duration_minutes: 0,
+      person_hours: 0,
+      reason: data.reason || 'Inicio de sesión',
+    };
+
+    const newSession: PackingSession = {
+      id: sessionId,
+      organization_id: orgId,
+      session_code,
+      line_name: data.line_name,
+      sku: data.sku,
+      production_order: data.production_order,
+      operator_user_id: data.operator_user_id,
+      started_at: now,
+      status: 'RUNNING',
+      total_person_hours: 0,
+      total_duration_minutes: 0,
+      segments: [initialSegment],
+      created_at: now,
+      updated_at: now,
+    };
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const { data: created, error } = await supabaseAdmin
+          .from('packing_sessions')
+          .insert({
+            id: newSession.id,
+            organization_id: newSession.organization_id,
+            session_code: newSession.session_code,
+            line_name: newSession.line_name,
+            sku: newSession.sku,
+            production_order: newSession.production_order,
+            operator_user_id: newSession.operator_user_id,
+            started_at: newSession.started_at,
+            status: newSession.status,
+            total_person_hours: 0,
+            total_duration_minutes: 0,
+            created_at: now,
+            updated_at: now,
+          })
+          .select('*')
+          .single();
+
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla packing_sessions pendiente en Supabase. Guardando en memoria local.');
+          } else {
+            throw new Error(`create packing session: ${error.message}`);
+          }
+        } else {
+          const { error: segError } = await supabaseAdmin
+            .from('packing_session_segments')
+            .insert({
+              id: initialSegment.id,
+              session_id: sessionId,
+              segment_order: 1,
+              headcount,
+              started_at: now,
+              reason: initialSegment.reason,
+            });
+          if (segError && !isSchemaMissingError(segError)) {
+            throw new Error(`create initial segment: ${segError.message}`);
+          }
+          if (created) {
+            return { ...created, segments: [initialSegment] } as PackingSession;
+          }
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al iniciar sesión. Guardando en memoria.', err.message);
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    store.packingSessions.unshift(newSession);
+    return newSession;
+  },
+
+  async addPackingSessionSegment(
+    sessionId: string,
+    data: { headcount: number; reason?: string },
+    organizationId?: string
+  ): Promise<PackingSession> {
+    return this.changePackingHeadcount(sessionId, data.headcount, data.reason, organizationId);
+  },
+
+  async changePackingHeadcount(
+    sessionId: string,
+    newHeadcount: number,
+    reason?: string,
+    organizationId?: string
+  ): Promise<PackingSession> {
+    const session = await this.getPackingSession(sessionId, organizationId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    if (session.status !== 'RUNNING') throw new Error(`Cannot change headcount on session with status ${session.status}`);
+
+    const now = new Date().toISOString();
+    const segments = session.segments || [];
+    const openSegment = segments.find((s) => !s.ended_at);
+
+    if (openSegment) {
+      openSegment.ended_at = now;
+      const durationMs = Math.max(0, new Date(now).getTime() - new Date(openSegment.started_at).getTime());
+      openSegment.duration_minutes = Number((durationMs / 60000).toFixed(2));
+      openSegment.person_hours = Number(((openSegment.duration_minutes / 60) * openSegment.headcount).toFixed(3));
+    }
+
+    const nextOrder = segments.length + 1;
+    const headcount = Math.max(1, Math.round(newHeadcount));
+    const newSegment: PackingSessionSegment = {
+      id: crypto.randomUUID(),
+      session_id: sessionId,
+      segment_order: nextOrder,
+      headcount,
+      started_at: now,
+      duration_minutes: 0,
+      person_hours: 0,
+      reason: reason || `Cambio de dotación a ${headcount} operarios`,
+    };
+    segments.push(newSegment);
+
+    const totalMinutes = segments.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
+    const totalPersonHours = segments.reduce((sum, s) => sum + (s.person_hours || 0), 0);
+
+    session.segments = segments;
+    session.total_duration_minutes = Number(totalMinutes.toFixed(2));
+    session.total_person_hours = Number(totalPersonHours.toFixed(3));
+    session.updated_at = now;
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        if (openSegment) {
+          await supabaseAdmin
+            .from('packing_session_segments')
+            .update({
+              ended_at: openSegment.ended_at,
+              duration_minutes: openSegment.duration_minutes,
+              person_hours: openSegment.person_hours,
+            })
+            .eq('id', openSegment.id);
+        }
+        await supabaseAdmin
+          .from('packing_session_segments')
+          .insert({
+            id: newSegment.id,
+            session_id: sessionId,
+            segment_order: nextOrder,
+            headcount,
+            started_at: now,
+            reason: newSegment.reason,
+          });
+
+        await supabaseAdmin
+          .from('packing_sessions')
+          .update({
+            total_duration_minutes: session.total_duration_minutes,
+            total_person_hours: session.total_person_hours,
+            updated_at: now,
+          })
+          .eq('id', sessionId);
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Supabase schema pendiente al actualizar segmentos. Guardando en memoria.');
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    return session;
+  },
+
+  async stopPackingSession(sessionId: string, organizationId?: string): Promise<PackingSession> {
+    const session = await this.getPackingSession(sessionId, organizationId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    if (session.status !== 'RUNNING') return session;
+
+    const now = new Date().toISOString();
+    const segments = session.segments || [];
+    const openSegment = segments.find((s) => !s.ended_at);
+
+    if (openSegment) {
+      openSegment.ended_at = now;
+      const durationMs = Math.max(0, new Date(now).getTime() - new Date(openSegment.started_at).getTime());
+      openSegment.duration_minutes = Number((durationMs / 60000).toFixed(2));
+      openSegment.person_hours = Number(((openSegment.duration_minutes / 60) * openSegment.headcount).toFixed(3));
+    }
+
+    const totalMinutes = segments.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
+    const totalPersonHours = segments.reduce((sum, s) => sum + (s.person_hours || 0), 0);
+
+    session.status = 'STOPPED';
+    session.stopped_at = now;
+    session.total_duration_minutes = Number(totalMinutes.toFixed(2));
+    session.total_person_hours = Number(totalPersonHours.toFixed(3));
+    session.updated_at = now;
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        if (openSegment) {
+          await supabaseAdmin
+            .from('packing_session_segments')
+            .update({
+              ended_at: openSegment.ended_at,
+              duration_minutes: openSegment.duration_minutes,
+              person_hours: openSegment.person_hours,
+            })
+            .eq('id', openSegment.id);
+        }
+        await supabaseAdmin
+          .from('packing_sessions')
+          .update({
+            status: 'STOPPED',
+            stopped_at: now,
+            total_duration_minutes: session.total_duration_minutes,
+            total_person_hours: session.total_person_hours,
+            updated_at: now,
+          })
+          .eq('id', sessionId);
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Supabase schema pendiente al detener sesión. Guardando en memoria.');
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    return session;
+  },
+
+  async approvePackingSession(sessionId: string, approverId?: string, organizationId?: string): Promise<PackingSession> {
+    let session = await this.getPackingSession(sessionId, organizationId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+
+    if (session.status === 'RUNNING') {
+      session = await this.stopPackingSession(sessionId, organizationId);
+    }
+
+    const now = new Date().toISOString();
+    session.status = 'APPROVED';
+    session.approved_at = now;
+    session.approved_by = approverId;
+    session.updated_at = now;
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin
+          .from('packing_sessions')
+          .update({
+            status: 'APPROVED',
+            approved_at: now,
+            approved_by: approverId,
+            updated_at: now,
+          })
+          .eq('id', sessionId);
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Supabase schema pendiente al aprobar sesión. Guardando en memoria.');
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    return session;
+  },
+
+  async correctPackingSession(
+    sessionId: string,
+    updates: { total_person_hours?: number; notes?: string },
+    organizationId?: string
+  ): Promise<PackingSession> {
+    const session = await this.getPackingSession(sessionId, organizationId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+
+    const now = new Date().toISOString();
+    session.status = 'CORRECTED';
+    if (updates.total_person_hours !== undefined) {
+      session.total_person_hours = Number(updates.total_person_hours);
+    }
+    if (updates.notes) {
+      session.notes = session.notes ? `${session.notes} | Corrección: ${updates.notes}` : updates.notes;
+    }
+    session.updated_at = now;
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin
+          .from('packing_sessions')
+          .update({
+            status: 'CORRECTED',
+            total_person_hours: session.total_person_hours,
+            notes: session.notes,
+            updated_at: now,
+          })
+          .eq('id', sessionId);
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Supabase schema pendiente al corregir sesión.');
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    return session;
+  },
+
+  async voidPackingSession(sessionId: string, reason?: string, organizationId?: string): Promise<PackingSession> {
+    const session = await this.getPackingSession(sessionId, organizationId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+
+    const now = new Date().toISOString();
+    session.status = 'VOIDED';
+    if (reason) {
+      session.notes = session.notes ? `${session.notes} | Anulada: ${reason}` : `Anulada: ${reason}`;
+    }
+    session.updated_at = now;
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin
+          .from('packing_sessions')
+          .update({
+            status: 'VOIDED',
+            notes: session.notes,
+            updated_at: now,
+          })
+          .eq('id', sessionId);
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Supabase schema pendiente al anular sesión.');
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    return session;
+  },
+
+  // Industrial Processes V2 — Production Periods
+  async getProductionPeriods(organizationId?: string): Promise<PlantProductionPeriod[]> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('plant_production_periods')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .order('period', { ascending: false });
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla plant_production_periods pendiente en Supabase.');
+          } else {
+            throw new Error(`plant_production_periods: ${error.message}`);
+          }
+        } else if (data) {
+          return (data || []).map((row: any) => ({
+            ...row,
+            good_units_produced: Number(row.good_units_produced),
+          }));
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al leer períodos.');
+        } else {
+          throw err;
+        }
+      }
+    }
+    return [...store.productionPeriods];
+  },
+
+  async getProductionPeriod(sku: string, period: string, organizationId?: string): Promise<PlantProductionPeriod | undefined> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('plant_production_periods')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .eq('sku', sku)
+          .eq('period', period)
+          .maybeSingle();
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla plant_production_periods pendiente en Supabase.');
+          } else {
+            throw new Error(`plant_production_periods: ${error.message}`);
+          }
+        } else if (data) {
+          return {
+            ...data,
+            good_units_produced: Number(data.good_units_produced),
+          };
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al leer período.');
+        } else {
+          throw err;
+        }
+      }
+    }
+    return store.productionPeriods.find((p) => p.sku === sku && p.period === period);
+  },
+
+  async saveProductionPeriod(
+    periodData: Partial<PlantProductionPeriod> & { sku: string; period: string },
+    organizationId?: string
+  ): Promise<PlantProductionPeriod> {
+    const orgId = organizationId || store.organizations[0].id;
+    const now = new Date().toISOString();
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const record = {
+          organization_id: orgId,
+          sku: periodData.sku,
+          period: periodData.period,
+          good_units_produced: periodData.good_units_produced ?? 0,
+          updated_at: now,
+        };
+        const { data, error } = await supabaseAdmin
+          .from('plant_production_periods')
+          .upsert(record, { onConflict: 'organization_id,period,sku' })
+          .select('*')
+          .single();
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla plant_production_periods pendiente en Supabase. Guardando en memoria local.');
+          } else {
+            throw new Error(`save production period: ${error.message}`);
+          }
+        } else if (data) {
+          return {
+            ...data,
+            good_units_produced: Number(data.good_units_produced),
+          };
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al guardar período. Guardando en memoria.');
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    const idx = store.productionPeriods.findIndex(
+      (p) => p.sku === periodData.sku && p.period === periodData.period
+    );
+    const updated: PlantProductionPeriod = {
+      id: idx >= 0 ? store.productionPeriods[idx].id : crypto.randomUUID(),
+      organization_id: orgId,
+      sku: periodData.sku,
+      period: periodData.period,
+      good_units_produced: periodData.good_units_produced ?? 0,
+      created_at: idx >= 0 ? store.productionPeriods[idx].created_at : now,
+      updated_at: now,
+    };
+    if (idx >= 0) {
+      store.productionPeriods[idx] = updated;
+    } else {
+      store.productionPeriods.push(updated);
+    }
+    return updated;
+  },
+
+  // Industrial Processes V2 — Process Snapshots
+  async getIndustrialProcessSnapshot(sku: string, period: string, organizationId?: string): Promise<IndustrialProcessSnapshot | undefined> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('industrial_process_snapshots')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .eq('sku', sku)
+          .eq('period', period)
+          .maybeSingle();
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla industrial_process_snapshots pendiente en Supabase.');
+          } else {
+            throw new Error(`industrial_process_snapshots: ${error.message}`);
+          }
+        } else if (data) {
+          return {
+            ...data,
+            calculation_detail: data.detail_json,
+          } as IndustrialProcessSnapshot;
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al leer snapshot.');
+        } else {
+          throw err;
+        }
+      }
+    }
+    return store.industrialSnapshots.find((s) => s.sku === sku && s.period === period);
+  },
+
+  async saveIndustrialProcessSnapshot(
+    snapshot: Omit<IndustrialProcessSnapshot, 'id'>,
+    organizationId?: string
+  ): Promise<IndustrialProcessSnapshot> {
+    const orgId = organizationId || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const detailJson = snapshot.detail_json || snapshot.calculation_detail || {};
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        // Table schema has EXACTLY: organization_id, sku, period, detail_json, calculated_at, created_by
+        const record = {
+          organization_id: orgId,
+          sku: snapshot.sku,
+          period: snapshot.period,
+          detail_json: detailJson,
+          calculated_at: now,
+          created_by: snapshot.created_by || null,
+        };
+        const { data, error } = await supabaseAdmin
+          .from('industrial_process_snapshots')
+          .upsert(record, { onConflict: 'organization_id,period,sku' })
+          .select('*')
+          .single();
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            console.warn('[Industrial Processes V2] Tabla industrial_process_snapshots pendiente en Supabase. Guardando en memoria local.');
+          } else {
+            throw new Error(`save process snapshot: ${error.message}`);
+          }
+        } else if (data) {
+          return {
+            ...data,
+            calculation_detail: data.detail_json,
+          } as IndustrialProcessSnapshot;
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          console.warn('[Industrial Processes V2] Error de esquema al guardar snapshot. Guardando en memoria local.', err.message);
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    const idx = store.industrialSnapshots.findIndex(
+      (s) => s.sku === snapshot.sku && s.period === snapshot.period
+    );
+    const item: IndustrialProcessSnapshot = {
+      id: idx >= 0 ? store.industrialSnapshots[idx].id : crypto.randomUUID(),
+      organization_id: orgId,
+      sku: snapshot.sku,
+      period: snapshot.period,
+      detail_json: detailJson,
+      calculation_detail: detailJson,
+      parameters_snapshot: snapshot.parameters_snapshot,
+      calculated_at: now,
+      created_by: snapshot.created_by,
+      created_at: idx >= 0 ? store.industrialSnapshots[idx].created_at : now,
+    };
+    if (idx >= 0) {
+      store.industrialSnapshots[idx] = item;
+    } else {
+      store.industrialSnapshots.push(item);
+    }
+    return item;
   },
 };
