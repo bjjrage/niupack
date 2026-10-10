@@ -24,6 +24,7 @@ import {
   Factory,
   Truck,
   Users,
+  Radar,
 } from 'lucide-react';
 
 interface NavSection {
@@ -61,6 +62,7 @@ const HINTS: Record<string, [string, string]> = {
   '/rfq/rfqs': ['Especificaciones RFQ', 'Pedidos de cotización recibidos, con sus especificaciones técnicas.'],
   '/rfq/inbox': ['Bandeja Gmail corporativa', 'Correos de cotización detectados en la casilla de la empresa.'],
   '/rfq/quotes': ['Extracción de cotizaciones', 'Lee cotizaciones de proveedores y las pasa a datos comparables.'],
+  '/licitaciones': ['Licitaciones', 'Radar de compras públicas de inyectables: detecta empresas que podrían comprar cunas para ampollas.'],
   '/logistics': ['Logística · resumen', 'Estado general de fletes, rutas y transportistas.'],
   '/logistics/ocean': ['Flete marítimo', 'Cotizaciones y rutas de contenedores.'],
   '/logistics/road': ['Flete terrestre', 'Cotizaciones de camión a la región.'],
@@ -143,6 +145,12 @@ export const Sidebar: React.FC = () => {
       title: 'Comercial',
       items: [
         { name: 'CRM', href: '/commercial', icon: Users, badge: 'NEW' },
+      ],
+    },
+    {
+      title: 'Licitaciones',
+      items: [
+        { name: 'Radar farmacéutico', href: '/licitaciones', icon: Radar },
       ],
     },
     {
@@ -235,7 +243,7 @@ export const Sidebar: React.FC = () => {
           const ModuleIcon = MODULE_ICON[section.title] ?? Layers;
           const containsActive = section.title === activeModule;
           // El CRM es un único destino: va directo, sin desplegable.
-          if (section.title === 'Comercial') {
+          if (section.title === 'Comercial' || section.title === 'Licitaciones') {
             const only = section.items[0];
             return renderItem({ ...only, name: section.title, icon: ModuleIcon });
           }
@@ -295,5 +303,6 @@ const MODULE_ICON: Record<string, React.ComponentType<{ className?: string }>> =
   RFQ: FileText,
   Logística: Truck,
   Comercial: Users,
+  Licitaciones: Radar,
   Sistema: Settings,
 };
