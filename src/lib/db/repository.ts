@@ -38,6 +38,14 @@ import {
   PackingSessionStatus,
   IndustrialProcessSnapshot,
   IndustrialCostBreakdown,
+  IndustrialSector,
+  PlantSalaryBand,
+  PlantSalaryBandRate,
+  PlantPersonnel,
+  PlantPersonnelAssignment,
+  SectorPersonnelSummary,
+  SectorPersonnelItem,
+  PackingLaborAllocation,
 } from '@/types';
 import {
   INITIAL_ORG,
@@ -61,6 +69,11 @@ import {
   INITIAL_PLANT_PARAMETERS,
   INITIAL_PRODUCTION_PERIODS,
   INITIAL_PACKING_SESSIONS,
+  INITIAL_SALARY_BANDS,
+  INITIAL_SALARY_BAND_RATES,
+  INITIAL_PLANT_PERSONNEL,
+  INITIAL_PERSONNEL_ASSIGNMENTS,
+  INITIAL_PACKING_LABOR_ALLOCATIONS,
 } from './seed-data';
 import { supabase, supabaseAdmin, isSupabaseConfigured, isSupabaseAdminConfigured } from './supabase';
 import { IndustrialCostEngine } from '@/lib/engines/industrial-cost-engine';
@@ -89,6 +102,18 @@ function isSchemaMissingError(error: unknown): boolean {
     msg.includes('does not exist') ||
     msg.includes('could not find the table')
   );
+}
+
+function isIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function shiftIsoDate(value: string, days: number): string {
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return parsed.toISOString().slice(0, 10);
 }
 
 const allowCostFixtures = process.env.NODE_ENV !== 'production' || process.env.NIU_ENABLE_COST_SEED_FIXTURES === 'true';
@@ -130,6 +155,11 @@ class Store {
   productionPeriods: PlantProductionPeriod[] = [...INITIAL_PRODUCTION_PERIODS];
   packingSessions: PackingSession[] = [...INITIAL_PACKING_SESSIONS];
   industrialSnapshots: IndustrialProcessSnapshot[] = [];
+  salaryBands: PlantSalaryBand[] = [...INITIAL_SALARY_BANDS];
+  salaryBandRates: PlantSalaryBandRate[] = [...INITIAL_SALARY_BAND_RATES];
+  plantPersonnel: PlantPersonnel[] = [...INITIAL_PLANT_PERSONNEL];
+  personnelAssignments: PlantPersonnelAssignment[] = [...INITIAL_PERSONNEL_ASSIGNMENTS];
+  packingLaborAllocations: PackingLaborAllocation[] = [...INITIAL_PACKING_LABOR_ALLOCATIONS];
 }
 
 // Global singleton across server restarts during dev
@@ -1379,7 +1409,7 @@ export const repository = {
         }
       }
     }
-    return store.packingSessions.find((s) => s.id === id);
+    return store.packingSessions.find((s) => s.id === id && (!organizationId || s.organization_id === organizationId));
   },
 
   async createPackingSession(
@@ -2001,5 +2031,1045 @@ export const repository = {
       store.industrialSnapshots.push(item);
     }
     return item;
+  },
+
+  // ==============================================================
+  // INDUSTRIAL PROCESSES — SALARY BANDS & PERSONNEL MASTER
+  // ==============================================================
+
+  // 1. Bandas Salariales (Plant Salary Bands)
+  async getSalaryBands(organizationId?: string, onDate?: string, activeOnly = true): Promise<PlantSalaryBand[]> {
+    const today = onDate || new Date().toISOString().split('T')[0];
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const { data: bandsData, error: bandsError } = await supabaseAdmin
+          .from('plant_salary_bands')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .order('name');
+        if (bandsError) {
+          if (isSchemaMissingError(bandsError)) {
+            console.warn('[Salary Bands] Tabla plant_salary_bands pendiente en Supabase. Usando store en memoria.');
+          } else {
+            throw new Error(`getSalaryBands: ${bandsError.message}`);
+          }
+        } else if (bandsData) {
+          // Fetch current rates
+          const { data: ratesData, error: ratesError } = await supabaseAdmin
+            .from('plant_salary_band_rates')
+            .select('*')
+            .eq('organization_id', organizationId)
+            .lte('valid_from', today)
+            .order('valid_from', { ascending: false });
+          if (ratesError) throw ratesError;
+
+          const mapped = bandsData.map((band: any) => {
+            const bandRates = (ratesData || []).filter((r: any) => r.band_id === band.id);
+            const activeRate = bandRates.find((r: any) => !r.valid_to || r.valid_to >= today);
+            return {
+              id: band.id,
+              organization_id: band.organization_id,
+              name: band.name,
+              description: band.description || undefined,
+              status: band.status,
+              monthly_salary_pyg: activeRate ? Number(activeRate.monthly_salary_pyg) : 0,
+              current_rate: activeRate ? {
+                id: activeRate.id,
+                organization_id: activeRate.organization_id,
+                band_id: activeRate.band_id,
+                monthly_salary_pyg: Number(activeRate.monthly_salary_pyg),
+                valid_from: activeRate.valid_from,
+                valid_to: activeRate.valid_to || null,
+                notes: activeRate.notes || undefined,
+                created_at: activeRate.created_at,
+              } : undefined,
+              created_at: band.created_at,
+              updated_at: band.updated_at,
+            };
+          });
+          return activeOnly ? mapped.filter((b: any) => b.status === 'ACTIVE') : mapped;
+        }
+      } catch (err: any) {
+        if (!isSchemaMissingError(err)) throw err;
+      }
+    }
+
+    // In-memory fallback
+    const orgId = organizationId || store.organizations[0].id;
+    return store.salaryBands
+      .filter((b) => (!organizationId || b.organization_id === orgId) && (!activeOnly || b.status === 'ACTIVE'))
+      .map((band) => {
+        const rates = store.salaryBandRates
+          .filter((r) => r.band_id === band.id && r.valid_from <= today)
+          .sort((a, b) => b.valid_from.localeCompare(a.valid_from));
+        const activeRate = rates.find((r) => !r.valid_to || r.valid_to >= today);
+        return {
+          ...band,
+          monthly_salary_pyg: activeRate ? Number(activeRate.monthly_salary_pyg) : band.monthly_salary_pyg,
+          current_rate: activeRate,
+        };
+      });
+  },
+
+  async getSalaryBand(id: string, organizationId?: string, activeOnly = true): Promise<PlantSalaryBand | undefined> {
+    const bands = await this.getSalaryBands(organizationId, undefined, activeOnly);
+    return bands.find((b) => b.id === id);
+  },
+
+  async createSalaryBand(
+    band: Omit<PlantSalaryBand, 'id' | 'monthly_salary_pyg'>,
+    initialSalaryPyg: number,
+    validFrom?: string,
+    organizationId?: string,
+    actorId?: string
+  ): Promise<PlantSalaryBand> {
+    const orgId = organizationId || band.organization_id || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const today = validFrom || now.split('T')[0];
+    if (!isIsoDate(today)) throw new Error('INVALID_VALID_FROM');
+    const safeSalary = Math.max(Number(initialSalaryPyg) || 0, 0);
+
+    if ((!organizationId || !isSupabaseAdminConfigured) && store.salaryBands.some((candidate) =>
+      candidate.organization_id === orgId && candidate.name.trim().toLowerCase() === band.name.trim().toLowerCase()
+    )) throw new Error('BAND_NAME_ALREADY_EXISTS');
+
+    const bandId = crypto.randomUUID();
+    const rateId = crypto.randomUUID();
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const { data: bandData, error: bandErr } = await supabaseAdmin
+          .from('plant_salary_bands')
+          .insert({
+            id: bandId,
+            organization_id: orgId,
+            name: band.name.trim(),
+            description: band.description || null,
+            status: band.status || 'ACTIVE',
+            created_at: now,
+            updated_at: now,
+          })
+          .select()
+          .single();
+        if (bandErr) throw new Error(`createSalaryBand: ${bandErr.message}`);
+
+        const { error: rateErr } = await supabaseAdmin
+          .from('plant_salary_band_rates')
+          .insert({
+            id: rateId,
+            organization_id: orgId,
+            band_id: bandId,
+            monthly_salary_pyg: safeSalary,
+            valid_from: today,
+            valid_to: null,
+            notes: 'Tarifa inicial de creación de banda',
+            created_at: now,
+            created_by: actorId || null,
+          });
+        if (rateErr) {
+          await supabaseAdmin.from('plant_salary_bands').delete().eq('id', bandId).eq('organization_id', orgId);
+          throw rateErr;
+        }
+
+        return {
+          id: bandId,
+          organization_id: orgId,
+          name: band.name.trim(),
+          description: band.description,
+          status: band.status || 'ACTIVE',
+          monthly_salary_pyg: safeSalary,
+          current_rate: {
+            id: rateId,
+            organization_id: orgId,
+            band_id: bandId,
+            monthly_salary_pyg: safeSalary,
+            valid_from: today,
+            valid_to: null,
+            created_at: now,
+          },
+          created_at: now,
+          updated_at: now,
+        };
+      } catch (err: any) {
+        if (!isSchemaMissingError(err)) throw err;
+      }
+    }
+
+    const newBand: PlantSalaryBand = {
+      id: bandId,
+      organization_id: orgId,
+      name: band.name.trim(),
+      description: band.description,
+      status: band.status || 'ACTIVE',
+      monthly_salary_pyg: safeSalary,
+      current_rate: {
+        id: rateId,
+        organization_id: orgId,
+        band_id: bandId,
+        monthly_salary_pyg: safeSalary,
+        valid_from: today,
+        valid_to: null,
+        created_at: now,
+      },
+      created_at: now,
+      updated_at: now,
+    };
+    store.salaryBands.push(newBand);
+    store.salaryBandRates.push(newBand.current_rate!);
+    return newBand;
+  },
+
+  async updateSalaryBand(
+    id: string,
+      updates: Pick<Partial<PlantSalaryBand>, 'name' | 'description' | 'status'>,
+    newSalaryPyg?: number,
+    validFrom?: string,
+    organizationId?: string,
+    actorId?: string
+  ): Promise<PlantSalaryBand> {
+    const orgId = organizationId || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const today = validFrom || now.split('T')[0];
+    if (newSalaryPyg !== undefined && !isIsoDate(today)) throw new Error('INVALID_VALID_FROM');
+    const existingBand = await this.getSalaryBand(id, organizationId, false);
+    if (!existingBand) throw new Error('SALARY_BAND_NOT_FOUND');
+    if (newSalaryPyg !== undefined && (!Number.isFinite(Number(newSalaryPyg)) || Number(newSalaryPyg) < 0)) {
+      throw new Error('INVALID_SALARY');
+    }
+    if (updates.name !== undefined && (!updates.name.trim() || ((!organizationId || !isSupabaseAdminConfigured) && store.salaryBands.some((candidate) =>
+      candidate.organization_id === orgId && candidate.id !== id && candidate.name.trim().toLowerCase() === updates.name!.trim().toLowerCase()
+    )))) throw new Error('BAND_NAME_ALREADY_EXISTS');
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const updateFields: any = { updated_at: now };
+        if (updates.name !== undefined) updateFields.name = updates.name.trim();
+        if (updates.description !== undefined) updateFields.description = updates.description;
+        if (updates.status !== undefined) updateFields.status = updates.status;
+
+        const { data: updatedBand, error: updateErr } = await supabaseAdmin
+          .from('plant_salary_bands')
+          .update(updateFields)
+          .eq('id', id)
+          .eq('organization_id', orgId)
+          .select()
+          .single();
+        if (updateErr) throw new Error(`updateSalaryBand: ${updateErr.message}`);
+
+        if (newSalaryPyg !== undefined && Number(newSalaryPyg) >= 0) {
+          const safeSalary = Number(newSalaryPyg);
+          const { data: rates, error: ratesError } = await supabaseAdmin
+            .from('plant_salary_band_rates')
+            .select('id, valid_from, valid_to')
+            .eq('band_id', id)
+            .eq('organization_id', orgId)
+            .order('valid_from');
+          if (ratesError) throw ratesError;
+
+          const sameStart = (rates || []).find((rate: any) => rate.valid_from === today);
+          if (sameStart) {
+            const { error } = await supabaseAdmin
+              .from('plant_salary_band_rates')
+              .update({ monthly_salary_pyg: safeSalary })
+              .eq('id', sameStart.id)
+              .eq('organization_id', orgId);
+            if (error) throw error;
+          } else {
+            const priorRates = (rates || []).filter(
+              (rate: any) => rate.valid_from < today && (!rate.valid_to || rate.valid_to >= today)
+            );
+            for (const rate of priorRates) {
+              const { error } = await supabaseAdmin
+                .from('plant_salary_band_rates')
+                .update({ valid_to: shiftIsoDate(today, -1) })
+                .eq('id', rate.id)
+                .eq('organization_id', orgId);
+              if (error) throw error;
+            }
+            const nextRate = (rates || []).find((rate: any) => rate.valid_from > today);
+            const { error } = await supabaseAdmin
+              .from('plant_salary_band_rates')
+              .insert({
+                id: crypto.randomUUID(),
+                organization_id: orgId,
+                band_id: id,
+                monthly_salary_pyg: safeSalary,
+                valid_from: today,
+                valid_to: nextRate ? shiftIsoDate(nextRate.valid_from, -1) : null,
+                notes: 'Actualización de tarifa salarial con vigencia',
+                created_at: now,
+                created_by: actorId || null,
+              });
+            if (error) throw error;
+          }
+        }
+      } catch (err: any) {
+        if (!isSchemaMissingError(err)) throw err;
+      }
+    }
+
+    // In-memory update
+    const bandIdx = store.salaryBands.findIndex((b) => b.id === id);
+    if (bandIdx >= 0) {
+      store.salaryBands[bandIdx] = {
+        ...store.salaryBands[bandIdx],
+        ...updates,
+        updated_at: now,
+      };
+
+      if (newSalaryPyg !== undefined && Number(newSalaryPyg) >= 0) {
+        const safeSalary = Number(newSalaryPyg);
+        const sameStart = store.salaryBandRates.find((rate) => rate.band_id === id && rate.valid_from === today);
+        let newRate: PlantSalaryBandRate;
+        if (sameStart) {
+          sameStart.monthly_salary_pyg = safeSalary;
+          newRate = sameStart;
+        } else {
+          store.salaryBandRates.forEach((rate) => {
+            if (rate.band_id === id && rate.valid_from < today && (!rate.valid_to || rate.valid_to >= today)) {
+              rate.valid_to = shiftIsoDate(today, -1);
+            }
+          });
+          const nextRate = store.salaryBandRates
+            .filter((rate) => rate.band_id === id && rate.valid_from > today)
+            .sort((a, b) => a.valid_from.localeCompare(b.valid_from))[0];
+          newRate = {
+            id: crypto.randomUUID(),
+            organization_id: orgId,
+            band_id: id,
+            monthly_salary_pyg: safeSalary,
+            valid_from: today,
+            valid_to: nextRate ? shiftIsoDate(nextRate.valid_from, -1) : null,
+            created_at: now,
+            created_by: actorId,
+          };
+          store.salaryBandRates.push(newRate);
+        }
+        store.salaryBands[bandIdx].monthly_salary_pyg = safeSalary;
+        store.salaryBands[bandIdx].current_rate = newRate;
+      }
+    }
+
+    return (await this.getSalaryBand(id, organizationId, false)) || store.salaryBands[bandIdx];
+  },
+
+  async deleteOrDeactivateSalaryBand(
+    id: string,
+    organizationId?: string
+  ): Promise<{ success: boolean; deactivated?: boolean }> {
+    const orgId = organizationId || store.organizations[0].id;
+    const band = await this.getSalaryBand(id, organizationId, false);
+    if (!band) throw new Error('SALARY_BAND_NOT_FOUND');
+
+    // Check persisted and in-memory references before deciding whether a band can be removed.
+    const [assignments, allocations] = await Promise.all([
+      this.getPersonnelAssignments(orgId, undefined, false),
+      this.getPackingLaborAllocations(undefined, orgId),
+    ]);
+    const hasAssignments = assignments.some((a) => a.salary_band_id === id);
+    const hasAllocations = allocations.some((a) => a.salary_band_id === id);
+
+    if (hasAssignments || hasAllocations) {
+      // Safe guard: deactivate instead of hard delete to preserve historical integrity
+      await this.updateSalaryBand(id, { status: 'INACTIVE' }, undefined, undefined, organizationId);
+      return { success: true, deactivated: true };
+    }
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const { error } = await supabaseAdmin.from('plant_salary_bands').delete().eq('id', id).eq('organization_id', orgId);
+        if (error) throw error;
+      } catch (err: any) {
+        if (!isSchemaMissingError(err)) throw err;
+      }
+    }
+
+    store.salaryBands = store.salaryBands.filter((b) => b.id !== id);
+    store.salaryBandRates = store.salaryBandRates.filter((r) => r.band_id !== id);
+    return { success: true, deactivated: false };
+  },
+
+  async getSalaryBandRates(bandId: string, organizationId?: string): Promise<PlantSalaryBandRate[]> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('plant_salary_band_rates')
+          .select('*')
+          .eq('band_id', bandId)
+          .eq('organization_id', organizationId)
+          .order('valid_from', { ascending: false });
+        if (error) {
+          if (!isSchemaMissingError(error)) throw error;
+        } else if (data) {
+          return data.map((r: any) => ({
+            id: r.id,
+            organization_id: r.organization_id,
+            band_id: r.band_id,
+            monthly_salary_pyg: Number(r.monthly_salary_pyg),
+            valid_from: r.valid_from,
+            valid_to: r.valid_to || null,
+            notes: r.notes || undefined,
+            created_at: r.created_at,
+            created_by: r.created_by,
+          }));
+        }
+      } catch (err) {
+        if (!isSchemaMissingError(err)) throw err;
+      }
+    }
+    return store.salaryBandRates
+      .filter((r) => r.band_id === bandId && (!organizationId || r.organization_id === organizationId))
+      .sort((a, b) => b.valid_from.localeCompare(a.valid_from));
+  },
+
+  // 2. Maestro de Personal de Planta (Plant Personnel)
+  async getPersonnel(organizationId?: string, sector?: IndustrialSector, onDate?: string): Promise<PlantPersonnel[]> {
+    const orgId = organizationId || store.organizations[0].id;
+    const today = onDate || new Date().toISOString().split('T')[0];
+
+    const allAssignments = await this.getPersonnelAssignments(orgId, undefined, true, today);
+    const allBands = await this.getSalaryBands(orgId, today, false);
+
+    let members: PlantPersonnel[] = [];
+    let loadedFromDatabase = false;
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('plant_personnel')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .order('employee_code');
+        if (error) {
+          if (!isSchemaMissingError(error)) throw error;
+        } else if (data) {
+          loadedFromDatabase = true;
+          members = data.map((p: any) => ({
+            id: p.id,
+            organization_id: p.organization_id,
+            employee_code: p.employee_code,
+            display_name: p.display_name,
+            status: p.status,
+            hire_date: p.hire_date,
+            termination_date: p.termination_date || null,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+          }));
+        }
+      } catch (err) {
+        if (!isSchemaMissingError(err)) throw err;
+      }
+    }
+
+    if (!loadedFromDatabase) {
+      members = store.plantPersonnel.filter((p) => !organizationId || p.organization_id === orgId);
+    }
+
+    // Populate assignments, active band and salary
+    const populated = members.map((member) => {
+      const isEmployedToday = member.hire_date <= today && (!member.termination_date || member.termination_date >= today) &&
+        (member.status === 'ACTIVE' || Boolean(member.termination_date && member.termination_date >= today));
+      const memberAssignments = isEmployedToday ? allAssignments.filter((a) => a.personnel_id === member.id) : [];
+      const primaryAssignment = memberAssignments[0];
+      const band = primaryAssignment ? allBands.find((b) => b.id === primaryAssignment.salary_band_id) : undefined;
+      const currentSalaryPyg = memberAssignments.reduce((sum, assignment) => {
+        const assignedBand = allBands.find((candidate) => candidate.id === assignment.salary_band_id);
+        return sum + (Number(assignedBand?.monthly_salary_pyg) || 0) * assignment.allocation_percent / 100;
+      }, 0);
+      return {
+        ...member,
+        primary_sector: primaryAssignment?.sector || member.primary_sector,
+        current_band_id: band?.id || member.current_band_id,
+        current_band_name: band?.name || member.current_band_name,
+        current_salary_pyg: memberAssignments.length ? currentSalaryPyg : (member.status === 'ACTIVE' ? member.current_salary_pyg || 0 : 0),
+        assignments: memberAssignments,
+      };
+    });
+
+    if (sector) {
+      return populated.filter((m) => m.assignments?.some((a) => a.sector === sector) || m.primary_sector === sector);
+    }
+    return populated;
+  },
+
+  async getPersonnelMember(id: string, organizationId?: string): Promise<PlantPersonnel | undefined> {
+    const all = await this.getPersonnel(organizationId);
+    return all.find((p) => p.id === id);
+  },
+
+  async createPersonnel(
+    member: Omit<PlantPersonnel, 'id'>,
+    initialBandId?: string,
+    initialSector?: IndustrialSector,
+    organizationId?: string
+  ): Promise<PlantPersonnel> {
+    const orgId = organizationId || member.organization_id || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const id = crypto.randomUUID();
+
+    const newMember: PlantPersonnel = {
+      id,
+      organization_id: orgId,
+      employee_code: member.employee_code.trim(),
+      display_name: member.display_name.trim(),
+      status: member.status || 'ACTIVE',
+      hire_date: member.hire_date || now.split('T')[0],
+      termination_date: member.termination_date || null,
+      primary_sector: initialSector || member.primary_sector,
+      current_band_id: initialBandId,
+      created_at: now,
+      updated_at: now,
+    };
+    if (!newMember.employee_code || !newMember.display_name || !isIsoDate(newMember.hire_date)) {
+      throw new Error('INVALID_PERSONNEL');
+    }
+    if (newMember.status !== 'ACTIVE' && newMember.status !== 'INACTIVE') throw new Error('INVALID_PERSONNEL_STATUS');
+    if (newMember.termination_date && (!isIsoDate(newMember.termination_date) || newMember.termination_date < newMember.hire_date)) {
+      throw new Error('INVALID_TERMINATION_DATE');
+    }
+
+    if ((!organizationId || !isSupabaseAdminConfigured) && store.plantPersonnel.some((p) =>
+      p.organization_id === orgId && p.employee_code.toLowerCase() === newMember.employee_code.toLowerCase()
+    )) throw new Error('EMPLOYEE_CODE_ALREADY_EXISTS');
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const { error } = await supabaseAdmin.from('plant_personnel').insert({
+          id,
+          organization_id: orgId,
+          employee_code: newMember.employee_code,
+          display_name: newMember.display_name,
+          status: newMember.status,
+          hire_date: newMember.hire_date,
+          termination_date: newMember.termination_date,
+          created_at: now,
+          updated_at: now,
+        });
+        if (error) {
+          if (error.code === '23505') throw new Error('EMPLOYEE_CODE_ALREADY_EXISTS');
+          throw error;
+        }
+      } catch (err: any) {
+        if (!isSchemaMissingError(err)) throw err;
+      }
+    }
+
+    store.plantPersonnel.push(newMember);
+
+    // Initial assignment if specified
+    if (initialBandId && initialSector) {
+      await this.savePersonnelAssignment(
+        {
+          organization_id: orgId,
+          personnel_id: id,
+          salary_band_id: initialBandId,
+          sector: initialSector,
+          allocation_percent: 100,
+          valid_from: newMember.hire_date,
+          valid_to: null,
+        },
+        orgId
+      );
+    }
+
+    return (await this.getPersonnelMember(id, organizationId)) || newMember;
+  },
+
+  async updatePersonnel(
+    id: string,
+    updates: Pick<Partial<PlantPersonnel>, 'employee_code' | 'display_name' | 'status' | 'hire_date' | 'termination_date'>,
+    organizationId?: string
+  ): Promise<PlantPersonnel> {
+    const orgId = organizationId || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const existingMember = await this.getPersonnelMember(id, organizationId);
+    if (!existingMember) throw new Error('PERSONNEL_NOT_FOUND');
+    if (updates.hire_date !== undefined && !isIsoDate(updates.hire_date)) throw new Error('INVALID_HIRE_DATE');
+    const effectiveHireDate = updates.hire_date || existingMember.hire_date;
+    const effectiveTerminationDate = updates.termination_date !== undefined ? updates.termination_date : existingMember.termination_date;
+    if (effectiveTerminationDate && (!isIsoDate(effectiveTerminationDate) || effectiveTerminationDate < effectiveHireDate)) {
+      throw new Error('INVALID_TERMINATION_DATE');
+    }
+    if (updates.employee_code !== undefined) {
+      const members = await this.getPersonnel(organizationId);
+      if (members.some((member) => member.id !== id && member.employee_code.toLowerCase() === updates.employee_code!.trim().toLowerCase())) {
+        throw new Error('EMPLOYEE_CODE_ALREADY_EXISTS');
+      }
+    }
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const updateFields: any = { updated_at: now };
+        if (updates.employee_code !== undefined) updateFields.employee_code = updates.employee_code.trim();
+        if (updates.display_name !== undefined) updateFields.display_name = updates.display_name.trim();
+        if (updates.status !== undefined) updateFields.status = updates.status;
+        if (updates.hire_date !== undefined) updateFields.hire_date = updates.hire_date;
+        if (updates.termination_date !== undefined) updateFields.termination_date = updates.termination_date;
+
+        const { data, error } = await supabaseAdmin
+          .from('plant_personnel')
+          .update(updateFields)
+          .eq('id', id)
+          .eq('organization_id', orgId)
+          .select('id');
+        if (error) throw error;
+        if (!data?.length) throw new Error('PERSONNEL_NOT_FOUND');
+      } catch (err: any) {
+        if (!isSchemaMissingError(err)) throw err;
+      }
+    }
+
+    const idx = store.plantPersonnel.findIndex((p) => p.id === id && p.organization_id === orgId);
+    if (idx >= 0) {
+      store.plantPersonnel[idx] = {
+        ...store.plantPersonnel[idx],
+        ...updates,
+        updated_at: now,
+      };
+    }
+
+    const updated = await this.getPersonnelMember(id, organizationId);
+    if (!updated && idx < 0) throw new Error('PERSONNEL_NOT_FOUND');
+    return updated || store.plantPersonnel[idx];
+  },
+
+  async deleteOrDeactivatePersonnel(
+    id: string,
+    organizationId?: string
+  ): Promise<{ success: boolean; deactivated?: boolean }> {
+    await this.updatePersonnel(id, { status: 'INACTIVE', termination_date: new Date().toISOString().split('T')[0] }, organizationId);
+    return { success: true, deactivated: true };
+  },
+
+  // 3. Asignaciones de Personal (Personnel Assignments)
+  async getPersonnelAssignments(
+    organizationId?: string,
+    sector?: IndustrialSector,
+    activeOnly = true,
+    onDate?: string
+  ): Promise<PlantPersonnelAssignment[]> {
+    const orgId = organizationId || store.organizations[0].id;
+    const targetDate = onDate || new Date().toISOString().split('T')[0];
+
+    const allBands = await this.getSalaryBands(orgId, targetDate, false);
+
+    let rawAssignments: PlantPersonnelAssignment[] = [];
+    let loadedFromDatabase = false;
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        let query = supabaseAdmin
+          .from('plant_personnel_assignments')
+          .select('*')
+          .eq('organization_id', organizationId);
+        if (sector) query = query.eq('sector', sector);
+        if (activeOnly) {
+          query = query.lte('valid_from', targetDate);
+        }
+        const { data, error } = await query;
+        if (error) {
+          if (!isSchemaMissingError(error)) throw error;
+        } else if (data) {
+          loadedFromDatabase = true;
+          rawAssignments = data.map((a: any) => ({
+            id: a.id,
+            organization_id: a.organization_id,
+            personnel_id: a.personnel_id,
+            salary_band_id: a.salary_band_id,
+            sector: a.sector as IndustrialSector,
+            line_id: a.line_id || undefined,
+            allocation_percent: Number(a.allocation_percent),
+            valid_from: a.valid_from,
+            valid_to: a.valid_to || null,
+            created_at: a.created_at,
+            updated_at: a.updated_at,
+          }));
+        }
+      } catch (err) {
+        if (!isSchemaMissingError(err)) throw err;
+      }
+    }
+
+    if (!loadedFromDatabase) {
+      rawAssignments = store.personnelAssignments.filter((a) => !organizationId || a.organization_id === orgId);
+    }
+
+    const filtered = rawAssignments.filter((a) => {
+      if (sector && a.sector !== sector) return false;
+      if (activeOnly) {
+        if (a.valid_from > targetDate) return false;
+        if (a.valid_to && a.valid_to < targetDate) return false;
+      }
+      return true;
+    });
+
+    return filtered.map((a) => {
+      const band = allBands.find((b) => b.id === a.salary_band_id);
+      return {
+        ...a,
+        band_name: band?.name || 'Banda',
+        monthly_salary_pyg: band?.monthly_salary_pyg || 0,
+      };
+    });
+  },
+
+  async savePersonnelAssignment(
+    assignment: Omit<PlantPersonnelAssignment, 'id'>,
+    organizationId?: string
+  ): Promise<PlantPersonnelAssignment> {
+    const orgId = organizationId || assignment.organization_id || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const targetDate = assignment.valid_from || now.split('T')[0];
+    const allocationPercent = Number(assignment.allocation_percent);
+    const sectors: IndustrialSector[] = ['FORMADO_GEN1', 'FORMADO_GEN2', 'CALIDAD', 'EMPAQUE'];
+    if (!sectors.includes(assignment.sector)) throw new Error('INVALID_SECTOR');
+    if (!isIsoDate(targetDate) || (assignment.valid_to && (!isIsoDate(assignment.valid_to) || assignment.valid_to < targetDate))) {
+      throw new Error('INVALID_ASSIGNMENT_DATES');
+    }
+    if (!Number.isFinite(allocationPercent) || allocationPercent <= 0 || allocationPercent > 100) {
+      throw new Error('INVALID_ALLOCATION_PERCENT');
+    }
+
+    const member = await this.getPersonnelMember(assignment.personnel_id, orgId);
+    if (!member) throw new Error('PERSONNEL_NOT_FOUND');
+    if (member.status !== 'ACTIVE') throw new Error('PERSONNEL_INACTIVE');
+    if (member.hire_date > targetDate || (member.termination_date && member.termination_date < targetDate)) {
+      throw new Error('PERSONNEL_NOT_ACTIVE_ON_DATE');
+    }
+    const band = await this.getSalaryBand(assignment.salary_band_id, orgId);
+    if (!band) throw new Error('SALARY_BAND_NOT_FOUND');
+
+    const history = await this.getPersonnelAssignments(orgId, undefined, false, targetDate);
+    const sameSector = history.filter((a) => a.personnel_id === assignment.personnel_id && a.sector === assignment.sector);
+    const sameStart = sameSector.find((a) => a.valid_from === targetDate);
+    const previousRows = sameSector.filter((a) => a.valid_from < targetDate && (!a.valid_to || a.valid_to >= targetDate));
+    const nextRow = sameSector
+      .filter((a) => a.valid_from > targetDate)
+      .sort((a, b) => a.valid_from.localeCompare(b.valid_from))[0];
+    const requestedEnd = assignment.valid_to || null;
+    const nextStartEnd = nextRow ? shiftIsoDate(nextRow.valid_from, -1) : null;
+    const effectiveEnd = requestedEnd && nextStartEnd
+      ? (requestedEnd < nextStartEnd ? requestedEnd : nextStartEnd)
+      : requestedEnd || nextStartEnd;
+
+    const existingActive = await this.getPersonnelAssignments(orgId, undefined, true, targetDate);
+    const otherAllocationsSum = existingActive
+      .filter((a) => a.personnel_id === assignment.personnel_id && a.sector !== assignment.sector)
+      .reduce((sum, a) => sum + a.allocation_percent, 0);
+    if (otherAllocationsSum + allocationPercent > 100) throw new Error('ASSIGNMENT_ALLOCATION_EXCEEDED');
+
+    const id = sameStart?.id || crypto.randomUUID();
+    const item: PlantPersonnelAssignment = {
+      id,
+      organization_id: orgId,
+      personnel_id: assignment.personnel_id,
+      salary_band_id: assignment.salary_band_id,
+      sector: assignment.sector,
+      line_id: assignment.line_id,
+      allocation_percent: allocationPercent,
+      valid_from: targetDate,
+      valid_to: effectiveEnd,
+      created_at: now,
+      updated_at: now,
+    };
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        for (const previous of previousRows) {
+          const { error } = await supabaseAdmin
+            .from('plant_personnel_assignments')
+            .update({ valid_to: shiftIsoDate(targetDate, -1), updated_at: now })
+            .eq('id', previous.id)
+            .eq('organization_id', orgId);
+          if (error) throw error;
+        }
+        const values = {
+          personnel_id: item.personnel_id,
+          salary_band_id: item.salary_band_id,
+          sector: item.sector,
+          line_id: item.line_id || null,
+          allocation_percent: item.allocation_percent,
+          valid_from: item.valid_from,
+          valid_to: item.valid_to,
+          updated_at: now,
+        };
+        const result = sameStart
+          ? await supabaseAdmin.from('plant_personnel_assignments').update(values).eq('id', id).eq('organization_id', orgId)
+          : await supabaseAdmin.from('plant_personnel_assignments').insert({
+              id,
+              organization_id: orgId,
+              ...values,
+              created_at: now,
+            });
+        if (result.error) throw result.error;
+      } catch (err: any) {
+        if (!isSchemaMissingError(err)) throw err;
+      }
+    }
+
+    for (const previous of previousRows) {
+      const stored = store.personnelAssignments.find((a) => a.id === previous.id);
+      if (stored) stored.valid_to = shiftIsoDate(targetDate, -1);
+    }
+    if (sameStart) {
+      const index = store.personnelAssignments.findIndex((a) => a.id === id);
+      if (index >= 0) store.personnelAssignments[index] = { ...store.personnelAssignments[index], ...item };
+      else store.personnelAssignments.push(item);
+    } else {
+      store.personnelAssignments.push(item);
+    }
+
+    return item;
+  },
+
+  async deletePersonnelAssignment(id: string, organizationId?: string): Promise<void> {
+    const orgId = organizationId || store.organizations[0].id;
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const { error } = await supabaseAdmin
+          .from('plant_personnel_assignments')
+          .delete()
+          .eq('id', id)
+          .eq('organization_id', orgId);
+        if (error) throw error;
+      } catch (err: any) {
+        if (!isSchemaMissingError(err)) throw err;
+      }
+    }
+    store.personnelAssignments = store.personnelAssignments.filter((a) => !(a.id === id && a.organization_id === orgId));
+  },
+
+  // 4. Resumen Sectorial de Personal (Sector Personnel Summary)
+  async getSectorPersonnelSummary(
+    organizationId?: string,
+    onDate?: string,
+    monthlySalaryHours = 200,
+    laborChargesPercent = 16.5
+  ): Promise<Record<IndustrialSector, SectorPersonnelSummary>> {
+    const orgId = organizationId || store.organizations[0].id;
+    const targetDate = onDate || new Date().toISOString().split('T')[0];
+
+    const sectors: IndustrialSector[] = ['FORMADO_GEN1', 'FORMADO_GEN2', 'CALIDAD', 'EMPAQUE'];
+    const assignments = await this.getPersonnelAssignments(orgId, undefined, true, targetDate);
+    const personnelMembers = await this.getPersonnel(orgId, undefined, targetDate);
+    const laborMultiplier = 1 + (Number(laborChargesPercent) || 0) / 100;
+    const safeHours = monthlySalaryHours > 0 ? monthlySalaryHours : 200;
+
+    const result: Partial<Record<IndustrialSector, SectorPersonnelSummary>> = {};
+
+    for (const sector of sectors) {
+      const sectorAssignments = assignments.filter((a) => a.sector === sector);
+      const items: SectorPersonnelItem[] = [];
+
+      let totalBasePyg = 0;
+      let totalHourlyRatePyg = 0;
+
+      for (const assign of sectorAssignments) {
+        const member = personnelMembers.find((m) => m.id === assign.personnel_id);
+        if (!member || member.hire_date > targetDate || (member.termination_date && member.termination_date < targetDate)) continue;
+        if (member.status !== 'ACTIVE' && (!member.termination_date || member.termination_date <= targetDate)) continue;
+        const monthlySalary = Number(assign.monthly_salary_pyg) || 0;
+        const allocationFactor = (Number(assign.allocation_percent) || 100) / 100;
+        const effectiveSalaryPyg = monthlySalary * allocationFactor;
+        const hourlyRatePyg = safeHours > 0 ? (effectiveSalaryPyg * laborMultiplier) / safeHours : 0;
+
+        totalBasePyg += effectiveSalaryPyg;
+        totalHourlyRatePyg += hourlyRatePyg;
+
+        items.push({
+          personnel_id: assign.personnel_id,
+          employee_code: member.employee_code,
+          display_name: member.display_name,
+          band_id: assign.salary_band_id,
+          band_name: assign.band_name || 'Banda',
+          monthly_salary_pyg: monthlySalary,
+          allocation_percent: assign.allocation_percent,
+          effective_monthly_salary_pyg: effectiveSalaryPyg,
+          hourly_rate_pyg: hourlyRatePyg,
+        });
+      }
+
+      const assignedCount = items.length;
+      const hourlyAvgPyg = assignedCount > 0 ? totalHourlyRatePyg / assignedCount : 0;
+      const totalWithChargesPyg = totalBasePyg * laborMultiplier;
+
+      result[sector] = {
+        sector,
+        assigned_count: assignedCount,
+        monthly_salary_base_pyg: totalBasePyg,
+        monthly_salary_with_charges_pyg: totalWithChargesPyg,
+        hourly_rate_avg_pyg: hourlyAvgPyg,
+        personnel: items,
+        is_configured: assignedCount > 0,
+      };
+    }
+
+    return result as Record<IndustrialSector, SectorPersonnelSummary>;
+  },
+
+  // 5. Imputaciones Salariales de Empaque (Packing Labor Allocations)
+  async getPackingLaborAllocations(
+    sessionIdOrIds?: string | string[],
+    organizationId?: string
+  ): Promise<PackingLaborAllocation[]> {
+    const orgId = organizationId || store.organizations[0].id;
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        let query = supabaseAdmin
+          .from('packing_labor_allocations')
+          .select('*')
+          .eq('organization_id', orgId);
+        if (typeof sessionIdOrIds === 'string') {
+          query = query.eq('session_id', sessionIdOrIds);
+        } else if (Array.isArray(sessionIdOrIds) && sessionIdOrIds.length > 0) {
+          query = query.in('session_id', sessionIdOrIds);
+        }
+        const { data, error } = await query;
+        if (error) {
+          if (!isSchemaMissingError(error)) throw error;
+        } else if (data) {
+          const bands = await this.getSalaryBands(orgId, undefined, false);
+          return data.map((a: any) => {
+            const band = bands.find((b) => b.id === a.salary_band_id);
+            return {
+              id: a.id,
+              organization_id: a.organization_id,
+              session_id: a.session_id,
+              session_segment_id: a.session_segment_id || undefined,
+              salary_band_id: a.salary_band_id,
+              salary_band_name: band?.name || 'Banda',
+              headcount: Number(a.headcount),
+              hourly_rate_snapshot_pyg: Number(a.hourly_rate_snapshot_pyg),
+              calculated_cost_pyg: Number(a.calculated_cost_pyg),
+              notes: a.notes || undefined,
+              approved_by: a.approved_by || undefined,
+              approved_at: a.approved_at,
+            };
+          });
+        }
+      } catch (err) {
+        if (!isSchemaMissingError(err)) throw err;
+      }
+    }
+
+    let allocs = store.packingLaborAllocations.filter((a) => !organizationId || a.organization_id === orgId);
+    if (typeof sessionIdOrIds === 'string') {
+      allocs = allocs.filter((a) => a.session_id === sessionIdOrIds);
+    } else if (Array.isArray(sessionIdOrIds) && sessionIdOrIds.length > 0) {
+      allocs = allocs.filter((a) => sessionIdOrIds.includes(a.session_id));
+    }
+    return allocs;
+  },
+
+  async approvePackingSessionWithLaborAllocations(
+    sessionId: string,
+    allocations: Array<{
+      segment_id?: string;
+      salary_band_id: string;
+      headcount: number;
+      duration_hours?: number;
+    }>,
+    supervisorId?: string,
+    organizationId?: string
+  ): Promise<PackingSession> {
+    const orgId = organizationId || store.organizations[0].id;
+    const now = new Date().toISOString();
+    let session = await this.getPackingSession(sessionId, orgId);
+    if (!session) throw new Error(`Sesión ${sessionId} no encontrada.`);
+    if (session.status === 'APPROVED') throw new Error('La sesión ya está aprobada.');
+    if (session.status === 'VOIDED') throw new Error('La sesión está anulada.');
+
+    const existingAllocations = await this.getPackingLaborAllocations(sessionId, orgId);
+    if (existingAllocations.length > 0) throw new Error('La sesión ya tiene imputaciones salariales.');
+
+    const bands = await this.getSalaryBands(orgId, session.started_at.split('T')[0], false);
+    const params = await this.getPlantParameters(orgId);
+    const safeHours = Number(params.monthly_salary_hours) || 200;
+    const laborMultiplier = 1 + (Number(params.labor_charges_percent) || 0) / 100;
+
+    // Validate all rows before saving so an invalid band cannot leave a partially allocated session.
+    const normalized = allocations.map((alloc) => {
+      const headcount = Number(alloc.headcount);
+      const durationHours = alloc.duration_hours === undefined ? undefined : Number(alloc.duration_hours);
+      if (!Number.isInteger(headcount) || headcount <= 0) throw new Error('La cantidad de personas debe ser un entero mayor a 0.');
+      if (durationHours !== undefined && (!Number.isFinite(durationHours) || durationHours <= 0)) {
+        throw new Error('La duración asignada debe ser mayor a 0.');
+      }
+      const segment = alloc.segment_id ? session!.segments?.find((entry) => entry.id === alloc.segment_id) : undefined;
+      if (alloc.segment_id && !segment) throw new Error('El segmento indicado no pertenece a la sesión.');
+      if (segment && headcount > segment.headcount) throw new Error('La dotación asignada supera el segmento de la sesión.');
+      const band = bands.find((candidate) => candidate.id === alloc.salary_band_id);
+      if (!band || !band.current_rate) throw new Error('La banda salarial indicada no tiene tarifa vigente para la sesión.');
+      return { ...alloc, headcount, duration_hours: durationHours, segment, band };
+    });
+
+    if (session.segments?.length && normalized.some((alloc) => alloc.segment)) {
+      for (const segment of session.segments) {
+        const assignedHeads = normalized
+          .filter((alloc) => alloc.segment_id === segment.id)
+          .reduce((sum, alloc) => sum + alloc.headcount, 0);
+        if (assignedHeads !== segment.headcount) {
+          throw new Error(`La dotación asignada del segmento ${segment.segment_order} debe sumar ${segment.headcount} personas.`);
+        }
+      }
+    }
+
+    // Preserve the existing approval behavior: a running session is stopped before its final hours are costed.
+    if (session.status === 'RUNNING') {
+      session = await this.stopPackingSession(sessionId, orgId);
+    }
+
+    // Create allocation snapshots
+    const createdAllocations: PackingLaborAllocation[] = [];
+    for (const alloc of normalized) {
+      const bandSalary = alloc.band.monthly_salary_pyg;
+      const hourlyRate = safeHours > 0 ? (bandSalary * laborMultiplier) / safeHours : 0;
+      const hours = Number(alloc.duration_hours) > 0
+        ? Number(alloc.duration_hours)
+        : alloc.segment
+          ? (Number(alloc.segment.person_hours) / alloc.segment.headcount)
+          : (session.total_person_hours && alloc.headcount > 0 ? session.total_person_hours / alloc.headcount : 0);
+      if (hours <= 0) throw new Error('No se pudo determinar la duración de la imputación.');
+      const calculatedCost = alloc.headcount * hours * hourlyRate;
+
+      const record: PackingLaborAllocation = {
+        id: crypto.randomUUID(),
+        organization_id: orgId,
+        session_id: sessionId,
+        session_segment_id: alloc.segment_id,
+        salary_band_id: alloc.salary_band_id,
+        salary_band_name: alloc.band.name,
+        headcount: alloc.headcount,
+        hourly_rate_snapshot_pyg: hourlyRate,
+        calculated_cost_pyg: calculatedCost,
+        approved_by: supervisorId,
+        approved_at: now,
+      };
+
+      createdAllocations.push(record);
+    }
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const { error } = await supabaseAdmin.from('packing_labor_allocations').insert(createdAllocations.map((record) => ({
+        id: record.id,
+        organization_id: orgId,
+        session_id: record.session_id,
+        session_segment_id: record.session_segment_id || null,
+        salary_band_id: record.salary_band_id,
+        headcount: record.headcount,
+        hourly_rate_snapshot_pyg: record.hourly_rate_snapshot_pyg,
+        calculated_cost_pyg: record.calculated_cost_pyg,
+        approved_by: supervisorId || null,
+        approved_at: now,
+      })));
+      if (error && !isSchemaMissingError(error)) throw error;
+      if (error && isSchemaMissingError(error)) {
+        store.packingLaborAllocations.push(...createdAllocations);
+      }
+    } else {
+      store.packingLaborAllocations.push(...createdAllocations);
+    }
+
+    // Approve the session
+    const approvedSession = await this.approvePackingSession(sessionId, supervisorId, orgId);
+    return approvedSession;
   },
 };

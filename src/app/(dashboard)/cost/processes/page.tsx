@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
   Factory,
   Zap,
@@ -28,6 +29,10 @@ import {
   PackingSession,
   PlantGeneralParameters,
   ProductAttribute,
+  IndustrialSector,
+  PackingLaborAllocation,
+  PlantSalaryBand,
+  SectorPersonnelSummary,
 } from '@/types';
 import { IndustrialProcessCostEngine } from '@/lib/engines/industrial-process-cost-engine';
 
@@ -40,6 +45,7 @@ export default function ProcessesPage() {
 
   // FX state
   const [fx, setFx] = useState<{ rate: number; mode: string; source: string } | null>(null);
+  const [sectorPersonnelSummaries, setSectorPersonnelSummaries] = useState<Partial<Record<IndustrialSector, SectorPersonnelSummary>>>({});
 
   // Plant parameters
   const [params, setParams] = useState<PlantGeneralParameters>({
@@ -65,6 +71,12 @@ export default function ProcessesPage() {
 
   // Packing sessions
   const [sessions, setSessions] = useState<PackingSession[]>([]);
+  const [salaryBands, setSalaryBands] = useState<PlantSalaryBand[]>([]);
+  const [sessionSalaryBands, setSessionSalaryBands] = useState<PlantSalaryBand[]>([]);
+  const [packingLaborAllocations, setPackingLaborAllocations] = useState<PackingLaborAllocation[]>([]);
+  const [allocationSession, setAllocationSession] = useState<PackingSession | null>(null);
+  const [allocationBandsBySegment, setAllocationBandsBySegment] = useState<Record<string, Array<{ salary_band_id: string; headcount: string }>>>({});
+  const [savingSessionAllocation, setSavingSessionAllocation] = useState(false);
   const [showSessionsModal, setShowSessionsModal] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
   const [qrTokenData, setQrTokenData] = useState<{ url: string; token: string } | null>(null);
@@ -96,7 +108,8 @@ export default function ProcessesPage() {
     setFeedback(null);
     try {
       // 1. Parameters & FX
-      const paramRes = await fetch('/api/cost/processes/parameters');
+      const targetDate = /^\d{4}-\d{2}$/.test(selectedPeriod) ? `${selectedPeriod}-01` : undefined;
+      const paramRes = await fetch(`/api/cost/processes/parameters${targetDate ? `?target_date=${targetDate}` : ''}`);
       const paramData = await paramRes.json();
       if (paramData.success) {
         if (paramData.parameters) {
@@ -105,6 +118,7 @@ export default function ProcessesPage() {
             setSchemaWarning('Base de datos: Migración 20261008000001_industrial_processes_v2.sql pendiente en Supabase. Operando con persistencia local de respaldo.');
           }
         }
+        setSectorPersonnelSummaries(paramData.sectorPersonnelSummaries || {});
         if (paramData.fx) setFx(paramData.fx);
       }
 
@@ -113,6 +127,21 @@ export default function ProcessesPage() {
       const sessionData = await sessionRes.json();
       if (sessionData.success && sessionData.sessions) {
         setSessions(sessionData.sessions);
+        const bandsRes = await fetch('/api/cost/processes/salary-bands');
+        const bandsData = await bandsRes.json();
+        const availableBands: PlantSalaryBand[] = bandsData.success ? bandsData.bands || [] : [];
+        setSalaryBands(availableBands);
+        const approvedSessions = sessionData.sessions.filter((session: PackingSession) => session.status === 'APPROVED');
+        const sessionAllocationResults = await Promise.all(approvedSessions.map(async (session: PackingSession) => {
+          try {
+            const response = await fetch(`/api/cost/processes/packing/sessions/${session.id}/allocate`);
+            const data = await response.json();
+            return response.ok && data.success ? data.allocations as PackingLaborAllocation[] : [];
+          } catch {
+            return [];
+          }
+        }));
+        setPackingLaborAllocations(sessionAllocationResults.flat());
       }
 
       // 3. SKUs Master: fix contract check (do NOT require skuData.success)
@@ -143,6 +172,18 @@ export default function ProcessesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!/^\d{4}-\d{2}$/.test(selectedPeriod)) return;
+    let current = true;
+    fetch(`/api/cost/processes/parameters?target_date=${selectedPeriod}-01`)
+      .then((response) => response.json())
+      .then((data) => {
+        if (current && data.success) setSectorPersonnelSummaries(data.sectorPersonnelSummaries || {});
+      })
+      .catch((error) => console.error('Failed to load personnel summaries', error));
+    return () => { current = false; };
+  }, [selectedPeriod]);
+
   // Fetch read-only calculation
   const runProvisionalCalculation = async (sku: string, period: string, units: number, totalUnits: number) => {
     try {
@@ -172,8 +213,10 @@ export default function ProcessesPage() {
         total_period_units: totalPeriodUnits > 0 ? totalPeriodUnits : goodUnits,
       },
       packingSessions: sessions,
+      sectorPersonnelSummaries: sectorPersonnelSummaries as Record<IndustrialSector, SectorPersonnelSummary>,
+      packingLaborAllocations,
     });
-  }, [params, fx, selectedSku, selectedPeriod, goodUnits, totalPeriodUnits, sessions]);
+  }, [params, fx, selectedSku, selectedPeriod, goodUnits, totalPeriodUnits, sessions, sectorPersonnelSummaries, packingLaborAllocations]);
 
   // Save parameters to server
   const handleSaveParameters = async () => {
@@ -277,8 +320,30 @@ export default function ProcessesPage() {
   };
 
   // Session actions (Approve, Void)
-  const handleSessionAction = async (sessionId: string, action: 'approve' | 'void') => {
+  const handleSessionAction = async (sessionId: string, action: string) => {
     try {
+      if (action === 'approve') {
+        const session = sessions.find((item) => item.id === sessionId);
+        if (!session) throw new Error('No se encontró la sesión seleccionada.');
+        const targetDate = session.started_at.slice(0, 10);
+        const bandsResponse = await fetch(`/api/cost/processes/salary-bands?active_only=false&target_date=${targetDate}`);
+        const bandsData = await bandsResponse.json();
+        const applicableBands: PlantSalaryBand[] = bandsResponse.ok && bandsData.success ? (bandsData.bands || []).filter((band: PlantSalaryBand) => band.current_rate) : [];
+        if (applicableBands.length === 0) throw new Error('No hay bandas con tarifa vigente para la fecha de esta sesión.');
+        const existingRes = await fetch(`/api/cost/processes/packing/sessions/${sessionId}/allocate`);
+        const existingData = await existingRes.json();
+        if (!existingRes.ok) throw new Error(existingData.message || existingData.error || 'No se pudo revisar la sesión.');
+        if ((existingData.allocations || []).length > 0) throw new Error('Esta sesión ya tiene imputaciones salariales. Recarga la página para verlas.');
+        setSessionSalaryBands(applicableBands);
+        const initialBandId = applicableBands[0].id;
+        const choices = Object.fromEntries((session.segments || []).map((segment) => [segment.id, [{ salary_band_id: initialBandId, headcount: String(segment.headcount) }]]));
+        if (!session.segments?.length) choices.SESSION = [{ salary_band_id: initialBandId, headcount: '1' }];
+        setAllocationBandsBySegment(choices);
+        setShowSessionsModal(false);
+        setAllocationSession(session);
+        return;
+      }
+
       const res = await fetch('/api/cost/processes/packing/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -294,6 +359,79 @@ export default function ProcessesPage() {
     } catch (err: any) {
       setFeedback({ message: `Error: ${err.message}`, type: 'error' });
     }
+  };
+
+  const confirmSessionAllocation = async () => {
+    if (!allocationSession) return;
+    const segments = allocationSession.segments || [];
+    const invalidSegment = segments.some((segment) => {
+      const rows = allocationBandsBySegment[segment.id] || [];
+      return rows.some((row) => !row.salary_band_id || !Number.isInteger(Number(row.headcount)) || Number(row.headcount) <= 0) ||
+        rows.reduce((sum, row) => sum + Number(row.headcount || 0), 0) !== segment.headcount;
+    });
+    const wholeSessionRows = allocationBandsBySegment.SESSION || [];
+    const invalidWholeSession = !segments.length && (
+      wholeSessionRows.length !== 1 || !wholeSessionRows[0]?.salary_band_id || !Number.isInteger(Number(wholeSessionRows[0]?.headcount)) || Number(wholeSessionRows[0]?.headcount) <= 0
+    );
+    if (invalidSegment || invalidWholeSession) {
+      setFeedback({ message: 'Asigna bandas con cantidades enteras; en cada segmento la suma debe coincidir con la dotación registrada.', type: 'warning' });
+      return;
+    }
+
+    setSavingSessionAllocation(true);
+    try {
+      const allocations = segments.length
+        ? segments.flatMap((segment) => (allocationBandsBySegment[segment.id] || []).map((row) => ({
+            segment_id: segment.id,
+            salary_band_id: row.salary_band_id,
+            headcount: Number(row.headcount),
+          })))
+        : [{
+            salary_band_id: wholeSessionRows[0].salary_band_id,
+            headcount: Number(wholeSessionRows[0].headcount),
+          }];
+      const response = await fetch(`/api/cost/processes/packing/sessions/${allocationSession.id}/allocate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allocations }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.message || data.error || 'No se pudo aprobar la sesión.');
+
+      setSessions((previous) => previous.map((session) => session.id === allocationSession.id ? data.session : session));
+      setPackingLaborAllocations((previous) => [
+        ...previous.filter((allocation) => allocation.session_id !== allocationSession.id),
+        ...(data.allocations || []),
+      ]);
+      setFeedback({ message: 'Sesión aprobada y costo salarial guardado por banda.', type: 'success' });
+      setAllocationSession(null);
+      void runProvisionalCalculation(selectedSku, selectedPeriod, goodUnits, totalPeriodUnits);
+    } catch (error: any) {
+      setFeedback({ message: `Error al imputar personal: ${error.message}`, type: 'error' });
+    } finally {
+      setSavingSessionAllocation(false);
+    }
+  };
+
+  const updateAllocationRow = (key: string, index: number, field: 'salary_band_id' | 'headcount', value: string) => {
+    setAllocationBandsBySegment((previous) => ({
+      ...previous,
+      [key]: (previous[key] || []).map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row),
+    }));
+  };
+
+  const addAllocationRow = (key: string) => {
+    setAllocationBandsBySegment((previous) => ({
+      ...previous,
+      [key]: [...(previous[key] || []), { salary_band_id: salaryBands[0]?.id || '', headcount: '1' }],
+    }));
+  };
+
+  const removeAllocationRow = (key: string, index: number) => {
+    setAllocationBandsBySegment((previous) => ({
+      ...previous,
+      [key]: (previous[key] || []).filter((_, rowIndex) => rowIndex !== index),
+    }));
   };
 
   const updateParam = (field: keyof PlantGeneralParameters, val: any) => {
@@ -314,6 +452,9 @@ export default function ProcessesPage() {
           <p className="mt-1 text-xs text-slate-400">
             Parametrización industrial, cálculo de costos de formado, calidad y empaque por SKU.
           </p>
+          <Link href="/cost/processes/personnel" className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium text-brand-400 hover:text-brand-300">
+            <Users className="h-3.5 w-3.5" /> Gestionar personal y bandas salariales
+          </Link>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
@@ -387,6 +528,26 @@ export default function ProcessesPage() {
           </button>
         </div>
       )}
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {([
+          ['FORMADO_GEN1', 'Personal Formado Gen. 1'],
+          ['FORMADO_GEN2', 'Personal Formado Gen. 2'],
+          ['CALIDAD', 'Personal Calidad'],
+          ['EMPAQUE', 'Personal Empaque'],
+        ] as [IndustrialSector, string][]).map(([sector, label]) => {
+          const summary = sectorPersonnelSummaries[sector];
+          return (
+            <div key={sector} className="rounded-lg border border-slate-800 bg-[#10141b] px-3 py-2.5">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
+              <div className="mt-1 flex items-center justify-between text-xs">
+                <span className="font-semibold text-white">{summary?.assigned_count || 0} asignados</span>
+                <span className="font-mono text-slate-300">Gs. {Math.round(summary?.monthly_salary_with_charges_pyg || 0).toLocaleString('es-PY')} / mes</span>
+              </div>
+            </div>
+          );
+        })}
+      </section>
 
       {/* ========================================================
           SECCIÓN 1: PARÁMETROS DE COSTEO
@@ -579,10 +740,14 @@ export default function ProcessesPage() {
 
             {/* Salario operador */}
             <div className="flex items-center justify-between text-xs px-1">
-              <span className="text-slate-400">Salario mensual operador:</span>
+              <span className="text-slate-400">Salario mensual operadores:</span>
               <div className="flex items-center gap-1 font-mono">
                 <span className="text-white font-semibold">
-                  Gs. {(params.operator_monthly_salary_pyg || 3500000).toLocaleString('es-PY')}
+                  Gs. {Math.round(
+                    sectorPersonnelSummaries.FORMADO_GEN1?.is_configured || sectorPersonnelSummaries.FORMADO_GEN2?.is_configured
+                      ? (sectorPersonnelSummaries.FORMADO_GEN1?.monthly_salary_base_pyg || 0) + (sectorPersonnelSummaries.FORMADO_GEN2?.monthly_salary_base_pyg || 0)
+                      : (params.operator_monthly_salary_pyg || 3500000)
+                  ).toLocaleString('es-PY')}
                 </span>
                 <span className="text-[10px] text-emerald-400">(CONFIRMADO)</span>
               </div>
@@ -720,7 +885,10 @@ export default function ProcessesPage() {
                 <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
                   <span className="text-slate-400 font-sans">Costo mensual total:</span>
                   <span className="font-semibold text-white">
-                    Gs. {((params.quality_inspectors_count || 2) * (params.quality_monthly_salary_pyg || 0) * (params.quality_labor_charges_included !== false ? (1 + (params.labor_charges_percent || 0) / 100) : 1)).toLocaleString('es-PY')}
+                    Gs. {Math.round(sectorPersonnelSummaries.CALIDAD?.is_configured
+                      ? sectorPersonnelSummaries.CALIDAD.monthly_salary_base_pyg * (params.quality_labor_charges_included !== false ? (1 + (params.labor_charges_percent || 0) / 100) : 1)
+                      : (params.quality_inspectors_count || 2) * (params.quality_monthly_salary_pyg || 0) * (params.quality_labor_charges_included !== false ? (1 + (params.labor_charges_percent || 0) / 100) : 1)
+                    ).toLocaleString('es-PY')}
                   </span>
                 </div>
                 <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
@@ -765,10 +933,13 @@ export default function ProcessesPage() {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-slate-300 font-medium">Salario empacador</span>
-                  <span className="text-[10px] text-emerald-400">(CONFIRMADO)</span>
+                  <span className="text-[10px] text-emerald-400">{sectorPersonnelSummaries.EMPAQUE?.is_configured ? '(BANDAS)' : '(LEGACY)'}</span>
                 </div>
                 <div className="min-h-10 flex items-center rounded-md border border-slate-700 bg-[#0c0f14] px-3 font-mono text-sm text-white">
-                  Gs. 3.100.000 / mes
+                  Gs. {Math.round(sectorPersonnelSummaries.EMPAQUE?.is_configured
+                    ? sectorPersonnelSummaries.EMPAQUE.monthly_salary_base_pyg
+                    : params.packer_monthly_salary_pyg || 3100000
+                  ).toLocaleString('es-PY')} / mes
                 </div>
               </div>
 
@@ -795,6 +966,21 @@ export default function ProcessesPage() {
                 </div>
               </div>
             </div>
+
+            {(liveCalc.packing_labor.is_estimated || liveCalc.packing_labor.has_discrepancy) && (
+              <div className="space-y-2">
+                {liveCalc.packing_labor.is_estimated && (
+                  <div className="rounded-md border border-amber-800/70 bg-amber-950/25 px-3 py-2 text-[11px] text-amber-200">
+                    El costo incluye sesiones aprobadas sin imputación por banda y se estimó con la tarifa promedio de Empaque.
+                  </div>
+                )}
+                {liveCalc.packing_labor.has_discrepancy && (
+                  <div className="rounded-md border border-rose-800/70 bg-rose-950/25 px-3 py-2 text-[11px] text-rose-200">
+                    {liveCalc.packing_labor.discrepancy_message}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex items-center gap-2 pt-2">
               <Button
@@ -1244,6 +1430,65 @@ export default function ProcessesPage() {
             <div className="pt-3 border-t border-slate-800 flex justify-end">
               <Button variant="outline" size="sm" onClick={() => setShowSessionsModal(false)}>
                 Cerrar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {allocationSession && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4">
+          <div className="w-full max-w-2xl space-y-4 rounded-2xl border border-slate-800 bg-[#12161f] p-5 shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-white">Aprobar e imputar costo salarial</h3>
+                <p className="mt-1 text-[11px] text-slate-400">Sesión {allocationSession.session_code || allocationSession.id.slice(0, 8)} · indica la banda de cada segmento.</p>
+              </div>
+              <button type="button" onClick={() => setAllocationSession(null)} aria-label="Cerrar" className="text-slate-400 hover:text-white"><X className="h-4 w-4" /></button>
+            </div>
+
+            <div className="max-h-[55vh] space-y-2 overflow-y-auto">
+              {allocationSession.segments?.length ? allocationSession.segments.map((segment) => {
+                const rows = allocationBandsBySegment[segment.id] || [];
+                const assignedHeads = rows.reduce((sum, row) => sum + Number(row.headcount || 0), 0);
+                return (
+                  <div key={segment.id} className="grid gap-3 rounded-lg border border-slate-800 bg-[#0e1219] p-3 sm:grid-cols-[1fr_1.2fr] sm:items-start">
+                    <div>
+                      <div className="text-xs font-semibold text-white">Segmento {segment.segment_order} · {segment.headcount} personas</div>
+                      <div className="mt-1 text-[10px] text-slate-500">{segment.person_hours > 0 ? `${segment.person_hours.toFixed(2)} horas-persona` : 'Las horas se calculan al detener la sesión.'}</div>
+                      <div className={`mt-2 text-[10px] font-medium ${assignedHeads === segment.headcount ? 'text-emerald-400' : 'text-amber-300'}`}>Asignadas: {assignedHeads} / {segment.headcount}</div>
+                    </div>
+                    <div className="space-y-2">
+                      {rows.map((row, index) => (
+                        <div key={`${segment.id}-${index}`} className="grid grid-cols-[minmax(0,1fr)_76px_auto] gap-2">
+                          <select aria-label={`Banda salarial segmento ${segment.segment_order}`} value={row.salary_band_id} onChange={(event) => updateAllocationRow(segment.id, index, 'salary_band_id', event.target.value)} className="min-w-0 rounded-md border border-slate-700 bg-[#0c0f14] px-2 py-2 text-[11px] text-white outline-none focus:border-brand-500">
+                    {sessionSalaryBands.map((band) => <option key={band.id} value={band.id}>{band.name} · Gs. {band.monthly_salary_pyg.toLocaleString('es-PY')} {band.status === 'INACTIVE' ? '(inactiva)' : ''}</option>)}
+                          </select>
+                          <input aria-label={`Cantidad de personas segmento ${segment.segment_order}`} type="number" min="1" step="1" value={row.headcount} onChange={(event) => updateAllocationRow(segment.id, index, 'headcount', event.target.value)} className="rounded-md border border-slate-700 bg-[#0c0f14] px-2 py-2 text-center text-xs text-white outline-none focus:border-brand-500" />
+                          {rows.length > 1 ? <button type="button" onClick={() => removeAllocationRow(segment.id, index)} className="px-1 text-[10px] text-rose-300 hover:text-rose-200">Quitar</button> : <span />}
+                        </div>
+                      ))}
+                      <button type="button" onClick={() => addAllocationRow(segment.id)} className="text-[10px] font-medium text-brand-300 hover:text-brand-200">+ Agregar otra banda</button>
+                    </div>
+                  </div>
+                );
+              }) : (
+                <div className="grid gap-2 rounded-lg border border-slate-800 bg-[#0e1219] p-3 sm:grid-cols-[1fr_1.2fr] sm:items-center">
+                  <div><div className="text-xs font-semibold text-white">Dotación registrada</div><div className="mt-1 text-[10px] text-slate-500">{allocationSession.total_person_hours.toFixed(2)} horas-persona</div></div>
+                  <div className="grid grid-cols-[minmax(0,1fr)_76px] gap-2">
+                    <select aria-label="Banda salarial de la sesión" value={allocationBandsBySegment.SESSION?.[0]?.salary_band_id || ''} onChange={(event) => updateAllocationRow('SESSION', 0, 'salary_band_id', event.target.value)} className="rounded-md border border-slate-700 bg-[#0c0f14] px-2.5 py-2 text-xs text-white outline-none focus:border-brand-500">
+                      {sessionSalaryBands.map((band) => <option key={band.id} value={band.id}>{band.name} · Gs. {band.monthly_salary_pyg.toLocaleString('es-PY')} / mes {band.status === 'INACTIVE' ? '(inactiva)' : ''}</option>)}
+                    </select>
+                    <input aria-label="Cantidad de personas" type="number" min="1" step="1" value={allocationBandsBySegment.SESSION?.[0]?.headcount || '1'} onChange={(event) => updateAllocationRow('SESSION', 0, 'headcount', event.target.value)} className="rounded-md border border-slate-700 bg-[#0c0f14] px-2 py-2 text-center text-xs text-white outline-none focus:border-brand-500" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-800 pt-3">
+              <Button variant="outline" size="sm" onClick={() => setAllocationSession(null)}>Cancelar</Button>
+              <Button variant="primary" size="sm" disabled={savingSessionAllocation || sessionSalaryBands.length === 0} onClick={confirmSessionAllocation}>
+                <Check className="h-3.5 w-3.5" /> {savingSessionAllocation ? 'Guardando…' : 'Aprobar sesión'}
               </Button>
             </div>
           </div>

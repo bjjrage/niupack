@@ -4,6 +4,7 @@ import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
 import { FxEngine } from '@/lib/fx/fx-provider';
 import { IndustrialProcessCostEngine } from '@/lib/engines/industrial-process-cost-engine';
 import { IndustrialCostEngine } from '@/lib/engines/industrial-cost-engine';
+import { IndustrialSector, SectorPersonnelSummary } from '@/types';
 
 /**
  * GET is strictly read-only: calculates industrial processes cost preview.
@@ -136,6 +137,19 @@ async function handleCalculation({
     (s) => (!period || s.started_at.startsWith(period)) && (!sku || !s.sku || s.sku === sku)
   );
 
+  const targetDate = period ? `${period}-01` : undefined;
+  const sectorPersonnelSummaries = await repository.getSectorPersonnelSummary(
+    identity.organizationId,
+    targetDate,
+    Number(parameters.monthly_salary_hours) || 200,
+    Number(parameters.labor_charges_percent) || 0
+  );
+
+  const sessionIds = packingSessions.map((s) => s.id);
+  const packingLaborAllocations = sessionIds.length > 0
+    ? await repository.getPackingLaborAllocations(sessionIds, identity.organizationId)
+    : [];
+
   const calculation = IndustrialProcessCostEngine.calculate({
     parameters,
     fxRate: fxQuote.costingRate,
@@ -147,6 +161,8 @@ async function handleCalculation({
       total_period_units: effectiveTotalUnits,
     },
     packingSessions,
+    sectorPersonnelSummaries,
+    packingLaborAllocations,
   });
 
   // Only persist snapshot if explicitly requested (e.g. POST), NEVER on read-only GET!

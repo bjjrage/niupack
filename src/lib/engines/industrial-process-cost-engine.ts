@@ -1,8 +1,11 @@
 import {
   IndustrialProcessCalculationDetail,
+  IndustrialSector,
+  PackingLaborAllocation,
   PackingSession,
   PlantGeneralParameters,
   PlantProductionPeriod,
+  SectorPersonnelSummary,
 } from '@/types';
 
 export interface IndustrialProcessEngineInput {
@@ -14,6 +17,9 @@ export interface IndustrialProcessEngineInput {
   };
   packingSessions?: PackingSession[];
   calculationDate?: string;
+  // Centralized Personnel Master & Salary Bands integration
+  sectorPersonnelSummaries?: Record<IndustrialSector, SectorPersonnelSummary>;
+  packingLaborAllocations?: PackingLaborAllocation[];
 }
 
 export class IndustrialProcessCostEngine {
@@ -22,7 +28,8 @@ export class IndustrialProcessCostEngine {
    */
   public static getMissingConfiguration(
     params: Partial<PlantGeneralParameters>,
-    fxRate: number
+    fxRate: number,
+    sectorSummaries?: Record<IndustrialSector, SectorPersonnelSummary>
   ): string[] {
     const missing: string[] = [];
 
@@ -35,10 +42,19 @@ export class IndustrialProcessCostEngine {
     if (!fxRate || fxRate <= 0) {
       missing.push('Tipo de cambio FX (USD/PYG)');
     }
-    if (!params.operator_monthly_salary_pyg || params.operator_monthly_salary_pyg <= 0) {
+
+    const hasFormingPersonnel = Boolean(
+      (sectorSummaries?.FORMADO_GEN1?.is_configured && sectorSummaries.FORMADO_GEN1.assigned_count > 0) ||
+      (sectorSummaries?.FORMADO_GEN2?.is_configured && sectorSummaries.FORMADO_GEN2.assigned_count > 0)
+    );
+    if (!hasFormingPersonnel && (!params.operator_monthly_salary_pyg || params.operator_monthly_salary_pyg <= 0)) {
       missing.push('Salario operador de formado (Gs./mes)');
     }
-    if (!params.packer_monthly_salary_pyg || params.packer_monthly_salary_pyg <= 0) {
+
+    const hasPackingPersonnel = Boolean(
+      sectorSummaries?.EMPAQUE?.is_configured && sectorSummaries.EMPAQUE.assigned_count > 0
+    );
+    if (!hasPackingPersonnel && (!params.packer_monthly_salary_pyg || params.packer_monthly_salary_pyg <= 0)) {
       missing.push('Salario mensual de empacador (Gs./mes)');
     }
 
@@ -56,10 +72,18 @@ export class IndustrialProcessCostEngine {
    * Guarantees exact conservation of total shared period costs across all produced SKUs.
    */
   public static calculate(input: IndustrialProcessEngineInput): IndustrialProcessCalculationDetail {
-    const { parameters: p, fxRate, fxSource = 'FX_OS', production, packingSessions = [] } = input;
+    const {
+      parameters: p,
+      fxRate,
+      fxSource = 'FX_OS',
+      production,
+      packingSessions = [],
+      sectorPersonnelSummaries,
+      packingLaborAllocations = [],
+    } = input;
     const calculationDate = input.calculationDate || new Date().toISOString();
 
-    const missing = this.getMissingConfiguration(p, fxRate);
+    const missing = this.getMissingConfiguration(p, fxRate, sectorPersonnelSummaries);
     const goodUnits = Number(production.good_units_produced || 0);
     // Multi-SKU total production base: sum of good units across all SKUs in period (defaults to goodUnits)
     const totalPeriodUnits = Number(production.total_period_units || goodUnits);
@@ -83,29 +107,67 @@ export class IndustrialProcessCostEngine {
     const electricityCostPyg = totalEnergyKwh * electricityRatePyg;
 
     // 1. Formado de Vasos: Operadores
-    const operatorMonthlySalaryPyg = Number(p.operator_monthly_salary_pyg || 0);
-    const operatorMonthlyTotalPyg = operatorMonthlySalaryPyg * laborMultiplier;
-    const operatorHourlyCostPyg = monthlySalaryHours > 0 ? operatorMonthlyTotalPyg / monthlySalaryHours : 0;
+    const legacyOperatorMonthlySalaryPyg = Number(p.operator_monthly_salary_pyg || 0);
+    const legacyOperatorMonthlyTotalPyg = legacyOperatorMonthlySalaryPyg * laborMultiplier;
+    const legacyOperatorHourlyCostPyg = monthlySalaryHours > 0 ? legacyOperatorMonthlyTotalPyg / monthlySalaryHours : 0;
 
-    const gen1Operators = Number(p.gen1_operators_count || 0);
-    const gen2Operators = Number(p.gen2_operators_count || 0);
-    const operatorHours = gen1Operators * gen1Hours + gen2Operators * gen2Hours;
-    const modFormingCostPyg = operatorHours * operatorHourlyCostPyg;
+    let gen1OperatorsCount = Number(p.gen1_operators_count || 0);
+    let gen1OperatorsSalaryPyg = gen1OperatorsCount * legacyOperatorMonthlySalaryPyg;
+    let modGen1CostPyg = 0;
 
+    const gen1Summary = sectorPersonnelSummaries?.FORMADO_GEN1;
+    if (gen1Summary && gen1Summary.is_configured && gen1Summary.personnel.length > 0) {
+      gen1OperatorsCount = gen1Summary.assigned_count;
+      gen1OperatorsSalaryPyg = gen1Summary.monthly_salary_base_pyg;
+      modGen1CostPyg = gen1Summary.personnel.reduce(
+        (sum, person) => sum + (person.hourly_rate_pyg * gen1Hours),
+        0
+      );
+    } else {
+      modGen1CostPyg = gen1OperatorsCount * gen1Hours * legacyOperatorHourlyCostPyg;
+    }
+
+    let gen2OperatorsCount = Number(p.gen2_operators_count || 0);
+    let gen2OperatorsSalaryPyg = gen2OperatorsCount * legacyOperatorMonthlySalaryPyg;
+    let modGen2CostPyg = 0;
+
+    const gen2Summary = sectorPersonnelSummaries?.FORMADO_GEN2;
+    if (gen2Summary && gen2Summary.is_configured && gen2Summary.personnel.length > 0) {
+      gen2OperatorsCount = gen2Summary.assigned_count;
+      gen2OperatorsSalaryPyg = gen2Summary.monthly_salary_base_pyg;
+      modGen2CostPyg = gen2Summary.personnel.reduce(
+        (sum, person) => sum + (person.hourly_rate_pyg * gen2Hours),
+        0
+      );
+    } else {
+      modGen2CostPyg = gen2OperatorsCount * gen2Hours * legacyOperatorHourlyCostPyg;
+    }
+
+    const modFormingCostPyg = modGen1CostPyg + modGen2CostPyg;
     const totalFormingPyg = electricityCostPyg + modFormingCostPyg;
     const totalFormingUsd = fxRate > 0 ? totalFormingPyg / fxRate : 0;
 
     // Forming hourly cost
     const formingLineHours = Math.max(gen1Hours, gen2Hours, 0);
     const formingHourlyCostPyg = formingLineHours > 0 ? totalFormingPyg / formingLineHours : 0;
+    const totalOperatorHours = gen1OperatorsCount * gen1Hours + gen2OperatorsCount * gen2Hours;
+    const operatorHourlyCostPyg = totalOperatorHours > 0 ? modFormingCostPyg / totalOperatorHours : legacyOperatorHourlyCostPyg;
 
     // 2. Control de Calidad
-    const qualityInspectors = Number(p.quality_inspectors_count || 0);
-    const qualitySalaryPyg = Number(p.quality_monthly_salary_pyg || 0);
+    let qualityInspectors = Number(p.quality_inspectors_count || 0);
+    let qualitySalaryPyg = Number(p.quality_monthly_salary_pyg || 0);
     const qualityPolypaperPercent = Math.min(Math.max(Number(p.quality_polypaper_percent || 0), 0), 100);
     const qualityMultiplier = p.quality_labor_charges_included !== false ? laborMultiplier : 1;
-    const qualityAssignedMonthlyPyg =
-      qualityInspectors * qualitySalaryPyg * qualityMultiplier * (qualityPolypaperPercent / 100);
+
+    const qualitySummary = sectorPersonnelSummaries?.CALIDAD;
+    let qualityAssignedMonthlyPyg = 0;
+    if (qualitySummary && qualitySummary.is_configured && qualitySummary.personnel.length > 0) {
+      qualityInspectors = qualitySummary.assigned_count;
+      qualitySalaryPyg = qualitySummary.monthly_salary_base_pyg;
+      qualityAssignedMonthlyPyg = qualitySalaryPyg * qualityMultiplier * (qualityPolypaperPercent / 100);
+    } else {
+      qualityAssignedMonthlyPyg = qualityInspectors * qualitySalaryPyg * qualityMultiplier * (qualityPolypaperPercent / 100);
+    }
     const qualityAssignedUsd = fxRate > 0 ? qualityAssignedMonthlyPyg / fxRate : 0;
 
     // Total shared operational period cost (Forming + Quality)
@@ -120,11 +182,47 @@ export class IndustrialProcessCostEngine {
     );
     const approvedPersonHours = relevantSessions.reduce((acc, s) => acc + (s.total_person_hours || 0), 0);
 
-    const packerMonthlySalaryPyg = Number(p.packer_monthly_salary_pyg || 0);
-    const packerMonthlyTotalPyg = packerMonthlySalaryPyg * laborMultiplier;
-    const packerHourlyCostPyg = monthlySalaryHours > 0 ? packerMonthlyTotalPyg / monthlySalaryHours : 0;
-    const packingLaborPyg = approvedPersonHours * packerHourlyCostPyg;
+    const legacyPackerMonthlySalaryPyg = Number(p.packer_monthly_salary_pyg || 0);
+    const legacyPackerHourlyCostPyg = monthlySalaryHours > 0
+      ? (legacyPackerMonthlySalaryPyg * laborMultiplier) / monthlySalaryHours
+      : 0;
+
+    const packingSummary = sectorPersonnelSummaries?.EMPAQUE;
+    const packerHourlyCostPyg = packingSummary?.is_configured
+      ? packingSummary.hourly_rate_avg_pyg
+      : legacyPackerHourlyCostPyg;
+
+    let packingLaborPyg = 0;
+    let allocationsAppliedCount = 0;
+    let unallocatedSessionsCount = 0;
+    let hasDiscrepancy = false;
+    let discrepancyMessage = '';
+
+    for (const session of relevantSessions) {
+      const sessionAllocs = (packingLaborAllocations || []).filter((a) => a.session_id === session.id);
+      if (sessionAllocs.length > 0) {
+        allocationsAppliedCount += sessionAllocs.length;
+        for (const alloc of sessionAllocs) {
+          packingLaborPyg += Number(alloc.calculated_cost_pyg || 0);
+        }
+      } else {
+        unallocatedSessionsCount += 1;
+        packingLaborPyg += (session.total_person_hours || 0) * packerHourlyCostPyg;
+      }
+
+      // Discrepancy check: any segment with headcount > assigned packers
+      if (packingSummary && packingSummary.is_configured && packingSummary.assigned_count > 0) {
+        for (const seg of session.segments || []) {
+          if (seg.headcount > packingSummary.assigned_count) {
+            hasDiscrepancy = true;
+            discrepancyMessage = `Dotación de sesión (${seg.headcount} personas) supera el personal configurado en Empaque (${packingSummary.assigned_count} personas).`;
+          }
+        }
+      }
+    }
+
     const packingLaborUsd = fxRate > 0 ? packingLaborPyg / fxRate : 0;
+    const isEstimatedPacking = unallocatedSessionsCount > 0;
 
     // 4. Materiales de Embalaje
     const materialsCostPerThousandUsd = Number(p.packaging_materials_cost_per_thousand_usd || 0);
@@ -197,6 +295,11 @@ export class IndustrialProcessCostEngine {
         mod_forming_cost_pyg: Number(modFormingCostPyg.toFixed(0)),
         total_forming_pyg: Number(totalFormingPyg.toFixed(0)),
         total_forming_usd: Number(totalFormingUsd.toFixed(4)),
+        gen1_operators_count: gen1OperatorsCount,
+        gen1_operators_salary_pyg: gen1OperatorsSalaryPyg,
+        gen2_operators_count: gen2OperatorsCount,
+        gen2_operators_salary_pyg: gen2OperatorsSalaryPyg,
+        is_personnel_configured: Boolean(gen1Summary?.is_configured || gen2Summary?.is_configured),
       },
       forming_hourly_cost_pyg: Number(formingHourlyCostPyg.toFixed(0)),
       quality: {
@@ -205,6 +308,7 @@ export class IndustrialProcessCostEngine {
         polypaper_percent: qualityPolypaperPercent,
         assigned_monthly_pyg: Number(qualityAssignedMonthlyPyg.toFixed(0)),
         assigned_usd: Number(qualityAssignedUsd.toFixed(4)),
+        is_personnel_configured: Boolean(qualitySummary?.is_configured),
       },
       packing_labor: {
         approved_person_hours: Number(approvedPersonHours.toFixed(2)),
@@ -212,10 +316,16 @@ export class IndustrialProcessCostEngine {
         packing_labor_pyg: Number(packingLaborPyg.toFixed(0)),
         packing_labor_usd: Number(packingLaborUsd.toFixed(4)),
         sessions_count: relevantSessions.length,
+        is_personnel_configured: Boolean(packingSummary?.is_configured),
+        is_estimated: isEstimatedPacking,
+        has_discrepancy: hasDiscrepancy,
+        discrepancy_message: hasDiscrepancy ? discrepancyMessage : undefined,
+        allocations_count: allocationsAppliedCount,
       },
       packaging_materials: {
         cost_per_thousand_usd: Number(materialsCostPerThousandUsd.toFixed(4)),
       },
+      personnel_summary: sectorPersonnelSummaries,
       allocated_forming_pyg: Number(allocatedFormingPyg.toFixed(0)),
       allocated_forming_usd: Number(allocatedFormingUsd.toFixed(4)),
       allocated_quality_pyg: Number(allocatedQualityPyg.toFixed(0)),

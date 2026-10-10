@@ -7,12 +7,27 @@ import { PlantGeneralParameters } from '@/types';
 export async function GET(req: NextRequest) {
   try {
     const identity = await requireNiuIdentity();
+    const targetDate = new URL(req.url).searchParams.get('target_date') || undefined;
+    if (targetDate) {
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(targetDate) ? new Date(`${targetDate}T00:00:00.000Z`) : null;
+      if (!date || Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== targetDate) {
+        return NextResponse.json({ error: 'INVALID_TARGET_DATE' }, { status: 400 });
+      }
+    }
     const parameters = await repository.getPlantParameters(identity.organizationId);
     const fxQuote = await FxEngine.getEffectiveQuote();
+
+    const sectorPersonnelSummaries = await repository.getSectorPersonnelSummary(
+      identity.organizationId,
+      targetDate,
+      Number(parameters.monthly_salary_hours) || 200,
+      Number(parameters.labor_charges_percent) || 0
+    );
 
     return NextResponse.json({
       success: true,
       parameters,
+      sectorPersonnelSummaries,
       fx: {
         rate: fxQuote.costingRate,
         mode: fxQuote.settings.costing_rate_mode,

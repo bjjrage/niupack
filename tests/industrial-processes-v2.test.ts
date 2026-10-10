@@ -8,6 +8,9 @@ import {
   PackingSession,
   PlantGeneralParameters,
   PlantProductionPeriod,
+  IndustrialSector,
+  PackingLaborAllocation,
+  SectorPersonnelSummary,
 } from '@/types';
 
 describe('Industrial Processes V2 — Parametrización Industrial & Cronómetro', () => {
@@ -544,6 +547,75 @@ describe('Industrial Processes V2 — Parametrización Industrial & Cronómetro'
       expect(verifyPackingToken(tamperedToken)).toBeNull();
       expect(verifyPackingToken('invalid-token')).toBeNull();
       expect(verifyPackingToken('')).toBeNull();
+    });
+  });
+
+  describe('Personnel and salary band integration', () => {
+    it('uses sector payroll and flags sessions that mix allocated and estimated labor', () => {
+      const makeSummary = (
+        sector: IndustrialSector,
+        hourlyRate: number,
+        monthlySalary: number,
+        isConfigured: boolean
+      ): SectorPersonnelSummary => ({
+        sector,
+        assigned_count: isConfigured ? 1 : 0,
+        monthly_salary_base_pyg: monthlySalary,
+        monthly_salary_with_charges_pyg: monthlySalary * 1.165,
+        hourly_rate_avg_pyg: hourlyRate,
+        is_configured: isConfigured,
+        personnel: isConfigured ? [{
+          personnel_id: `person-${sector}`,
+          employee_code: `OP-${sector}`,
+          display_name: 'Operario de prueba',
+          band_id: `band-${sector}`,
+          band_name: 'Banda de prueba',
+          monthly_salary_pyg: monthlySalary,
+          allocation_percent: 100,
+          effective_monthly_salary_pyg: monthlySalary,
+          hourly_rate_pyg: hourlyRate,
+        }] : [],
+      });
+
+      const secondSession: PackingSession = {
+        ...approvedSessions[0],
+        id: 'ses-2',
+        session_code: 'SES-002',
+        total_person_hours: 8,
+        segments: [{ ...approvedSessions[0].segments![0], id: 'seg-2', session_id: 'ses-2', headcount: 1, person_hours: 8 }],
+      };
+      const allocatedLabor: PackingLaborAllocation[] = [{
+        id: 'alloc-1',
+        organization_id: 'org-test',
+        session_id: 'ses-1',
+        session_segment_id: 'seg-1',
+        salary_band_id: 'band-EMPAQUE',
+        headcount: 2,
+        hourly_rate_snapshot_pyg: 5000,
+        calculated_cost_pyg: 80000,
+      }];
+      const personnelSummaries: Record<IndustrialSector, SectorPersonnelSummary> = {
+        FORMADO_GEN1: makeSummary('FORMADO_GEN1', 11650, 2000000, true),
+        FORMADO_GEN2: makeSummary('FORMADO_GEN2', 0, 0, false),
+        CALIDAD: makeSummary('CALIDAD', 0, 0, false),
+        EMPAQUE: makeSummary('EMPAQUE', 5000, 1000000, true),
+      };
+
+      const calculation = IndustrialProcessCostEngine.calculate({
+        parameters: baseParams,
+        fxRate,
+        production: baseProduction,
+        packingSessions: [approvedSessions[0], secondSession],
+        sectorPersonnelSummaries: personnelSummaries,
+        packingLaborAllocations: allocatedLabor,
+      });
+
+      expect(calculation.forming.gen1_operators_count).toBe(1);
+      expect(calculation.forming.mod_forming_cost_pyg).toBe(5126000);
+      expect(calculation.quality.is_personnel_configured).toBe(false);
+      expect(calculation.packing_labor.packing_labor_pyg).toBe(120000);
+      expect(calculation.packing_labor.allocations_count).toBe(1);
+      expect(calculation.packing_labor.is_estimated).toBe(true);
     });
   });
 });

@@ -1053,6 +1053,108 @@ export interface PlantProductionPeriod {
   updated_at?: string;
 }
 
+// ==========================================
+// INDUSTRIAL PERSONNEL & SALARY BANDS TYPES
+// ==========================================
+
+export type IndustrialSector = 'FORMADO_GEN1' | 'FORMADO_GEN2' | 'CALIDAD' | 'EMPAQUE';
+
+export interface PlantSalaryBandRate {
+  id: string;
+  organization_id?: string;
+  band_id: string;
+  monthly_salary_pyg: number;
+  valid_from: string; // YYYY-MM-DD
+  valid_to?: string | null; // YYYY-MM-DD
+  notes?: string;
+  created_at?: string;
+  created_by?: string;
+}
+
+export interface PlantSalaryBand {
+  id: string;
+  organization_id: string;
+  name: string;
+  description?: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  monthly_salary_pyg: number; // Current active rate
+  current_rate?: PlantSalaryBandRate;
+  rates?: PlantSalaryBandRate[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PlantPersonnelAssignment {
+  id: string;
+  organization_id: string;
+  personnel_id: string;
+  salary_band_id: string;
+  sector: IndustrialSector;
+  line_id?: string;
+  allocation_percent: number; // 0 < percent <= 100
+  valid_from: string; // YYYY-MM-DD
+  valid_to?: string | null; // YYYY-MM-DD
+  // Populated helpers
+  band_name?: string;
+  monthly_salary_pyg?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PlantPersonnel {
+  id: string;
+  organization_id: string;
+  employee_code: string;
+  display_name: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  hire_date: string; // YYYY-MM-DD
+  termination_date?: string | null; // YYYY-MM-DD
+  primary_sector?: IndustrialSector;
+  current_band_id?: string;
+  current_band_name?: string;
+  current_salary_pyg?: number;
+  assignments?: PlantPersonnelAssignment[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SectorPersonnelItem {
+  personnel_id: string;
+  employee_code: string;
+  display_name: string;
+  band_id: string;
+  band_name: string;
+  monthly_salary_pyg: number;
+  allocation_percent: number;
+  effective_monthly_salary_pyg: number;
+  hourly_rate_pyg: number;
+}
+
+export interface SectorPersonnelSummary {
+  sector: IndustrialSector;
+  assigned_count: number;
+  monthly_salary_base_pyg: number;
+  monthly_salary_with_charges_pyg: number;
+  hourly_rate_avg_pyg: number;
+  personnel: SectorPersonnelItem[];
+  is_configured: boolean;
+}
+
+export interface PackingLaborAllocation {
+  id: string;
+  organization_id: string;
+  session_id: string;
+  session_segment_id?: string;
+  salary_band_id: string;
+  salary_band_name?: string;
+  headcount: number;
+  hourly_rate_snapshot_pyg: number;
+  calculated_cost_pyg: number;
+  notes?: string;
+  approved_by?: string;
+  approved_at?: string;
+}
+
 export interface IndustrialProcessCalculationDetail {
   period?: string;
   sku?: string;
@@ -1071,6 +1173,11 @@ export interface IndustrialProcessCalculationDetail {
     mod_forming_cost_pyg: number;
     total_forming_pyg: number;
     total_forming_usd: number;
+    gen1_operators_count?: number;
+    gen1_operators_salary_pyg?: number;
+    gen2_operators_count?: number;
+    gen2_operators_salary_pyg?: number;
+    is_personnel_configured?: boolean;
   };
   quality: {
     inspectors_count: number;
@@ -1078,6 +1185,7 @@ export interface IndustrialProcessCalculationDetail {
     polypaper_percent: number;
     assigned_monthly_pyg: number;
     assigned_usd: number;
+    is_personnel_configured?: boolean;
   };
   packing_labor: {
     approved_person_hours: number;
@@ -1085,10 +1193,16 @@ export interface IndustrialProcessCalculationDetail {
     packing_labor_pyg: number;
     packing_labor_usd: number;
     sessions_count: number;
+    is_personnel_configured?: boolean;
+    is_estimated?: boolean;
+    has_discrepancy?: boolean;
+    discrepancy_message?: string;
+    allocations_count?: number;
   };
   packaging_materials: {
     cost_per_thousand_usd: number;
   };
+  personnel_summary?: Record<IndustrialSector, SectorPersonnelSummary>;
   // Summary outputs
   total_period_units?: number;
   forming_hourly_cost_pyg?: number;
