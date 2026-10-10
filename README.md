@@ -165,7 +165,16 @@ GMAIL_USER_EMAIL=inteligencia@niupack.com.py
 # 4. PARÁMETROS OPERATIVOS
 # ==========================================
 NEXT_PUBLIC_BASE_URL=http://localhost:3000
+# ==========================================
+# 5. FREIGHTOS (Public maritime estimates; no API key)
+# ==========================================
 ```
+
+### Estimaciones marítimas Freightos
+
+El buscador consulta el endpoint público de estimaciones FCL de Freightos; no requiere cuenta ni API key. Ingresá un puerto o código UN/LOCODE de cinco caracteres (por ejemplo, `CNSHA` o `USLGB`), equipo, cantidad y, si se conoce, el peso por contenedor. La API pública limita el uso por IP y puede no cubrir todas las rutas.
+
+Los resultados son rangos estimados de mercado, no cotizaciones firmes, disponibilidad ni reservas. Se muestran con enlace/atribución a Freightos y no se guardan como tarifas reales en el histórico; para confirmar un precio, solicitar una cotización al transportista.
 
 ---
 

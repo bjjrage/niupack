@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ExportCostAdjustmentEngine } from '@/lib/engines/export-cost-adjustment-engine';
 import { createMagicToken, safeTokenHashEquals } from '@/lib/logistics/security';
-import { SeaRatesProvider } from '@/lib/logistics/providers';
+import { FreightosProvider } from '@/lib/logistics/freightos-provider';
 import type { ExportCostInput, LogisticsRate } from '@/lib/logistics/domain';
 
 const rate: LogisticsRate = {
@@ -43,13 +43,15 @@ describe('ExportCostAdjustmentEngine', () => {
 });
 
 describe('logistics provider and token safety', () => {
-  it('returns NOT_CONFIGURED instead of fabricated ocean rates', async () => {
-    const previous = process.env.SEARATES_API_KEY;
-    delete process.env.SEARATES_API_KEY;
-    const result = await new SeaRatesProvider().searchRates({ origin: { country: 'PY' }, destination: { country: 'US' }, shipment_date: '2026-10-01', load_type: 'FCL', equipment: '40HC', weight_kg: 1000, volume_m3: 10 }, crypto.randomUUID());
-    expect(result.status).toBe('NOT_CONFIGURED');
-    expect(result.rates).toEqual([]);
-    if (previous) process.env.SEARATES_API_KEY = previous;
+  it('returns no fabricated ocean estimate when the public provider has no route coverage', async () => {
+    const fetcher: typeof fetch = async () => new Response(JSON.stringify({
+      response: { estimatedFreightRates: { numQuotes: '0' } },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    const result = await new FreightosProvider(fetcher).estimate({
+      origin: 'CNSHA', destination: 'USLGB', equipment: '40HC', quantity: 1, weight_kg: 1000,
+    });
+    expect(result.status).toBe('NO_RESULTS');
+    expect(result.estimates).toEqual([]);
   });
 
   it('stores only a hash and rejects a different magic token', () => {

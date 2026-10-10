@@ -772,7 +772,7 @@ export default function SettingsClient({
                   <h3 className="text-base font-bold text-white">Consumo Presupuestario</h3>
                 </div>
 
-                <div className="bg-[#0a0d13] p-4 rounded-lg border border-[#1f2633] mb-4">
+                <div className="niu-kpi bg-[#0a0d13] p-4 rounded-lg border border-[#1f2633] mb-4">
                   <div className="flex justify-between items-baseline mb-2">
                     <span className="text-xs text-slate-400 font-medium">Gasto Mes Actual:</span>
                     <span className="text-xl font-bold font-mono text-white font-tabular">
@@ -883,25 +883,25 @@ export default function SettingsClient({
         <div className="space-y-4">
           {/* Telemetry KPIs */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="bg-[#12161f] border border-[#202738] p-4 rounded-xl">
+            <div className="niu-kpi bg-[#12161f] border border-[#202738] p-4 rounded-xl">
               <span className="text-[11px] text-slate-400 font-medium block">Total Llamadas IA</span>
               <span className="text-xl font-bold font-mono text-white mt-1 block">
                 {callLogs.length}
               </span>
             </div>
-            <div className="bg-[#12161f] border border-[#202738] p-4 rounded-xl">
+            <div className="niu-kpi bg-[#12161f] border border-[#202738] p-4 rounded-xl">
               <span className="text-[11px] text-slate-400 font-medium block">Total Tokens Procesados</span>
               <span className="text-xl font-bold font-mono text-white mt-1 block">
                 {callLogs.reduce((s, l) => s + l.total_tokens, 0).toLocaleString()}
               </span>
             </div>
-            <div className="bg-[#12161f] border border-[#202738] p-4 rounded-xl">
+            <div className="niu-kpi bg-[#12161f] border border-[#202738] p-4 rounded-xl">
               <span className="text-[11px] text-slate-400 font-medium block">Costo Acumulado Total</span>
               <span className="text-xl font-bold font-mono text-emerald-400 mt-1 block">
                 ${telemetry.totalSpendUSD.toFixed(4)} USD
               </span>
             </div>
-            <div className="bg-[#12161f] border border-[#202738] p-4 rounded-xl">
+            <div className="niu-kpi bg-[#12161f] border border-[#202738] p-4 rounded-xl">
               <span className="text-[11px] text-slate-400 font-medium block">Latencia Media</span>
               <span className="text-xl font-bold font-mono text-slate-300 mt-1 block">
                 {callLogs.length > 0

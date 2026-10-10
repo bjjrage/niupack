@@ -7,7 +7,39 @@ export type LogisticsQuoteStatus = 'RECEIVED' | 'PARTIAL' | 'CONFIRMED' | 'SELEC
 export type EquipmentType = 'FTL' | 'LTL' | 'TRUCK' | 'SEMI' | 'OTHER';
 export type OceanEquipment = '20GP' | '40GP' | '40HC' | 'LCL';
 
-export interface LocationRef { country: string; city?: string; address?: string; port?: string }
+export interface LocationRef {
+  country: string;
+  city?: string;
+  address?: string;
+  port?: string;
+  display_name?: string;
+  provider_place_id?: number;
+  place_type_id?: 1 | 2;
+  unlocode?: string;
+}
+
+export interface LogisticsProviderCharge {
+  name: string;
+  category: string;
+  amount: number;
+  currency: string;
+  rate_basis?: string;
+}
+
+export interface LogisticsProviderMetadata {
+  provider: 'CARGOFIVE';
+  rate_id: string;
+  carrier_name?: string;
+  carrier_code?: string;
+  service?: string;
+  source_type?: string;
+  departure_date?: string;
+  routing?: string[];
+  quantity: number;
+  retrieved_at: string;
+  charges: LogisticsProviderCharge[];
+}
+
 export interface RateComponents {
   pickup?: number;
   origin_charges?: number;
@@ -16,6 +48,7 @@ export interface RateComponents {
   destination_delivery?: number;
   insurance?: number;
   other_charges?: number;
+  provider_metadata?: LogisticsProviderMetadata;
 }
 
 export interface LogisticsRate {
@@ -64,20 +97,22 @@ export interface FreightSearchInput {
   shipment_date: string;
   load_type: 'FCL' | 'LCL';
   equipment: OceanEquipment;
+  quantity: number;
   weight_kg: number;
   volume_m3: number;
 }
 
-export interface RateSearchResult {
+export interface RateSearchResult<T = LogisticsRate> {
   provider: string;
-  status: 'OK' | 'NOT_CONFIGURED' | 'ERROR';
-  rates: LogisticsRate[];
+  status: 'OK' | 'NOT_CONFIGURED' | 'RATE_LIMITED' | 'TIMEOUT' | 'ERROR';
+  rates: T[];
   message?: string;
+  error_code?: string;
 }
 
-export interface FreightRateProvider {
+export interface FreightRateProvider<T = LogisticsRate> {
   readonly code: LogisticsRateSource;
-  searchRates(input: FreightSearchInput, organizationId: string): Promise<RateSearchResult>;
+  searchRates(input: FreightSearchInput, organizationId: string): Promise<RateSearchResult<T>>;
 }
 
 export interface LogisticsRfq {

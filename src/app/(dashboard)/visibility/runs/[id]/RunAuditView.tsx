@@ -181,7 +181,7 @@ export const RunAuditView: React.FC<RunAuditViewProps> = ({ run, results, mentio
         {marketKPIs.map((kpi) => (
           <div
             key={kpi.market}
-            className={`p-3.5 rounded-lg border ${
+            className={`niu-kpi p-3.5 rounded-lg border ${
               kpi.market === 'TOTAL'
                 ? 'bg-gradient-to-b from-[#161f2c] to-[#10141b] border-brand-500/50'
                 : 'bg-[#11161d] border-slate-800'

@@ -660,7 +660,7 @@ function Datum({ k, v, href }: { k: string; v?: string | null; href?: string }) 
 
 function Kpi({ k, v, sub, warn = false }: { k: string; v: string; sub?: string; warn?: boolean }) {
   return (
-    <div className="bg-[#141820] px-4 py-3">
+    <div className="niu-kpi bg-[#141820] px-4 py-3">
       <dt className="text-xs text-slate-500">{k}</dt>
       <dd className={`mt-0.5 text-lg font-semibold tabular-nums ${warn ? 'text-amber-400' : 'text-white'}`}>{v}</dd>
       {sub && <dd className="text-[11px] text-slate-500">{sub}</dd>}
