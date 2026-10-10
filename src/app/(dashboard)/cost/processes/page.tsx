@@ -72,7 +72,7 @@ export default function ProcessesPage() {
     quality_monthly_salary_pyg: 0,
     quality_polypaper_percent: 70,
     quality_labor_charges_included: true,
-    packaging_materials_cost_per_thousand_usd: 3.5,
+    packaging_materials_cost_per_thousand_usd: 0,
   });
   const [paramsDirty, setParamsDirty] = useState(false);
   const paramsDirtyRef = useRef(false);
@@ -670,6 +670,9 @@ export default function ProcessesPage() {
               />
               <span className="text-[11px] text-slate-500 ml-2 whitespace-nowrap">Gs./kWh</span>
             </div>
+            <span className="text-[11px] text-amber-300/80">
+              Tarifa plana por kWh: no incluye cargos de potencia/demanda de ANDE (referencia 50 kW). Estimación, no cálculo tarifario completo.
+            </span>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -994,7 +997,7 @@ export default function ProcessesPage() {
                   <input
                     type="number"
                     step="any"
-                    value={params.packaging_materials_cost_per_thousand_usd ?? ''}
+                    value={params.packaging_materials_cost_per_thousand_usd || ''}
                     placeholder="Sin configurar"
                     onChange={(e) => updateParam('packaging_materials_cost_per_thousand_usd', Number(e.target.value))}
                     className="w-full bg-transparent font-mono text-sm text-white outline-none"

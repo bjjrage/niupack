@@ -1246,7 +1246,7 @@ export const INITIAL_PLANT_PARAMETERS: PlantGeneralParameters = {
   quality_monthly_salary_pyg: 0,
   quality_polypaper_percent: 70,
   quality_labor_charges_included: true,
-  packaging_materials_cost_per_thousand_usd: 3.50,
+  packaging_materials_cost_per_thousand_usd: 0, // 0 = not configured; never assume a cost
   updated_at: new Date().toISOString(),
 };
 

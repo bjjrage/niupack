@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS public.plant_process_parameters (
     quality_monthly_salary_pyg NUMERIC NOT NULL DEFAULT 3200000,
     quality_polypaper_percent NUMERIC NOT NULL DEFAULT 70,
     quality_labor_charges_included BOOLEAN NOT NULL DEFAULT true,
-    packaging_materials_cost_per_thousand_usd NUMERIC NOT NULL DEFAULT 3.50,
+    packaging_materials_cost_per_thousand_usd NUMERIC NOT NULL DEFAULT 0, -- 0 = not configured (no assumed cost)
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     UNIQUE (organization_id)

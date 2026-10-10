@@ -42,6 +42,9 @@ export class IndustrialProcessCostEngine {
     if (!fxRate || fxRate <= 0) {
       missing.push('Tipo de cambio FX (USD/PYG)');
     }
+    if (!(Number(params.packaging_materials_cost_per_thousand_usd) > 0)) {
+      missing.push('Costo de materiales de empaque (USD/1.000)');
+    }
 
     if (sectorSummaries) {
       if (!sectorSummaries.FORMADO?.is_configured || sectorSummaries.FORMADO.assigned_count <= 0) {

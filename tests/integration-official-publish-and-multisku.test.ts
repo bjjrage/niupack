@@ -256,6 +256,7 @@ describe('Integración Cost Intelligence + Procesos Industriales V2 (E2E Contrac
         packer_monthly_salary_pyg: 2500000,
         quality_inspectors_count: 1,
         quality_monthly_salary_pyg: 3500000,
+        packaging_materials_cost_per_thousand_usd: 3.5, // explicit fixture value; the product no longer assumes one
       };
       const fxRate = 7500;
       const skuUnregistered = 'SKU-SIN-PERIODO';
