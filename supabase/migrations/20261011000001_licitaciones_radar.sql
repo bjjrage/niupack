@@ -102,7 +102,6 @@ BEGIN
             v_table || '_tenant_select', v_table
         );
         EXECUTE format('REVOKE ALL ON TABLE public.%I FROM anon, authenticated, PUBLIC', v_table);
-        EXECUTE format('GRANT SELECT ON TABLE public.%I TO authenticated', v_table);
         EXECUTE format('GRANT ALL ON TABLE public.%I TO service_role', v_table);
     END LOOP;
 END;
@@ -123,6 +122,9 @@ AS $$
             '\m(s ?a|s ?r ?l|ltda|ltd|cia|s ?a ?s|eireli|sas|inc|corp|gmbh|pty)\M', ' ', 'g'),
         '\s+', ' ', 'g'))
 $$;
+
+REVOKE ALL ON FUNCTION public.licitaciones_normalize_name(TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.licitaciones_normalize_name(TEXT) TO service_role;
 
 -- Importación atómica: una licitación con sus ítems y partes (con rol y evidencia) en una sola transacción.
 -- Re-importar la misma licitación la actualiza, no la duplica.
