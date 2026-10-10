@@ -1,0 +1,15 @@
+{
+  "name": "niupack-qa-local",
+  "private": true,
+  "type": "module",
+  "description": "Isolated local PostgreSQL + PostgREST stack to validate NIUPACK migrations without Docker or cloud resources.",
+  "scripts": {
+    "db": "node db.mjs --keep",
+    "rest": "node rest.mjs",
+    "dev": "node dev.mjs"
+  },
+  "dependencies": {
+    "embedded-postgres": "17.5.0-beta.15",
+    "pg": "^8.13.1"
+  }
+}

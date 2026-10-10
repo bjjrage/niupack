@@ -24,6 +24,10 @@ export interface RawMaterialView {
   financialUsd: number;
   /** CIF + despacho + costo del dinero, por tonelada. */
   landedUsd: number;
+  /** Moneda original cargada por el usuario */
+  originalCurrency?: 'USD' | 'PYG';
+  originalFob?: number;
+  originalFreight?: number;
 }
 
 export function readRawMaterial(input: IndustrialProductCostInput): RawMaterialView {
@@ -37,10 +41,27 @@ export function readRawMaterial(input: IndustrialProductCostInput): RawMaterialV
   const financialPercent = pf.financial_cost_percent ?? DEFAULT_FINANCIAL_PERCENT;
   const customsUsd = round2((cif * customsPercent) / 100);
   const financialUsd = round2((cif * financialPercent) / 100);
-  return { fob, freight, cif, customsPercent, financialPercent, customsUsd, financialUsd, landedUsd: round2(cif + customsUsd + financialUsd) };
+  return {
+    fob,
+    freight,
+    cif,
+    customsPercent,
+    financialPercent,
+    customsUsd,
+    financialUsd,
+    landedUsd: round2(cif + customsUsd + financialUsd),
+    originalCurrency: input.currency_meta?.currency || input.input_currency,
+    originalFob: input.currency_meta?.fob_price_ton_original,
+    originalFreight: input.currency_meta?.freight_ton_original,
+  };
 }
 
-export type RawMaterialPatch = Partial<Pick<RawMaterialView, 'fob' | 'freight' | 'customsPercent' | 'financialPercent'>>;
+export type RawMaterialPatch = Partial<Pick<RawMaterialView, 'fob' | 'freight' | 'customsPercent' | 'financialPercent'>> & {
+  originalFob?: number;
+  originalFreight?: number;
+  originalCurrency?: 'USD' | 'PYG';
+  fxRate?: number;
+};
 
 function emptyBottom(): IndustrialBottomFormula {
   return { cif_price_ton_usd: 0, gsm: 0, coating_gsm: 0, units_per_m2: 0 };
@@ -64,7 +85,21 @@ export function applyRawMaterial(input: IndustrialProductCostInput, patch: RawMa
     customs_dispatch_percent: next.customsPercent,
     financial_cost_percent: next.financialPercent,
   };
-  return { ...input, paper_formula, bottom_formula, bottom_paper_cost_ton_usd: cif };
+
+  const currency_meta = {
+    currency: patch.originalCurrency || input.currency_meta?.currency || input.input_currency || 'USD',
+    fx_rate: patch.fxRate ?? input.currency_meta?.fx_rate ?? input.fx_rate_applied ?? 1,
+    fob_price_ton_original: patch.originalFob !== undefined ? patch.originalFob : input.currency_meta?.fob_price_ton_original,
+    freight_ton_original: patch.originalFreight !== undefined ? patch.originalFreight : input.currency_meta?.freight_ton_original,
+  };
+
+  return {
+    ...input,
+    paper_formula,
+    bottom_formula,
+    bottom_paper_cost_ton_usd: cif,
+    currency_meta,
+  };
 }
 
 /**

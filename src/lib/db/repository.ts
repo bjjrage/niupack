@@ -31,6 +31,23 @@ import {
   ProductPackagingSpec,
   QuoteMatchResult,
   CostV1Configuration,
+  PlantGeneralParameters,
+  PlantProductionPeriod,
+  PackingSession,
+  PackingSessionSegment,
+  PackingSessionStatus,
+  IndustrialProcessSnapshot,
+  IndustrialCostBreakdown,
+  IndustrialSector,
+  MachineGeneration,
+  PlantSalaryBand,
+  PlantSalaryBandRate,
+  PlantPersonnel,
+  PlantPersonnelAssignment,
+  PlantPersonnelSalaryAssignment,
+  SectorPersonnelSummary,
+  SectorPersonnelItem,
+  PackingLaborAllocation,
 } from '@/types';
 import {
   INITIAL_ORG,
@@ -51,8 +68,17 @@ import {
   INITIAL_FX_RATES,
   INITIAL_FX_SETTINGS,
   INITIAL_PACKAGING_SPECS,
+  INITIAL_PLANT_PARAMETERS,
+  INITIAL_PRODUCTION_PERIODS,
+  INITIAL_PACKING_SESSIONS,
+  INITIAL_SALARY_BANDS,
+  INITIAL_SALARY_BAND_RATES,
+  INITIAL_PLANT_PERSONNEL,
+  INITIAL_PERSONNEL_ASSIGNMENTS,
+  INITIAL_PACKING_LABOR_ALLOCATIONS,
 } from './seed-data';
 import { supabase, supabaseAdmin, isSupabaseConfigured, isSupabaseAdminConfigured } from './supabase';
+import { IndustrialCostEngine } from '@/lib/engines/industrial-cost-engine';
 
 function normalizeDomain(input?: string | null): string {
   if (!input) return '';
@@ -65,7 +91,145 @@ function normalizeDomain(input?: string | null): string {
   return cleaned;
 }
 
+function isSchemaMissingError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const msg = String((error as { message?: string }).message || '').toLowerCase();
+  const code = String((error as { code?: string }).code || '');
+  return (
+    code === 'PGRST204' ||
+    code === 'PGRST205' ||
+    code === 'PGRST202' ||
+    code === '42P01' ||
+    code === '42703' ||
+    msg.includes('schema cache') ||
+    msg.includes('could not find the table') ||
+    /relation [^ ]+ does not exist/.test(msg) ||
+    /function [^(]+\([^)]*\) does not exist/.test(msg)
+  );
+}
+
+function persistentOrganizationStore(organizationId?: string): boolean {
+  if (!organizationId) {
+    if (process.env.NODE_ENV === 'production') throw new Error('ORGANIZATION_REQUIRED');
+    return false;
+  }
+  if (isSupabaseAdminConfigured && supabaseAdmin) return true;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SUPABASE_PERSISTENCE_UNAVAILABLE');
+  }
+  return false;
+}
+
+function throwPersistenceError(error: unknown, relation: string): never {
+  if (isSchemaMissingError(error)) {
+    throw new Error(`SUPABASE_SCHEMA_NOT_READY:${relation}`);
+  }
+  if (error instanceof Error) throw error;
+  const source = error && typeof error === 'object' ? error as { message?: string; code?: string } : undefined;
+  const normalized = new Error(source?.message || String(error || 'SUPABASE_PERSISTENCE_ERROR')) as Error & { code?: string };
+  normalized.code = source?.code;
+  throw normalized;
+}
+
+function mapSalaryBandRecord(record: any): PlantSalaryBand {
+  const rate = record.current_rate;
+  return {
+    id: record.id,
+    organization_id: record.organization_id,
+    name: record.name,
+    description: record.description || undefined,
+    status: record.status,
+    monthly_salary_pyg: Number(record.monthly_salary_pyg) || 0,
+    current_rate: rate ? {
+      id: rate.id,
+      organization_id: rate.organization_id,
+      band_id: rate.band_id,
+      monthly_salary_pyg: Number(rate.monthly_salary_pyg),
+      valid_from: rate.valid_from,
+      valid_to: rate.valid_to || null,
+      notes: rate.notes || undefined,
+      created_at: rate.created_at,
+      created_by: rate.created_by || undefined,
+    } : undefined,
+    created_at: record.created_at,
+    updated_at: record.updated_at,
+  };
+}
+
+const persistedPlantParameterFields = [
+  'electricity_rate_pyg_kwh', 'monthly_salary_hours', 'labor_charges_percent',
+  'operator_monthly_salary_pyg', 'packer_monthly_salary_pyg',
+  'gen1_machines_count', 'gen1_power_kw', 'gen1_operators_count', 'gen1_operating_hours',
+  'gen2_machines_count', 'gen2_power_kw', 'gen2_operators_count', 'gen2_operating_hours',
+  'quality_inspectors_count', 'quality_monthly_salary_pyg', 'quality_polypaper_percent',
+  'quality_labor_charges_included', 'packaging_materials_cost_per_thousand_usd',
+] as const;
+
+function mapPlantParametersRecord(record: any): PlantGeneralParameters {
+  const numericFields = persistedPlantParameterFields.filter((field) => field !== 'quality_labor_charges_included');
+  const normalized = Object.fromEntries(numericFields.map((field) => [field, Number(record[field])])) as Partial<PlantGeneralParameters>;
+  return {
+    ...normalized,
+    id: record.id,
+    organization_id: record.organization_id,
+    quality_labor_charges_included: Boolean(record.quality_labor_charges_included),
+    updated_at: record.updated_at,
+    updated_by: record.updated_by || undefined,
+  } as PlantGeneralParameters;
+}
+
+function isIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function shiftIsoDate(value: string, days: number): string {
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return parsed.toISOString().slice(0, 10);
+}
+
 const allowCostFixtures = process.env.NODE_ENV !== 'production' || process.env.NIU_ENABLE_COST_SEED_FIXTURES === 'true';
+
+type PackingOperatorTokenRecord = {
+  token_id: string;
+  organization_id: string;
+  line_name: string;
+  issued_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+  revoked_by_profile_id: string | null;
+  revocation_reason: string | null;
+  created_at: string;
+};
+
+type PackingMutationContext = {
+  requestId?: string;
+  actorProfileId?: string;
+  tokenId?: string;
+  lineName?: string;
+  shiftCode?: string;
+  shiftDate?: string;
+};
+
+function requirePackingRequestId(context?: PackingMutationContext): string {
+  const requestId = context?.requestId;
+  if (!requestId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)) {
+    throw new Error('PACKING_REQUEST_ID_REQUIRED');
+  }
+  return requestId;
+}
+
+function mapPackingSessionRow(row: any): PackingSession {
+  const segments = row?.segments || row?.packing_session_segments || [];
+  return {
+    ...row,
+    total_person_hours: Number(row?.total_person_hours || 0),
+    total_duration_minutes: Number(row?.total_duration_minutes || 0),
+    segments: [...segments].sort((a: any, b: any) => a.segment_order - b.segment_order),
+  } as PackingSession;
+}
 
 // Persistent in-process store for zero-friction local dev, tests, and CI
 class Store {
@@ -100,6 +264,26 @@ class Store {
   fxSettings: FxSettings = { ...INITIAL_FX_SETTINGS };
   packagingSpecs: ProductPackagingSpec[] = [...INITIAL_PACKAGING_SPECS];
   quoteMatches: QuoteMatchResult[] = [];
+  plantParameters: PlantGeneralParameters = { ...INITIAL_PLANT_PARAMETERS };
+  productionPeriods: PlantProductionPeriod[] = [...INITIAL_PRODUCTION_PERIODS];
+  packingSessions: PackingSession[] = [...INITIAL_PACKING_SESSIONS];
+  packingOperatorTokens: PackingOperatorTokenRecord[] = [];
+  industrialSnapshots: IndustrialProcessSnapshot[] = [];
+  salaryBands: PlantSalaryBand[] = [...INITIAL_SALARY_BANDS];
+  salaryBandRates: PlantSalaryBandRate[] = [...INITIAL_SALARY_BAND_RATES];
+  plantPersonnel: PlantPersonnel[] = [...INITIAL_PLANT_PERSONNEL];
+  personnelAssignments: PlantPersonnelAssignment[] = [...INITIAL_PERSONNEL_ASSIGNMENTS];
+  personnelSalaryAssignments: PlantPersonnelSalaryAssignment[] = INITIAL_PLANT_PERSONNEL
+    .filter((person) => Boolean(person.current_band_id))
+    .map((person) => ({
+      id: `salary-${person.id}`,
+      organization_id: person.organization_id,
+      personnel_id: person.id,
+      salary_band_id: person.current_band_id!,
+      valid_from: '2026-01-01',
+      valid_to: null,
+    }));
+  packingLaborAllocations: PackingLaborAllocation[] = [...INITIAL_PACKING_LABOR_ALLOCATIONS];
 }
 
 // Global singleton across server restarts during dev
@@ -499,8 +683,10 @@ export const repository = {
   },
 
   // Cost Sheets & Process
-  async getCostSheets(): Promise<CostSheetVersion[]> {
-    return [...store.costSheets];
+  async getCostSheets(organizationId?: string, sku?: string): Promise<CostSheetVersion[]> {
+    let sheets = [...store.costSheets];
+    if (sku) sheets = sheets.filter((s) => s.sku === sku);
+    return sheets;
   },
   async getCostSheet(id: string): Promise<CostSheetVersion | undefined> {
     return store.costSheets.find((c) => c.id === id);
@@ -530,6 +716,12 @@ export const repository = {
       } as CostSheetVersion;
     }
     return store.costSheets.find((c) => c.sku === sku && c.status === 'ACTIVE');
+  },
+  async getActiveCostSheet(first: string, second?: string): Promise<CostSheetVersion | undefined> {
+    const looksLikeSku = store.skus.some((s) => s.sku === first);
+    const sku = looksLikeSku ? first : (second || first);
+    const orgId = looksLikeSku ? second : first;
+    return this.getActiveCostSheetForSKU(sku, orgId);
   },
   async saveCostSheet(sheet: CostSheetVersion, organizationId?: string): Promise<CostSheetVersion> {
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
@@ -610,11 +802,172 @@ export const repository = {
     });
     return sheet;
   },
+  async archiveCostSheet(id: string, organizationId?: string): Promise<void> {
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const { error } = await supabaseAdmin
+        .from('cost_sheet_versions')
+        .update({ status: 'ARCHIVED', updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('organization_id', organizationId);
+      if (error) throw new Error(`cost_sheet_versions archive: ${error.message}`);
+      return;
+    }
+    const target = store.costSheets.find((c) => c.id === id);
+    if (target) {
+      target.status = 'ARCHIVED';
+    }
+  },
+  async publishOfficialCostSheet(
+    params: {
+      sku: string;
+      batchSize: number;
+      breakdown: IndustrialCostBreakdown;
+      fxRate?: number;
+      actorId?: string;
+    },
+    organizationId: string
+  ): Promise<CostSheetVersion> {
+    const { sku, batchSize, breakdown, fxRate, actorId } = params;
+    if (!breakdown.configured) {
+      throw new Error('CANNOT_PUBLISH_INCOMPLETE: No se puede publicar la hoja oficial: faltan parámetros requeridos.');
+    }
+
+    const skus = await this.getSKUs(organizationId);
+    const skuRecord = skus.find((candidate) => candidate.sku === sku);
+    if (!skuRecord) throw new Error(`SKU ${sku} is not present in the product master`);
+
+    const existingActive = await this.getActiveCostSheetForSKU(sku, organizationId);
+    const nextVersion = existingActive ? (Number(existingActive.version) || 1) + 1 : 1;
+    const newSheetId = crypto.randomUUID();
+    const components = IndustrialCostEngine.toV1CostComponents(breakdown, newSheetId);
+    const now = new Date().toISOString();
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      // 1. Insert new sheet with temporary status 'DRAFT' to ensure components insert before any activation
+      const newSheetRecord = {
+        id: newSheetId,
+        organization_id: organizationId,
+        product_id: skuRecord.product_id,
+        sku,
+        version: nextVersion,
+        name: `Hoja de costo V1 · ${sku} (v${nextVersion})`,
+        batch_size: batchSize,
+        effective_date: now.split('T')[0],
+        status: 'DRAFT' as const,
+        true_unit_cost_usd: breakdown.true_unit_cost_usd,
+        true_unit_cost_pyg: fxRate ? Math.round(breakdown.true_unit_cost_usd * fxRate) : undefined,
+        fx_rate_used: fxRate,
+        minimum_sustainable_price_usd: breakdown.true_unit_cost_usd,
+        break_even_units: 0,
+        notes: `Cost Intelligence V1: versión oficial v${nextVersion}. Seis rubros configurables por SKU.`,
+        updated_at: now,
+      };
+
+      const { data: savedSheet, error: sheetError } = await supabaseAdmin
+        .from('cost_sheet_versions')
+        .insert(newSheetRecord)
+        .select('*')
+        .single();
+      if (sheetError) throw new Error(`cost_sheet_versions insert: ${sheetError.message}`);
+
+      try {
+        // 2. Insert components for the new sheet
+        for (const comp of components) {
+          const { error: compError } = await supabaseAdmin.from('cost_components').insert({
+            id: comp.id,
+            cost_sheet_id: newSheetId,
+            category: comp.category,
+            name: comp.name,
+            component_type: comp.component_type,
+            basis: comp.basis,
+            rate_usd: comp.rate_usd,
+            quantity: comp.quantity,
+            unit_of_measure: comp.unit_of_measure,
+            effective_date: comp.effective_date,
+            notes: comp.notes,
+            updated_at: now,
+          });
+          if (compError) throw new Error(`cost_components insert: ${compError.message}`);
+        }
+
+        // 3. Archive previous active version (if any)
+        if (existingActive) {
+          const { error: archiveError } = await supabaseAdmin
+            .from('cost_sheet_versions')
+            .update({ status: 'ARCHIVED', updated_at: now })
+            .eq('id', existingActive.id)
+            .eq('organization_id', organizationId);
+          if (archiveError) throw new Error(`cost_sheet_versions archive: ${archiveError.message}`);
+        }
+
+        // 4. Activate the new version
+        const { error: activateError } = await supabaseAdmin
+          .from('cost_sheet_versions')
+          .update({ status: 'ACTIVE', updated_at: now })
+          .eq('id', newSheetId)
+          .eq('organization_id', organizationId);
+        if (activateError) throw new Error(`cost_sheet_versions activate: ${activateError.message}`);
+      } catch (innerError) {
+        // Rollback: delete the incomplete pending sheet to prevent orphaned corrupted state
+        await supabaseAdmin.from('cost_components').delete().eq('cost_sheet_id', newSheetId);
+        await supabaseAdmin.from('cost_sheet_versions').delete().eq('id', newSheetId);
+        throw innerError;
+      }
+
+      await this.logAuditEvent({
+        event_type: 'cost_edit',
+        target_entity: 'cost_sheet_versions',
+        entity_id: newSheetId,
+        metadata: { sku, version: nextVersion, true_cost: breakdown.true_unit_cost_usd, action: 'PUBLISH_OFFICIAL' },
+      });
+
+      return {
+        ...savedSheet,
+        status: 'ACTIVE',
+        components,
+      } as CostSheetVersion;
+    }
+
+    // In-memory store transaction
+    if (existingActive) {
+      existingActive.status = 'ARCHIVED';
+    }
+
+    const officialSheet: CostSheetVersion = {
+      id: newSheetId,
+      organization_id: organizationId,
+      product_id: skuRecord.product_id,
+      sku,
+      version: nextVersion,
+      name: `Hoja de costo V1 · ${sku} (v${nextVersion})`,
+      batch_size: batchSize,
+      effective_date: now.split('T')[0],
+      status: 'ACTIVE',
+      true_unit_cost_usd: breakdown.true_unit_cost_usd,
+      true_unit_cost_pyg: fxRate ? Math.round(breakdown.true_unit_cost_usd * fxRate) : undefined,
+      fx_rate_used: fxRate,
+      minimum_sustainable_price_usd: breakdown.true_unit_cost_usd,
+      break_even_units: 0,
+      components,
+      notes: `Cost Intelligence V1: versión oficial v${nextVersion}. Seis rubros configurables por SKU.`,
+      };
+    store.costSheets.push(officialSheet);
+
+    await this.logAuditEvent({
+      event_type: 'cost_edit',
+      target_entity: 'cost_sheet_versions',
+      entity_id: newSheetId,
+      metadata: { sku, version: nextVersion, true_cost: breakdown.true_unit_cost_usd, action: 'PUBLISH_OFFICIAL' },
+    });
+
+    return officialSheet;
+  },
   async getIndustrialCostInputs(): Promise<IndustrialProductCostInput[]> {
     return [...store.industrialCostInputs];
   },
   async getCostV1Configuration(sku: string, organizationId?: string): Promise<CostV1Configuration | undefined> {
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
       const { data, error } = await supabaseAdmin
         .from('cost_v1_configurations')
         .select('*')
@@ -622,19 +975,23 @@ export const repository = {
         .eq('sku', sku)
         .eq('is_active', true)
         .maybeSingle();
-      if (error) throw new Error(`cost_v1_configurations: ${error.message}`);
-      if (!data) return undefined;
-      return {
-        id: data.id,
-        organization_id: data.organization_id,
-        product_id: data.product_id,
-        sku: data.sku,
-        input: data.input_json as IndustrialProductCostInput,
-        version: Number(data.version),
-        is_active: Boolean(data.is_active),
-        created_at: data.created_at,
-        updated_at: data.updated_at,
-      };
+      if (error) {
+        throw new Error(`cost_v1_configurations: ${error.message}`);
+      }
+      if (data) {
+        return {
+          id: data.id,
+          organization_id: data.organization_id,
+          product_id: data.product_id,
+          sku: data.sku,
+          input: data.input_json as IndustrialProductCostInput,
+          version: Number(data.version),
+          is_active: Boolean(data.is_active),
+          created_at: data.created_at,
+          updated_at: data.updated_at,
+        };
+      }
+      return undefined;
     }
 
     const input = store.industrialCostInputs.find((candidate) => candidate.sku === sku);
@@ -651,7 +1008,8 @@ export const repository = {
     organizationId?: string,
     actorId?: string
   ): Promise<CostV1Configuration> {
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
       const skuRecord = (await this.getSKUs(organizationId)).find((candidate) => candidate.sku === configuration.sku);
       if (!skuRecord?.product_id) throw new Error(`SKU ${configuration.sku} is not present in the product master`);
 
@@ -670,7 +1028,9 @@ export const repository = {
         .upsert(record, { onConflict: 'organization_id,sku' })
         .select('*')
         .single();
-      if (error) throw new Error(`cost_v1_configurations: ${error.message}`);
+      if (error) {
+        throw new Error(`cost_v1_configurations: ${error.message}`);
+      }
       const { error: auditError } = await supabaseAdmin.from('audit_events').insert({
         organization_id: organizationId,
         actor_id: actorId,
@@ -693,6 +1053,11 @@ export const repository = {
       };
     }
 
+    // Keep fixtures only in non-production/local mode after the persistent path
+    // has been ruled out; never mutate memory before a database write succeeds.
+    const memIndex = store.industrialCostInputs.findIndex((i) => i.sku === configuration.sku);
+    if (memIndex >= 0) store.industrialCostInputs[memIndex] = configuration.input;
+    else store.industrialCostInputs.push(configuration.input);
     await this.saveIndustrialCostInput(configuration.input);
     return configuration;
   },
@@ -958,5 +1323,1929 @@ export const repository = {
     };
     store.quoteMatches.unshift(newMatch);
     return newMatch;
+  },
+
+  // Industrial Processes V2 — Plant Parameters
+  async getPlantParameters(organizationId?: string): Promise<PlantGeneralParameters> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    const adminClient = supabaseAdmin;
+    if (useDatabase && adminClient) {
+      const read = () => adminClient
+        .from('plant_process_parameters')
+        .select('*')
+        .eq('organization_id', organizationId!)
+        .maybeSingle();
+      const { data, error } = await read();
+      if (error) throwPersistenceError(error, 'plant_process_parameters');
+      if (data) return mapPlantParametersRecord(data);
+
+      // Insert defaults once with an idempotent upsert, then read back the winner.
+      // Concurrent first reads cannot overwrite parameters another request already saved.
+      const defaultRecord = {
+        ...INITIAL_PLANT_PARAMETERS,
+        organization_id: organizationId,
+        updated_at: new Date().toISOString(),
+      };
+      const { error: insertError } = await adminClient
+        .from('plant_process_parameters')
+        .upsert(defaultRecord, { onConflict: 'organization_id', ignoreDuplicates: true });
+      if (insertError) throwPersistenceError(insertError, 'plant_process_parameters');
+      const { data: persisted, error: readError } = await read();
+      if (readError) throwPersistenceError(readError, 'plant_process_parameters');
+      if (!persisted) throw new Error('PLANT_PARAMETERS_PERSISTENCE_FAILED');
+      return mapPlantParametersRecord(persisted);
+    }
+    return { ...store.plantParameters };
+  },
+
+  async updatePlantParameters(
+    params: Partial<PlantGeneralParameters>,
+    organizationId?: string,
+    actorId?: string,
+    expectedUpdatedAt?: string
+  ): Promise<PlantGeneralParameters> {
+    const orgId = organizationId || store.organizations[0].id;
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const allowedParams = Object.fromEntries(
+        persistedPlantParameterFields
+          .filter((field) => params[field] !== undefined)
+          .map((field) => [field, params[field]])
+      );
+      const record = {
+        ...allowedParams,
+        organization_id: orgId,
+        updated_at: new Date().toISOString(),
+        updated_by: actorId || null,
+      };
+      if (!expectedUpdatedAt || !Number.isFinite(Date.parse(expectedUpdatedAt))) {
+        throw new Error('PLANT_PARAMETERS_VERSION_REQUIRED');
+      }
+      const { data, error } = await supabaseAdmin
+        .from('plant_process_parameters')
+        .update(record)
+        .eq('organization_id', orgId)
+        .eq('updated_at', expectedUpdatedAt)
+        .select('*')
+        .maybeSingle();
+      if (error) throwPersistenceError(error, 'plant_process_parameters');
+      if (!data) throw new Error('PLANT_PARAMETERS_VERSION_CONFLICT');
+      return mapPlantParametersRecord(data);
+    }
+    store.plantParameters = {
+      ...store.plantParameters,
+      ...params,
+      updated_at: new Date().toISOString(),
+    };
+    return { ...store.plantParameters };
+  },
+
+  // Industrial Processes V2 — Packing Stopwatch Sessions
+  async createPackingOperatorToken(
+    token: Omit<PackingOperatorTokenRecord, 'created_at' | 'revoked_at' | 'revoked_by_profile_id' | 'revocation_reason'>,
+    organizationId: string
+  ): Promise<PackingOperatorTokenRecord> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    const record: PackingOperatorTokenRecord = {
+      ...token,
+      revoked_at: null,
+      revoked_by_profile_id: null,
+      revocation_reason: null,
+      created_at: new Date().toISOString(),
+    };
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('packing_operator_tokens')
+        .insert({
+          token_id: record.token_id,
+          organization_id: record.organization_id,
+          line_name: record.line_name,
+          issued_at: record.issued_at,
+          expires_at: record.expires_at,
+        })
+        .select('*')
+        .single();
+      if (error) throwPersistenceError(error, 'packing_operator_tokens');
+      return data as PackingOperatorTokenRecord;
+    }
+
+    store.packingOperatorTokens.push(record);
+    return record;
+  },
+
+  async getPackingOperatorToken(tokenId: string, organizationId: string): Promise<PackingOperatorTokenRecord | undefined> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('packing_operator_tokens')
+        .select('*')
+        .eq('token_id', tokenId)
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+      if (error) throwPersistenceError(error, 'packing_operator_tokens');
+      return data ? data as PackingOperatorTokenRecord : undefined;
+    }
+    return store.packingOperatorTokens.find((entry) => entry.token_id === tokenId && entry.organization_id === organizationId);
+  },
+
+  async revokePackingOperatorToken(
+    tokenId: string,
+    organizationId: string,
+    revokedByProfileId: string,
+    reason?: string
+  ): Promise<boolean> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('packing_operator_tokens')
+        .update({
+          revoked_at: new Date().toISOString(),
+          revoked_by_profile_id: revokedByProfileId,
+          revocation_reason: reason || null,
+        })
+        .eq('token_id', tokenId)
+        .eq('organization_id', organizationId)
+        .is('revoked_at', null)
+        .select('token_id')
+        .maybeSingle();
+      if (error) throwPersistenceError(error, 'packing_operator_tokens');
+      if (data) return true;
+      return Boolean(await this.getPackingOperatorToken(tokenId, organizationId));
+    }
+    const record = store.packingOperatorTokens.find((entry) => entry.token_id === tokenId && entry.organization_id === organizationId);
+    if (!record) return false;
+    record.revoked_at ||= new Date().toISOString();
+    record.revoked_by_profile_id ||= revokedByProfileId;
+    record.revocation_reason ||= reason || null;
+    return true;
+  },
+
+  async getPackingSessions(
+    filters?: { status?: PackingSessionStatus; line_name?: string; period?: string; sku?: string },
+    organizationId?: string
+  ): Promise<PackingSession[]> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      let query = supabaseAdmin
+        .from('packing_sessions')
+        .select('*, packing_session_segments(*)')
+        .eq('organization_id', organizationId!);
+      if (filters?.status) query = query.eq('status', filters.status);
+      if (filters?.line_name) query = query.eq('line_name', filters.line_name);
+      if (filters?.sku) query = query.eq('sku', filters.sku);
+      if (filters?.period && /^\d{4}-\d{2}$/.test(filters.period)) {
+        const [year, month] = filters.period.split('-').map(Number);
+        const periodStart = new Date(Date.UTC(year, month - 1, 1)).toISOString();
+        const periodEnd = new Date(Date.UTC(year, month, 1)).toISOString();
+        query = query.gte('started_at', periodStart).lt('started_at', periodEnd);
+      }
+      const { data, error } = await query.order('started_at', { ascending: false });
+      if (error) throwPersistenceError(error, 'packing_sessions');
+      return (data || []).map(mapPackingSessionRow);
+    }
+
+    let sessions = [...store.packingSessions];
+    if (filters?.status) sessions = sessions.filter((s) => s.status === filters.status);
+    if (filters?.line_name) sessions = sessions.filter((s) => s.line_name === filters.line_name);
+    if (filters?.sku) sessions = sessions.filter((s) => s.sku === filters.sku);
+    if (filters?.period) {
+      sessions = sessions.filter((s) => s.started_at.startsWith(filters.period!));
+    }
+    return sessions.sort((a, b) => b.started_at.localeCompare(a.started_at));
+  },
+
+  async getPackingSession(id: string, organizationId?: string): Promise<PackingSession | undefined> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('packing_sessions')
+        .select('*, packing_session_segments(*)')
+        .eq('id', id)
+        .eq('organization_id', organizationId!)
+        .maybeSingle();
+      if (error) throwPersistenceError(error, 'packing_sessions');
+      return data ? mapPackingSessionRow(data) : undefined;
+    }
+    return store.packingSessions.find((s) => s.id === id && (!organizationId || s.organization_id === organizationId));
+  },
+
+  async createPackingSession(
+    data: {
+      line_name: string;
+      sku?: string;
+      production_order?: string;
+      initial_headcount?: number;
+      headcount?: number;
+      reason?: string;
+      operator_user_id?: string;
+      organization_id?: string;
+    },
+    organizationId?: string
+  ): Promise<PackingSession> {
+    return this.startPackingSession(
+      {
+        ...data,
+        initial_headcount: data.initial_headcount ?? data.headcount ?? 1,
+      },
+      organizationId || data.organization_id
+    );
+  },
+
+  async startPackingSession(
+    data: {
+      line_name: string;
+      sku?: string;
+      production_order?: string;
+      initial_headcount: number;
+      reason?: string;
+      operator_user_id?: string;
+    },
+    organizationId?: string,
+    context?: PackingMutationContext
+  ): Promise<PackingSession> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data: result, error } = await supabaseAdmin.rpc('start_packing_session_atomic', {
+        p_organization_id: organizationId,
+        p_idempotency_key: requirePackingRequestId(context),
+        p_line_name: data.line_name,
+        p_sku: data.sku ?? null,
+        p_production_order: data.production_order ?? null,
+        p_initial_headcount: data.initial_headcount,
+        p_reason: data.reason ?? null,
+        p_operator_user_id: data.operator_user_id ?? null,
+        p_shift_code: context?.shiftCode ?? null,
+        p_shift_date: context?.shiftDate ?? null,
+        p_actor_profile_id: context?.actorProfileId ?? null,
+        p_token_id: context?.tokenId ?? null,
+      });
+      if (error) throwPersistenceError(error, 'start_packing_session_atomic');
+      if (!result) throw new Error('PACKING_SESSION_START_EMPTY_RESULT');
+      return mapPackingSessionRow(result);
+    }
+
+    const orgId = organizationId || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const sessionId = crypto.randomUUID();
+    const segmentId = crypto.randomUUID();
+    const codeSuffix = Date.now().toString().slice(-6);
+    const session_code = `SES-${codeSuffix}`;
+    const headcount = Math.max(1, Math.round(data.initial_headcount || 1));
+
+    const initialSegment: PackingSessionSegment = {
+      id: segmentId,
+      session_id: sessionId,
+      segment_order: 1,
+      headcount,
+      started_at: now,
+      duration_minutes: 0,
+      person_hours: 0,
+      reason: data.reason || 'Inicio de sesión',
+    };
+
+    const newSession: PackingSession = {
+      id: sessionId,
+      organization_id: orgId,
+      session_code,
+      line_name: data.line_name,
+      sku: data.sku,
+      production_order: data.production_order,
+      operator_user_id: data.operator_user_id,
+      started_at: now,
+      status: 'RUNNING',
+      total_person_hours: 0,
+      total_duration_minutes: 0,
+      segments: [initialSegment],
+      created_at: now,
+      updated_at: now,
+    };
+
+    store.packingSessions.unshift(newSession);
+    return newSession;
+  },
+
+  async addPackingSessionSegment(
+    sessionId: string,
+    data: { headcount: number; reason?: string },
+    organizationId?: string,
+    context?: PackingMutationContext
+  ): Promise<PackingSession> {
+    return this.changePackingHeadcount(sessionId, data.headcount, data.reason, organizationId, context);
+  },
+
+  async changePackingHeadcount(
+    sessionId: string,
+    newHeadcount: number,
+    reason?: string,
+    organizationId?: string,
+    context?: PackingMutationContext
+  ): Promise<PackingSession> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      if (!Number.isSafeInteger(newHeadcount) || newHeadcount <= 0) throw new Error('INVALID_HEADCOUNT');
+      const { data, error } = await supabaseAdmin.rpc('change_packing_headcount_atomic', {
+        p_organization_id: organizationId,
+        p_session_id: sessionId,
+        p_idempotency_key: requirePackingRequestId(context),
+        p_new_headcount: newHeadcount,
+        p_reason: reason ?? null,
+        p_line_name: context?.lineName ?? null,
+        p_actor_profile_id: context?.actorProfileId ?? null,
+        p_token_id: context?.tokenId ?? null,
+      });
+      if (error) throwPersistenceError(error, 'change_packing_headcount_atomic');
+      if (!data) throw new Error('PACKING_SESSION_CHANGE_EMPTY_RESULT');
+      return mapPackingSessionRow(data);
+    }
+
+    const session = await this.getPackingSession(sessionId, organizationId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    if (session.status !== 'RUNNING') throw new Error(`Cannot change headcount on session with status ${session.status}`);
+
+    const now = new Date().toISOString();
+    const segments = session.segments || [];
+    const openSegment = segments.find((s) => !s.ended_at);
+
+    if (openSegment) {
+      openSegment.ended_at = now;
+      const durationMs = Math.max(0, new Date(now).getTime() - new Date(openSegment.started_at).getTime());
+      openSegment.duration_minutes = Number((durationMs / 60000).toFixed(2));
+      openSegment.person_hours = Number(((openSegment.duration_minutes / 60) * openSegment.headcount).toFixed(3));
+    }
+
+    const nextOrder = segments.length + 1;
+    const headcount = Math.max(1, Math.round(newHeadcount));
+    const newSegment: PackingSessionSegment = {
+      id: crypto.randomUUID(),
+      session_id: sessionId,
+      segment_order: nextOrder,
+      headcount,
+      started_at: now,
+      duration_minutes: 0,
+      person_hours: 0,
+      reason: reason || `Cambio de dotación a ${headcount} operarios`,
+    };
+    segments.push(newSegment);
+
+    const totalMinutes = segments.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
+    const totalPersonHours = segments.reduce((sum, s) => sum + (s.person_hours || 0), 0);
+
+    session.segments = segments;
+    session.total_duration_minutes = Number(totalMinutes.toFixed(2));
+    session.total_person_hours = Number(totalPersonHours.toFixed(3));
+    session.updated_at = now;
+
+    return session;
+  },
+
+  async stopPackingSession(
+    sessionId: string,
+    organizationId?: string,
+    context?: PackingMutationContext
+  ): Promise<PackingSession> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('stop_packing_session_atomic', {
+        p_organization_id: organizationId,
+        p_session_id: sessionId,
+        p_idempotency_key: requirePackingRequestId(context),
+        p_line_name: context?.lineName ?? null,
+        p_actor_profile_id: context?.actorProfileId ?? null,
+        p_token_id: context?.tokenId ?? null,
+      });
+      if (error) throwPersistenceError(error, 'stop_packing_session_atomic');
+      if (!data) throw new Error('PACKING_SESSION_STOP_EMPTY_RESULT');
+      return mapPackingSessionRow(data);
+    }
+
+    const session = await this.getPackingSession(sessionId, organizationId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    if (session.status !== 'RUNNING') return session;
+
+    const now = new Date().toISOString();
+    const segments = session.segments || [];
+    const openSegment = segments.find((s) => !s.ended_at);
+
+    if (openSegment) {
+      openSegment.ended_at = now;
+      const durationMs = Math.max(0, new Date(now).getTime() - new Date(openSegment.started_at).getTime());
+      openSegment.duration_minutes = Number((durationMs / 60000).toFixed(2));
+      openSegment.person_hours = Number(((openSegment.duration_minutes / 60) * openSegment.headcount).toFixed(3));
+    }
+
+    const totalMinutes = segments.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
+    const totalPersonHours = segments.reduce((sum, s) => sum + (s.person_hours || 0), 0);
+
+    session.status = 'STOPPED';
+    session.stopped_at = now;
+    session.total_duration_minutes = Number(totalMinutes.toFixed(2));
+    session.total_person_hours = Number(totalPersonHours.toFixed(3));
+    session.updated_at = now;
+
+    return session;
+  },
+
+  async approvePackingSession(sessionId: string, approverId?: string, organizationId?: string): Promise<PackingSession> {
+    if (persistentOrganizationStore(organizationId)) {
+      throw new Error('PACKING_APPROVAL_REQUIRES_LABOR_ALLOCATIONS');
+    }
+    let session = await this.getPackingSession(sessionId, organizationId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+
+    if (session.status === 'RUNNING') {
+      session = await this.stopPackingSession(sessionId, organizationId);
+    }
+
+    const now = new Date().toISOString();
+    session.status = 'APPROVED';
+    session.approved_at = now;
+    session.approved_by = approverId;
+    session.updated_at = now;
+
+    return session;
+  },
+
+  async correctPackingSession(
+    sessionId: string,
+    updates: { total_person_hours?: number; notes?: string },
+    organizationId?: string,
+    context?: PackingMutationContext
+  ): Promise<PackingSession> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('correct_packing_session_atomic', {
+        p_organization_id: organizationId,
+        p_session_id: sessionId,
+        p_idempotency_key: requirePackingRequestId(context),
+        p_total_person_hours: updates.total_person_hours ?? null,
+        p_notes: updates.notes ?? null,
+        p_actor_profile_id: context?.actorProfileId ?? null,
+        p_line_name: context?.lineName ?? null,
+        p_token_id: context?.tokenId ?? null,
+      });
+      if (error) throwPersistenceError(error, 'correct_packing_session_atomic');
+      if (!data) throw new Error('PACKING_SESSION_CORRECT_EMPTY_RESULT');
+      return mapPackingSessionRow(data);
+    }
+
+    const session = await this.getPackingSession(sessionId, organizationId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+
+    const now = new Date().toISOString();
+    session.status = 'CORRECTED';
+    if (updates.total_person_hours !== undefined) {
+      session.total_person_hours = Number(updates.total_person_hours);
+    }
+    if (updates.notes) {
+      session.notes = session.notes ? `${session.notes} | Corrección: ${updates.notes}` : updates.notes;
+    }
+    session.updated_at = now;
+
+    return session;
+  },
+
+  async voidPackingSession(
+    sessionId: string,
+    reason?: string,
+    organizationId?: string,
+    context?: PackingMutationContext
+  ): Promise<PackingSession> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('void_packing_session_atomic', {
+        p_organization_id: organizationId,
+        p_session_id: sessionId,
+        p_idempotency_key: requirePackingRequestId(context),
+        p_reason: reason ?? null,
+        p_actor_profile_id: context?.actorProfileId ?? null,
+        p_line_name: context?.lineName ?? null,
+        p_token_id: context?.tokenId ?? null,
+      });
+      if (error) throwPersistenceError(error, 'void_packing_session_atomic');
+      if (!data) throw new Error('PACKING_SESSION_VOID_EMPTY_RESULT');
+      return mapPackingSessionRow(data);
+    }
+
+    const session = await this.getPackingSession(sessionId, organizationId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+
+    const now = new Date().toISOString();
+    session.status = 'VOIDED';
+    if (reason) {
+      session.notes = session.notes ? `${session.notes} | Anulada: ${reason}` : `Anulada: ${reason}`;
+    }
+    session.updated_at = now;
+
+    return session;
+  },
+
+  // Industrial Processes V2 — Production Periods
+  async getProductionPeriods(organizationId?: string): Promise<PlantProductionPeriod[]> {
+    if (persistentOrganizationStore(organizationId) && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('plant_production_periods')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .order('period', { ascending: false });
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            throwPersistenceError(error, 'plant_production_periods');
+          } else {
+            throw new Error(`plant_production_periods: ${error.message}`);
+          }
+        } else if (data) {
+          return (data || []).map((row: any) => ({
+            ...row,
+            good_units_produced: Number(row.good_units_produced),
+          }));
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          throwPersistenceError(err, 'plant_production_periods');
+        } else {
+          throw err;
+        }
+      }
+    }
+    return [...store.productionPeriods];
+  },
+
+  async getProductionPeriod(sku: string, period: string, organizationId?: string): Promise<PlantProductionPeriod | undefined> {
+    if (persistentOrganizationStore(organizationId) && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('plant_production_periods')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .eq('sku', sku)
+          .eq('period', period)
+          .maybeSingle();
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            throwPersistenceError(error, 'plant_production_periods');
+          } else {
+            throw new Error(`plant_production_periods: ${error.message}`);
+          }
+        } else if (data) {
+          return {
+            ...data,
+            good_units_produced: Number(data.good_units_produced),
+          };
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          throwPersistenceError(err, 'plant_production_periods');
+        } else {
+          throw err;
+        }
+      }
+    }
+    return store.productionPeriods.find((p) => p.sku === sku && p.period === period);
+  },
+
+  async saveProductionPeriod(
+    periodData: Partial<PlantProductionPeriod> & { sku: string; period: string },
+    organizationId?: string
+  ): Promise<PlantProductionPeriod> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    const orgId = organizationId || store.organizations[0].id;
+    const now = new Date().toISOString();
+
+    if (useDatabase && supabaseAdmin) {
+      try {
+        const record = {
+          organization_id: orgId,
+          sku: periodData.sku,
+          period: periodData.period,
+          good_units_produced: periodData.good_units_produced ?? 0,
+          updated_at: now,
+        };
+        const { data, error } = await supabaseAdmin
+          .from('plant_production_periods')
+          .upsert(record, { onConflict: 'organization_id,period,sku' })
+          .select('*')
+          .single();
+        if (error) {
+          if (isSchemaMissingError(error)) {
+            throwPersistenceError(error, 'plant_production_periods');
+          } else {
+            throw new Error(`save production period: ${error.message}`);
+          }
+        } else if (data) {
+          return {
+            ...data,
+            good_units_produced: Number(data.good_units_produced),
+          };
+        }
+      } catch (err: any) {
+        if (isSchemaMissingError(err)) {
+          throwPersistenceError(err, 'plant_production_periods');
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    const idx = store.productionPeriods.findIndex(
+      (p) => p.sku === periodData.sku && p.period === periodData.period
+    );
+    const updated: PlantProductionPeriod = {
+      id: idx >= 0 ? store.productionPeriods[idx].id : crypto.randomUUID(),
+      organization_id: orgId,
+      sku: periodData.sku,
+      period: periodData.period,
+      good_units_produced: periodData.good_units_produced ?? 0,
+      created_at: idx >= 0 ? store.productionPeriods[idx].created_at : now,
+      updated_at: now,
+    };
+    if (idx >= 0) {
+      store.productionPeriods[idx] = updated;
+    } else {
+      store.productionPeriods.push(updated);
+    }
+    return updated;
+  },
+
+  // Industrial Processes V2 — Process Snapshots
+  async getIndustrialProcessSnapshot(sku: string, period: string, organizationId?: string): Promise<IndustrialProcessSnapshot | undefined> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('industrial_process_snapshots')
+        .select('*')
+        .eq('organization_id', organizationId!)
+        .eq('sku', sku)
+        .eq('period', period)
+        .maybeSingle();
+      if (error) throwPersistenceError(error, 'industrial_process_snapshots');
+      if (data) return { ...data, calculation_detail: data.detail_json } as IndustrialProcessSnapshot;
+    }
+    return store.industrialSnapshots.find((s) => s.sku === sku && s.period === period);
+  },
+
+  async saveIndustrialProcessSnapshot(
+    snapshot: Omit<IndustrialProcessSnapshot, 'id'>,
+    organizationId?: string
+  ): Promise<IndustrialProcessSnapshot> {
+    const orgId = organizationId || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const detailJson = snapshot.detail_json || snapshot.calculation_detail || {};
+
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const record = {
+        organization_id: orgId,
+        sku: snapshot.sku,
+        period: snapshot.period,
+        detail_json: detailJson,
+        calculated_at: now,
+        created_by: snapshot.created_by || null,
+      };
+      const { data, error } = await supabaseAdmin
+        .from('industrial_process_snapshots')
+        .upsert(record, { onConflict: 'organization_id,period,sku' })
+        .select('*')
+        .single();
+      if (error) throwPersistenceError(error, 'industrial_process_snapshots');
+      if (!data) throw new Error('INDUSTRIAL_SNAPSHOT_EMPTY_RESULT');
+      return { ...data, calculation_detail: data.detail_json } as IndustrialProcessSnapshot;
+    }
+
+    const idx = store.industrialSnapshots.findIndex(
+      (s) => s.sku === snapshot.sku && s.period === snapshot.period
+    );
+    const item: IndustrialProcessSnapshot = {
+      id: idx >= 0 ? store.industrialSnapshots[idx].id : crypto.randomUUID(),
+      organization_id: orgId,
+      sku: snapshot.sku,
+      period: snapshot.period,
+      detail_json: detailJson,
+      calculation_detail: detailJson,
+      parameters_snapshot: snapshot.parameters_snapshot,
+      calculated_at: now,
+      created_by: snapshot.created_by,
+      created_at: idx >= 0 ? store.industrialSnapshots[idx].created_at : now,
+    };
+    if (idx >= 0) {
+      store.industrialSnapshots[idx] = item;
+    } else {
+      store.industrialSnapshots.push(item);
+    }
+    return item;
+  },
+
+  /** Persist an official process snapshot through its transaction/idempotency RPC. */
+  async saveIndustrialProcessSnapshotAtomic(
+    snapshot: Omit<IndustrialProcessSnapshot, 'id'>,
+    organizationId: string,
+    requestId: string,
+    requestFingerprint: string
+  ): Promise<IndustrialProcessSnapshot> {
+    if (!organizationId) throw new Error('ORGANIZATION_REQUIRED');
+    if (!isSupabaseAdminConfigured || !supabaseAdmin) throw new Error('SUPABASE_PERSISTENCE_UNAVAILABLE');
+    const detail = snapshot.detail_json || snapshot.calculation_detail;
+    if (!detail || !snapshot.parameters_snapshot) throw new Error('INDUSTRIAL_SNAPSHOT_DATA_REQUIRED');
+    const { data, error } = await supabaseAdmin.rpc('save_industrial_process_snapshot_atomic', {
+      p_organization_id: organizationId,
+      p_idempotency_key: requestId,
+      p_sku: snapshot.sku,
+      p_period: snapshot.period,
+      p_calculation: detail,
+      p_parameters_snapshot: snapshot.parameters_snapshot,
+      p_request_fingerprint: requestFingerprint,
+      p_actor_profile_id: snapshot.created_by || null,
+    });
+    if (error) throwPersistenceError(error, 'save_industrial_process_snapshot_atomic');
+    if (!data || typeof data !== 'object') throw new Error('INDUSTRIAL_SNAPSHOT_EMPTY_RESULT');
+    return {
+      ...data,
+      organization_id: organizationId,
+      sku: snapshot.sku,
+      period: snapshot.period,
+      calculation_detail: data.detail_json || detail,
+      detail_json: data.detail_json || detail,
+      parameters_snapshot: data.parameters_snapshot || snapshot.parameters_snapshot,
+    } as IndustrialProcessSnapshot;
+  },
+
+  /** Atomically CAS-update configuration, version Cost Sheet/components, snapshot and audit event. */
+  async applyIndustrialProcessCostAtomic(args: {
+    organizationId: string;
+    requestId: string;
+    requestFingerprint: string;
+    sku: string;
+    period: string;
+    calculation: unknown;
+    parametersSnapshot: PlantGeneralParameters;
+    input: IndustrialProductCostInput;
+    expectedConfigurationVersion: number;
+    trueUnitCostUsd: number;
+    minimumSustainablePriceUsd: number;
+    breakEvenUnits: number;
+    batchSize: number;
+    fxRate: number;
+    sheetName: string;
+    notes: string;
+    components: Array<{
+      category: string;
+      name: string;
+      component_type: 'FIXED' | 'VARIABLE';
+      basis: 'PER_UNIT' | 'PER_BATCH';
+      rate_usd: number;
+      quantity?: number;
+      unit_of_measure?: string;
+      effective_date?: string;
+      notes?: string;
+    }>;
+    actorProfileId: string;
+    persistSnapshot: boolean;
+  }): Promise<Record<string, any>> {
+    if (!args.organizationId) throw new Error('ORGANIZATION_REQUIRED');
+    if (!isSupabaseAdminConfigured || !supabaseAdmin) throw new Error('SUPABASE_PERSISTENCE_UNAVAILABLE');
+    const { data, error } = await supabaseAdmin.rpc('apply_industrial_cost_to_cost_intelligence_atomic', {
+      p_organization_id: args.organizationId,
+      p_idempotency_key: args.requestId,
+      p_sku: args.sku,
+      p_period: args.period,
+      p_calculation: args.calculation,
+      p_parameters_snapshot: args.parametersSnapshot,
+      p_input_json: args.input,
+      p_expected_configuration_version: args.expectedConfigurationVersion,
+      p_true_unit_cost_usd: args.trueUnitCostUsd,
+      p_minimum_sustainable_price_usd: args.minimumSustainablePriceUsd,
+      p_break_even_units: args.breakEvenUnits,
+      p_batch_size: args.batchSize,
+      p_fx_rate: args.fxRate,
+      p_sheet_name: args.sheetName,
+      p_notes: args.notes,
+      p_components: args.components,
+      p_actor_profile_id: args.actorProfileId,
+      p_request_fingerprint: args.requestFingerprint,
+      p_persist_snapshot: args.persistSnapshot,
+    });
+    if (error) throwPersistenceError(error, 'apply_industrial_cost_to_cost_intelligence_atomic');
+    if (!data || typeof data !== 'object' || data.applied !== true || !data.cost_sheet) {
+      throw new Error('INDUSTRIAL_COST_APPLY_EMPTY_RESULT');
+    }
+    const configuration = data.configuration;
+    const costSheet = {
+      ...data.cost_sheet,
+      components: Array.isArray(data.components) ? data.components : [],
+    };
+    return {
+      ...data,
+      configuration: configuration ? {
+        ...configuration,
+        input: configuration.input_json,
+      } : null,
+      cost_sheet: costSheet,
+    };
+  },
+
+  // ==============================================================
+  // INDUSTRIAL PROCESSES — SALARY BANDS & PERSONNEL MASTER
+  // ==============================================================
+
+  // 1. Bandas Salariales (Plant Salary Bands)
+  async getSalaryBands(organizationId?: string, onDate?: string, activeOnly = true): Promise<PlantSalaryBand[]> {
+    const today = onDate || new Date().toISOString().split('T')[0];
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data: bandsData, error: bandsError } = await supabaseAdmin
+        .from('plant_salary_bands')
+        .select('*')
+        .eq('organization_id', organizationId!)
+        .order('name');
+      if (bandsError) throwPersistenceError(bandsError, 'plant_salary_bands');
+
+      const { data: ratesData, error: ratesError } = await supabaseAdmin
+        .from('plant_salary_band_rates')
+        .select('*')
+        .eq('organization_id', organizationId!)
+        .lte('valid_from', today)
+        .order('valid_from', { ascending: false });
+      if (ratesError) throwPersistenceError(ratesError, 'plant_salary_band_rates');
+
+      const mapped = (bandsData || []).map((band: any) => {
+        const bandRates = (ratesData || []).filter((rate: any) => rate.band_id === band.id);
+        const activeRate = bandRates.find((rate: any) => !rate.valid_to || rate.valid_to >= today);
+        return mapSalaryBandRecord({
+          ...band,
+          monthly_salary_pyg: activeRate ? Number(activeRate.monthly_salary_pyg) : 0,
+          current_rate: activeRate,
+        });
+      });
+      return activeOnly ? mapped.filter((band) => band.status === 'ACTIVE') : mapped;
+    }
+
+    // In-memory fallback
+    const orgId = organizationId || store.organizations[0].id;
+    return store.salaryBands
+      .filter((b) => (!organizationId || b.organization_id === orgId) && (!activeOnly || b.status === 'ACTIVE'))
+      .map((band) => {
+        const rates = store.salaryBandRates
+          .filter((r) => r.band_id === band.id && r.valid_from <= today)
+          .sort((a, b) => b.valid_from.localeCompare(a.valid_from));
+        const activeRate = rates.find((r) => !r.valid_to || r.valid_to >= today);
+        return {
+          ...band,
+          monthly_salary_pyg: activeRate ? Number(activeRate.monthly_salary_pyg) : band.monthly_salary_pyg,
+          current_rate: activeRate,
+        };
+      });
+  },
+
+  async getSalaryBand(id: string, organizationId?: string, activeOnly = true): Promise<PlantSalaryBand | undefined> {
+    const bands = await this.getSalaryBands(organizationId, undefined, activeOnly);
+    return bands.find((b) => b.id === id);
+  },
+
+  async createSalaryBand(
+    band: Omit<PlantSalaryBand, 'id' | 'monthly_salary_pyg'>,
+    initialSalaryPyg: number,
+    validFrom?: string,
+    organizationId?: string,
+    actorId?: string
+  ): Promise<PlantSalaryBand> {
+    const orgId = organizationId || band.organization_id || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const today = validFrom || now.split('T')[0];
+    if (!isIsoDate(today)) throw new Error('INVALID_VALID_FROM');
+    if (!Number.isFinite(Number(initialSalaryPyg)) || Number(initialSalaryPyg) < 0) throw new Error('INVALID_SALARY');
+    const safeSalary = Number(initialSalaryPyg);
+    const useDatabase = persistentOrganizationStore(organizationId || band.organization_id);
+
+    if (!useDatabase && store.salaryBands.some((candidate) =>
+      candidate.organization_id === orgId && candidate.name.trim().toLowerCase() === band.name.trim().toLowerCase()
+    )) throw new Error('BAND_NAME_ALREADY_EXISTS');
+
+    const bandId = crypto.randomUUID();
+    const rateId = crypto.randomUUID();
+
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('create_plant_salary_band_with_rate', {
+        p_organization_id: orgId,
+        p_name: band.name.trim(),
+        p_description: band.description || null,
+        p_status: band.status || 'ACTIVE',
+        p_monthly_salary_pyg: safeSalary,
+        p_valid_from: today,
+        p_created_by: actorId || null,
+      });
+      if (error) throwPersistenceError(error, 'create_plant_salary_band_with_rate');
+      if (!data) throw new Error('SALARY_BAND_PERSISTENCE_FAILED');
+      return mapSalaryBandRecord(data);
+    }
+
+    const newBand: PlantSalaryBand = {
+      id: bandId,
+      organization_id: orgId,
+      name: band.name.trim(),
+      description: band.description,
+      status: band.status || 'ACTIVE',
+      monthly_salary_pyg: safeSalary,
+      current_rate: {
+        id: rateId,
+        organization_id: orgId,
+        band_id: bandId,
+        monthly_salary_pyg: safeSalary,
+        valid_from: today,
+        valid_to: null,
+        created_at: now,
+      },
+      created_at: now,
+      updated_at: now,
+    };
+    store.salaryBands.push(newBand);
+    store.salaryBandRates.push(newBand.current_rate!);
+    return newBand;
+  },
+
+  async updateSalaryBand(
+    id: string,
+      updates: Pick<Partial<PlantSalaryBand>, 'name' | 'description' | 'status'>,
+    newSalaryPyg?: number,
+    validFrom?: string,
+    organizationId?: string,
+    actorId?: string
+  ): Promise<PlantSalaryBand> {
+    const orgId = organizationId || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const today = validFrom || now.split('T')[0];
+    if (newSalaryPyg !== undefined && !isIsoDate(today)) throw new Error('INVALID_VALID_FROM');
+    const useDatabase = persistentOrganizationStore(organizationId);
+    const existingBand = useDatabase ? undefined : await this.getSalaryBand(id, organizationId, false);
+    if (!useDatabase && !existingBand) throw new Error('SALARY_BAND_NOT_FOUND');
+    if (newSalaryPyg !== undefined && (!Number.isFinite(Number(newSalaryPyg)) || Number(newSalaryPyg) < 0)) {
+      throw new Error('INVALID_SALARY');
+    }
+    if (updates.name !== undefined && (!updates.name.trim() || (!useDatabase && store.salaryBands.some((candidate) =>
+      candidate.organization_id === orgId && candidate.id !== id && candidate.name.trim().toLowerCase() === updates.name!.trim().toLowerCase()
+    )))) throw new Error('BAND_NAME_ALREADY_EXISTS');
+
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('update_plant_salary_band_with_rate', {
+        p_organization_id: orgId,
+        p_band_id: id,
+        p_updates: updates,
+        p_monthly_salary_pyg: newSalaryPyg ?? null,
+        p_valid_from: newSalaryPyg === undefined ? null : today,
+        p_created_by: actorId || null,
+      });
+      if (error) throwPersistenceError(error, 'update_plant_salary_band_with_rate');
+      if (!data) throw new Error('SALARY_BAND_PERSISTENCE_FAILED');
+      return mapSalaryBandRecord(data);
+    }
+
+    // In-memory update
+    const bandIdx = store.salaryBands.findIndex((b) => b.id === id);
+    if (bandIdx >= 0) {
+      store.salaryBands[bandIdx] = {
+        ...store.salaryBands[bandIdx],
+        ...updates,
+        updated_at: now,
+      };
+
+      if (newSalaryPyg !== undefined && Number(newSalaryPyg) >= 0) {
+        const safeSalary = Number(newSalaryPyg);
+        const sameStart = store.salaryBandRates.find((rate) => rate.band_id === id && rate.valid_from === today);
+        let newRate: PlantSalaryBandRate;
+        if (sameStart) {
+          sameStart.monthly_salary_pyg = safeSalary;
+          newRate = sameStart;
+        } else {
+          store.salaryBandRates.forEach((rate) => {
+            if (rate.band_id === id && rate.valid_from < today && (!rate.valid_to || rate.valid_to >= today)) {
+              rate.valid_to = shiftIsoDate(today, -1);
+            }
+          });
+          const nextRate = store.salaryBandRates
+            .filter((rate) => rate.band_id === id && rate.valid_from > today)
+            .sort((a, b) => a.valid_from.localeCompare(b.valid_from))[0];
+          newRate = {
+            id: crypto.randomUUID(),
+            organization_id: orgId,
+            band_id: id,
+            monthly_salary_pyg: safeSalary,
+            valid_from: today,
+            valid_to: nextRate ? shiftIsoDate(nextRate.valid_from, -1) : null,
+            created_at: now,
+            created_by: actorId,
+          };
+          store.salaryBandRates.push(newRate);
+        }
+        store.salaryBands[bandIdx].monthly_salary_pyg = safeSalary;
+        store.salaryBands[bandIdx].current_rate = newRate;
+      }
+    }
+
+    return (await this.getSalaryBand(id, organizationId, false)) || store.salaryBands[bandIdx];
+  },
+
+  async deleteOrDeactivateSalaryBand(
+    id: string,
+    organizationId?: string
+  ): Promise<{ success: boolean; deactivated?: boolean }> {
+    const orgId = organizationId || store.organizations[0].id;
+    const useDatabase = persistentOrganizationStore(organizationId);
+    const band = await this.getSalaryBand(id, organizationId, false);
+    if (!band) throw new Error('SALARY_BAND_NOT_FOUND');
+
+    // Check persisted and in-memory references before deciding whether a band can be removed.
+    const [assignments, allocations] = await Promise.all([
+      this.getPersonnelAssignments(orgId, undefined, false),
+      this.getPackingLaborAllocations(undefined, orgId),
+    ]);
+    const hasAssignments = assignments.some((a) => a.salary_band_id === id);
+    const hasAllocations = allocations.some((a) => a.salary_band_id === id);
+
+    if (hasAssignments || hasAllocations) {
+      // Safe guard: deactivate instead of hard delete to preserve historical integrity
+      await this.updateSalaryBand(id, { status: 'INACTIVE' }, undefined, undefined, organizationId);
+      return { success: true, deactivated: true };
+    }
+
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.from('plant_salary_bands')
+        .delete().eq('id', id).eq('organization_id', orgId).select('id');
+      if (error) throwPersistenceError(error, 'plant_salary_bands');
+      if (!data?.length) throw new Error('SALARY_BAND_NOT_FOUND');
+      return { success: true, deactivated: false };
+    }
+
+    store.salaryBands = store.salaryBands.filter((b) => b.id !== id);
+    store.salaryBandRates = store.salaryBandRates.filter((r) => r.band_id !== id);
+    return { success: true, deactivated: false };
+  },
+
+  async getSalaryBandRates(bandId: string, organizationId?: string): Promise<PlantSalaryBandRate[]> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('plant_salary_band_rates')
+        .select('*')
+        .eq('band_id', bandId)
+        .eq('organization_id', organizationId!)
+        .order('valid_from', { ascending: false });
+      if (error) throwPersistenceError(error, 'plant_salary_band_rates');
+      return (data || []).map((r: any) => ({
+        id: r.id,
+        organization_id: r.organization_id,
+        band_id: r.band_id,
+        monthly_salary_pyg: Number(r.monthly_salary_pyg),
+        valid_from: r.valid_from,
+        valid_to: r.valid_to || null,
+        notes: r.notes || undefined,
+        created_at: r.created_at,
+        created_by: r.created_by,
+      }));
+    }
+    return store.salaryBandRates
+      .filter((r) => r.band_id === bandId && (!organizationId || r.organization_id === organizationId))
+      .sort((a, b) => b.valid_from.localeCompare(a.valid_from));
+  },
+
+  // Salary history belongs to a person. Process assignments only describe operational allocation.
+  async getPersonnelSalaryAssignments(
+    organizationId?: string,
+    activeOnly = true,
+    onDate?: string
+  ): Promise<PlantPersonnelSalaryAssignment[]> {
+    const orgId = organizationId || store.organizations[0].id;
+    const targetDate = onDate || new Date().toISOString().split('T')[0];
+    let rows: PlantPersonnelSalaryAssignment[] = [];
+    const useDatabase = persistentOrganizationStore(organizationId);
+
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('plant_personnel_salary_assignments')
+        .select('*')
+        .eq('organization_id', organizationId!);
+      if (error) throwPersistenceError(error, 'plant_personnel_salary_assignments');
+      rows = (data || []).map((row: any) => ({
+        id: row.id,
+        organization_id: row.organization_id,
+        personnel_id: row.personnel_id,
+        salary_band_id: row.salary_band_id,
+        valid_from: row.valid_from,
+        valid_to: row.valid_to || null,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      }));
+    } else {
+      rows = store.personnelSalaryAssignments.filter((row) => row.organization_id === orgId);
+      if (!rows.length) {
+        // Legacy compatibility is limited to local fixture mode; production never treats
+        // operational assignments as authoritative salary history.
+        const legacyAssignments = await this.getPersonnelAssignments(orgId, undefined, false, targetDate);
+        const byPersonAndStart = new Map<string, PlantPersonnelSalaryAssignment>();
+        for (const assignment of legacyAssignments) {
+          const key = `${assignment.personnel_id}:${assignment.valid_from}`;
+          byPersonAndStart.set(key, {
+            id: `legacy-${assignment.id}`,
+            organization_id: assignment.organization_id,
+            personnel_id: assignment.personnel_id,
+            salary_band_id: assignment.salary_band_id,
+            valid_from: assignment.valid_from,
+            valid_to: assignment.valid_to,
+          });
+        }
+        rows = [...byPersonAndStart.values()];
+      }
+    }
+
+    const bands = await this.getSalaryBands(orgId, targetDate, false);
+    return rows
+      .filter((row) => !activeOnly || (row.valid_from <= targetDate && (!row.valid_to || row.valid_to >= targetDate)))
+      .map((row) => {
+        const band = bands.find((candidate) => candidate.id === row.salary_band_id);
+        return {
+          ...row,
+          band_name: band?.name || 'Banda',
+          monthly_salary_pyg: band?.monthly_salary_pyg || 0,
+        };
+      });
+  },
+
+  async savePersonnelSalaryAssignment(
+    assignment: Omit<PlantPersonnelSalaryAssignment, 'id'>,
+    organizationId?: string
+  ): Promise<PlantPersonnelSalaryAssignment> {
+    const orgId = organizationId || assignment.organization_id || store.organizations[0].id;
+    const targetDate = assignment.valid_from;
+    const useDatabase = persistentOrganizationStore(organizationId || assignment.organization_id);
+    if (!isIsoDate(targetDate) || (assignment.valid_to && (!isIsoDate(assignment.valid_to) || assignment.valid_to < targetDate))) {
+      throw new Error('INVALID_SALARY_ASSIGNMENT_DATES');
+    }
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('save_plant_personnel_salary_assignment', {
+        p_organization_id: orgId,
+        p_personnel_id: assignment.personnel_id,
+        p_salary_band_id: assignment.salary_band_id,
+        p_valid_from: assignment.valid_from,
+        p_valid_to: assignment.valid_to || null,
+      });
+      if (error) throwPersistenceError(error, 'save_plant_personnel_salary_assignment');
+      if (!data) throw new Error('PERSONNEL_SALARY_ASSIGNMENT_PERSISTENCE_FAILED');
+      return {
+        ...data,
+        monthly_salary_pyg: Number(data.monthly_salary_pyg) || 0,
+        valid_to: data.valid_to || null,
+      } as PlantPersonnelSalaryAssignment;
+    }
+    const member = await this.getPersonnelMember(assignment.personnel_id, orgId);
+    if (!member) throw new Error('PERSONNEL_NOT_FOUND');
+    if (member.hire_date > targetDate || (member.termination_date && member.termination_date < targetDate)) {
+      throw new Error('PERSONNEL_NOT_ACTIVE_ON_DATE');
+    }
+    if (member.status !== 'ACTIVE') throw new Error('PERSONNEL_INACTIVE');
+    const band = await this.getSalaryBand(assignment.salary_band_id, orgId, false);
+    if (!band) throw new Error('SALARY_BAND_NOT_FOUND');
+
+    const history = await this.getPersonnelSalaryAssignments(orgId, false, targetDate);
+    const personRows = history.filter((row) => row.personnel_id === assignment.personnel_id);
+    const sameStart = personRows.find((row) => row.valid_from === targetDate);
+    const previousRows = personRows.filter((row) => row.valid_from < targetDate && (!row.valid_to || row.valid_to >= targetDate));
+    const nextRow = personRows.filter((row) => row.valid_from > targetDate).sort((a, b) => a.valid_from.localeCompare(b.valid_from))[0];
+    const requestedEnd = assignment.valid_to || null;
+    const nextStartEnd = nextRow ? shiftIsoDate(nextRow.valid_from, -1) : null;
+    const effectiveEnd = requestedEnd && nextStartEnd
+      ? (requestedEnd < nextStartEnd ? requestedEnd : nextStartEnd)
+      : requestedEnd || nextStartEnd;
+    const now = new Date().toISOString();
+    const id = sameStart?.id.startsWith('legacy-') ? crypto.randomUUID() : sameStart?.id || crypto.randomUUID();
+    const item: PlantPersonnelSalaryAssignment = {
+      ...assignment,
+      id,
+      organization_id: orgId,
+      valid_to: effectiveEnd,
+      band_name: band.name,
+      monthly_salary_pyg: band.monthly_salary_pyg,
+      updated_at: now,
+    };
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        for (const previous of previousRows.filter((row) => !row.id.startsWith('legacy-'))) {
+          const { error } = await supabaseAdmin.from('plant_personnel_salary_assignments')
+            .update({ valid_to: shiftIsoDate(targetDate, -1), updated_at: now })
+            .eq('id', previous.id).eq('organization_id', orgId);
+          if (error) throw error;
+        }
+        const values = {
+          personnel_id: item.personnel_id,
+          salary_band_id: item.salary_band_id,
+          valid_from: item.valid_from,
+          valid_to: item.valid_to,
+          updated_at: now,
+        };
+        const result = sameStart && !sameStart.id.startsWith('legacy-')
+          ? await supabaseAdmin.from('plant_personnel_salary_assignments').update(values).eq('id', id).eq('organization_id', orgId)
+          : await supabaseAdmin.from('plant_personnel_salary_assignments').insert({ id, organization_id: orgId, ...values, created_at: now });
+        if (result.error) throw result.error;
+      } catch (error) {
+        if (!isSchemaMissingError(error)) throw error;
+        throw new Error('PERSONNEL_SALARY_MIGRATION_REQUIRED');
+      }
+    }
+
+    for (const previous of previousRows) {
+      if (previous.id.startsWith('legacy-')) continue;
+      const row = store.personnelSalaryAssignments.find((candidate) => candidate.id === previous.id);
+      if (row) row.valid_to = shiftIsoDate(targetDate, -1);
+    }
+    const existingIndex = store.personnelSalaryAssignments.findIndex((row) => row.id === id);
+    if (existingIndex >= 0) store.personnelSalaryAssignments[existingIndex] = item;
+    else store.personnelSalaryAssignments.push(item);
+    return item;
+  },
+
+  // 2. Maestro de Personal de Planta (Plant Personnel)
+  async getPersonnel(organizationId?: string, sector?: IndustrialSector, onDate?: string): Promise<PlantPersonnel[]> {
+    const orgId = organizationId || store.organizations[0].id;
+    const today = onDate || new Date().toISOString().split('T')[0];
+    const useDatabase = persistentOrganizationStore(organizationId);
+    const allAssignments = await this.getPersonnelAssignments(orgId, undefined, true, today);
+    const allSalaryAssignments = await this.getPersonnelSalaryAssignments(orgId, true, today);
+
+    let members: PlantPersonnel[] = [];
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.from('plant_personnel').select('*')
+        .eq('organization_id', organizationId!).order('employee_code');
+      if (error) throwPersistenceError(error, 'plant_personnel');
+      members = (data || []).map((person: any) => ({
+        id: person.id,
+        organization_id: person.organization_id,
+        employee_code: person.employee_code,
+        display_name: person.display_name,
+        status: person.status,
+        hire_date: person.hire_date,
+        termination_date: person.termination_date || null,
+        created_at: person.created_at,
+        updated_at: person.updated_at,
+      }));
+    } else {
+      members = store.plantPersonnel.filter((person) => person.organization_id === orgId);
+    }
+
+    const populated = members.map((member) => {
+      const employed = member.hire_date <= today && (!member.termination_date || member.termination_date >= today) &&
+        (member.status === 'ACTIVE' || Boolean(member.termination_date && member.termination_date >= today));
+      const memberAssignments = employed ? allAssignments.filter((row) => row.personnel_id === member.id) : [];
+      const salary = employed ? allSalaryAssignments.find((row) => row.personnel_id === member.id) : undefined;
+      const band = salary ? { id: salary.salary_band_id, name: salary.band_name, monthly_salary_pyg: salary.monthly_salary_pyg } : undefined;
+      return {
+        ...member,
+        primary_sector: memberAssignments[0]?.sector || member.primary_sector,
+        current_band_id: band?.id,
+        current_band_name: band?.name,
+        current_salary_pyg: Number(band?.monthly_salary_pyg) || 0,
+        assignments: memberAssignments,
+      };
+    });
+    return sector ? populated.filter((member) => member.assignments?.some((row) => row.sector === sector)) : populated;
+  },
+
+  async getPersonnelMember(id: string, organizationId?: string): Promise<PlantPersonnel | undefined> {
+    const all = await this.getPersonnel(organizationId);
+    return all.find((p) => p.id === id);
+  },
+
+  async createPersonnel(
+    member: Omit<PlantPersonnel, 'id'>,
+    initialBandId?: string,
+    initialSector?: IndustrialSector,
+    organizationId?: string
+  ): Promise<PlantPersonnel> {
+    const orgId = organizationId || member.organization_id || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const id = crypto.randomUUID();
+    const useDatabase = persistentOrganizationStore(organizationId || member.organization_id);
+
+    const newMember: PlantPersonnel = {
+      id,
+      organization_id: orgId,
+      employee_code: member.employee_code.trim(),
+      display_name: member.display_name.trim(),
+      status: member.status || 'ACTIVE',
+      hire_date: member.hire_date || now.split('T')[0],
+      termination_date: member.termination_date || null,
+      primary_sector: initialSector || member.primary_sector,
+      current_band_id: initialBandId,
+      created_at: now,
+      updated_at: now,
+    };
+    if (!newMember.employee_code || !newMember.display_name || !isIsoDate(newMember.hire_date)) {
+      throw new Error('INVALID_PERSONNEL');
+    }
+    if (newMember.status !== 'ACTIVE' && newMember.status !== 'INACTIVE') throw new Error('INVALID_PERSONNEL_STATUS');
+    if (newMember.termination_date && (!isIsoDate(newMember.termination_date) || newMember.termination_date < newMember.hire_date)) {
+      throw new Error('INVALID_TERMINATION_DATE');
+    }
+
+    if (!useDatabase && store.plantPersonnel.some((p) =>
+      p.organization_id === orgId && p.employee_code.toLowerCase() === newMember.employee_code.toLowerCase()
+    )) throw new Error('EMPLOYEE_CODE_ALREADY_EXISTS');
+
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('create_plant_personnel_with_assignments', {
+        p_organization_id: orgId,
+        p_employee_code: newMember.employee_code,
+        p_display_name: newMember.display_name,
+        p_status: newMember.status,
+        p_hire_date: newMember.hire_date,
+        p_termination_date: newMember.termination_date,
+        p_salary_band_id: initialBandId || null,
+        p_sector: initialSector || null,
+        p_machine_generation: initialSector === 'FORMADO' ? 'GEN1' : null,
+        p_allocation_percent: 100,
+      });
+      if (error) throwPersistenceError(error, 'create_plant_personnel_with_assignments');
+      if (!data) throw new Error('PERSONNEL_PERSISTENCE_FAILED');
+      return {
+        ...data,
+        termination_date: data.termination_date || null,
+        primary_sector: initialSector || undefined,
+        current_band_id: initialBandId,
+      } as PlantPersonnel;
+    }
+
+    store.plantPersonnel.push(newMember);
+
+    // Salary is a person attribute. The optional process assignment is saved separately.
+    if (initialBandId) {
+      await this.savePersonnelSalaryAssignment({
+        organization_id: orgId,
+        personnel_id: id,
+        salary_band_id: initialBandId,
+        valid_from: newMember.hire_date,
+        valid_to: null,
+      }, orgId);
+    }
+    if (initialBandId && initialSector) {
+      await this.savePersonnelAssignment(
+        {
+          organization_id: orgId,
+          personnel_id: id,
+          salary_band_id: initialBandId,
+          sector: initialSector,
+          machine_generation: initialSector === 'FORMADO' ? 'GEN1' : null,
+          allocation_percent: 100,
+          valid_from: newMember.hire_date,
+          valid_to: null,
+        },
+        orgId
+      );
+    }
+
+    return (await this.getPersonnelMember(id, organizationId)) || newMember;
+  },
+
+  async updatePersonnel(
+    id: string,
+    updates: Pick<Partial<PlantPersonnel>, 'employee_code' | 'display_name' | 'status' | 'hire_date' | 'termination_date'>,
+    organizationId?: string,
+    salaryBandId?: string,
+    salaryValidFrom?: string
+  ): Promise<PlantPersonnel> {
+    const orgId = organizationId || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      if (salaryBandId && (!salaryValidFrom || !isIsoDate(salaryValidFrom))) {
+        throw new Error('INVALID_SALARY_ASSIGNMENT_DATES');
+      }
+      const { data, error } = await supabaseAdmin.rpc('update_plant_personnel_with_salary', {
+        p_organization_id: orgId,
+        p_personnel_id: id,
+        p_updates: updates,
+        p_salary_band_id: salaryBandId || null,
+        p_salary_valid_from: salaryBandId ? salaryValidFrom : null,
+      });
+      if (error) throwPersistenceError(error, 'update_plant_personnel_with_salary');
+      if (!data) throw new Error('PERSONNEL_PERSISTENCE_FAILED');
+      return { ...data, termination_date: data.termination_date || null } as PlantPersonnel;
+    }
+
+    const existingMember = await this.getPersonnelMember(id, organizationId);
+    if (!existingMember) throw new Error('PERSONNEL_NOT_FOUND');
+    if (updates.hire_date !== undefined && !isIsoDate(updates.hire_date)) throw new Error('INVALID_HIRE_DATE');
+    const effectiveHireDate = updates.hire_date || existingMember.hire_date;
+    const effectiveTerminationDate = updates.termination_date !== undefined ? updates.termination_date : existingMember.termination_date;
+    if (effectiveTerminationDate && (!isIsoDate(effectiveTerminationDate) || effectiveTerminationDate < effectiveHireDate)) {
+      throw new Error('INVALID_TERMINATION_DATE');
+    }
+    if (updates.employee_code !== undefined) {
+      const members = await this.getPersonnel(organizationId);
+      if (members.some((member) => member.id !== id && member.employee_code.toLowerCase() === updates.employee_code!.trim().toLowerCase())) {
+        throw new Error('EMPLOYEE_CODE_ALREADY_EXISTS');
+      }
+    }
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const updateFields: any = { updated_at: now };
+        if (updates.employee_code !== undefined) updateFields.employee_code = updates.employee_code.trim();
+        if (updates.display_name !== undefined) updateFields.display_name = updates.display_name.trim();
+        if (updates.status !== undefined) updateFields.status = updates.status;
+        if (updates.hire_date !== undefined) updateFields.hire_date = updates.hire_date;
+        if (updates.termination_date !== undefined) updateFields.termination_date = updates.termination_date;
+
+        const { data, error } = await supabaseAdmin
+          .from('plant_personnel')
+          .update(updateFields)
+          .eq('id', id)
+          .eq('organization_id', orgId)
+          .select('id');
+        if (error) throw error;
+        if (!data?.length) throw new Error('PERSONNEL_NOT_FOUND');
+      } catch (err: any) {
+        if (!isSchemaMissingError(err)) throw err;
+      }
+    }
+
+    const idx = store.plantPersonnel.findIndex((p) => p.id === id && p.organization_id === orgId);
+    if (idx >= 0) {
+      store.plantPersonnel[idx] = {
+        ...store.plantPersonnel[idx],
+        ...updates,
+        updated_at: now,
+      };
+    }
+
+    if (salaryBandId) {
+      if (!salaryValidFrom) throw new Error('INVALID_SALARY_ASSIGNMENT_DATES');
+      await this.savePersonnelSalaryAssignment({
+        organization_id: orgId,
+        personnel_id: id,
+        salary_band_id: salaryBandId,
+        valid_from: salaryValidFrom,
+        valid_to: null,
+      }, organizationId);
+    }
+
+    const updated = await this.getPersonnelMember(id, organizationId);
+    if (!updated && idx < 0) throw new Error('PERSONNEL_NOT_FOUND');
+    return updated || store.plantPersonnel[idx];
+  },
+
+  async deleteOrDeactivatePersonnel(
+    id: string,
+    organizationId?: string
+  ): Promise<{ success: boolean; deactivated?: boolean }> {
+    await this.updatePersonnel(id, { status: 'INACTIVE', termination_date: new Date().toISOString().split('T')[0] }, organizationId);
+    return { success: true, deactivated: true };
+  },
+
+  // 3. Asignaciones de Personal (Personnel Assignments)
+  async getPersonnelAssignments(
+    organizationId?: string,
+    sector?: IndustrialSector,
+    activeOnly = true,
+    onDate?: string
+  ): Promise<PlantPersonnelAssignment[]> {
+    const orgId = organizationId || store.organizations[0].id;
+    const targetDate = onDate || new Date().toISOString().split('T')[0];
+    const useDatabase = persistentOrganizationStore(organizationId);
+
+    const allBands = await this.getSalaryBands(orgId, targetDate, false);
+
+    let rawAssignments: PlantPersonnelAssignment[] = [];
+    if (useDatabase && supabaseAdmin) {
+      let query = supabaseAdmin
+        .from('plant_personnel_assignments')
+        .select('*')
+        .eq('organization_id', organizationId!);
+      if (activeOnly) query = query.lte('valid_from', targetDate);
+      const { data, error } = await query;
+      if (error) throwPersistenceError(error, 'plant_personnel_assignments');
+      rawAssignments = (data || []).map((a: any) => ({
+        id: a.id,
+        organization_id: a.organization_id,
+        personnel_id: a.personnel_id,
+        salary_band_id: a.salary_band_id,
+        sector: (a.sector === 'FORMADO_GEN1' || a.sector === 'FORMADO_GEN2' ? 'FORMADO' : a.sector) as IndustrialSector,
+        machine_generation: (a.machine_generation || (a.sector === 'FORMADO_GEN1' ? 'GEN1' : a.sector === 'FORMADO_GEN2' ? 'GEN2' : null)) as MachineGeneration | null,
+        line_id: a.line_id || undefined,
+        allocation_percent: Number(a.allocation_percent),
+        valid_from: a.valid_from,
+        valid_to: a.valid_to || null,
+        created_at: a.created_at,
+        updated_at: a.updated_at,
+      }));
+    } else {
+      rawAssignments = store.personnelAssignments.filter((a) => !organizationId || a.organization_id === orgId);
+    }
+
+    const filtered = rawAssignments.filter((a) => {
+      if (sector && a.sector !== sector) return false;
+      if (activeOnly) {
+        if (a.valid_from > targetDate) return false;
+        if (a.valid_to && a.valid_to < targetDate) return false;
+      }
+      return true;
+    });
+
+    return filtered.map((a) => {
+      const band = allBands.find((b) => b.id === a.salary_band_id);
+      return {
+        ...a,
+        band_name: band?.name || 'Banda',
+        monthly_salary_pyg: band?.monthly_salary_pyg || 0,
+      };
+    });
+  },
+
+  async savePersonnelAssignment(
+    assignment: Omit<PlantPersonnelAssignment, 'id'>,
+    organizationId?: string
+  ): Promise<PlantPersonnelAssignment> {
+    const orgId = organizationId || assignment.organization_id || store.organizations[0].id;
+    const now = new Date().toISOString();
+    const targetDate = assignment.valid_from || now.split('T')[0];
+    const allocationPercent = Number(assignment.allocation_percent);
+    const useDatabase = persistentOrganizationStore(organizationId || assignment.organization_id);
+    const sectors: IndustrialSector[] = ['FORMADO', 'CALIDAD', 'EMPAQUE'];
+    if (!sectors.includes(assignment.sector)) throw new Error('INVALID_SECTOR');
+    if (assignment.sector === 'FORMADO' && !assignment.machine_generation) throw new Error('MACHINE_GENERATION_REQUIRED');
+    if (assignment.machine_generation && (assignment.sector !== 'FORMADO' || !['GEN1', 'GEN2'].includes(assignment.machine_generation))) {
+      throw new Error('INVALID_MACHINE_GENERATION');
+    }
+    if (!isIsoDate(targetDate) || (assignment.valid_to && (!isIsoDate(assignment.valid_to) || assignment.valid_to < targetDate))) {
+      throw new Error('INVALID_ASSIGNMENT_DATES');
+    }
+    if (!Number.isFinite(allocationPercent) || allocationPercent <= 0 || allocationPercent > 100) {
+      throw new Error('INVALID_ALLOCATION_PERCENT');
+    }
+
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('save_plant_personnel_assignment', {
+        p_organization_id: orgId,
+        p_personnel_id: assignment.personnel_id,
+        p_sector: assignment.sector,
+        p_machine_generation: assignment.machine_generation || null,
+        p_line_id: assignment.line_id || null,
+        p_allocation_percent: allocationPercent,
+        p_valid_from: targetDate,
+        p_valid_to: assignment.valid_to || null,
+      });
+      if (error) throwPersistenceError(error, 'save_plant_personnel_assignment');
+      if (!data) throw new Error('PERSONNEL_ASSIGNMENT_PERSISTENCE_FAILED');
+      return {
+        ...data,
+        allocation_percent: Number(data.allocation_percent),
+        monthly_salary_pyg: Number(data.monthly_salary_pyg) || 0,
+        machine_generation: data.machine_generation || null,
+        line_id: data.line_id || undefined,
+        valid_to: data.valid_to || null,
+      } as PlantPersonnelAssignment;
+    }
+
+    const member = await this.getPersonnelMember(assignment.personnel_id, orgId);
+    if (!member) throw new Error('PERSONNEL_NOT_FOUND');
+    if (member.status !== 'ACTIVE') throw new Error('PERSONNEL_INACTIVE');
+    if (member.hire_date > targetDate || (member.termination_date && member.termination_date < targetDate)) {
+      throw new Error('PERSONNEL_NOT_ACTIVE_ON_DATE');
+    }
+    const salaryAssignment = (await this.getPersonnelSalaryAssignments(orgId, true, targetDate))
+      .find((row) => row.personnel_id === assignment.personnel_id);
+    if (!salaryAssignment) throw new Error('PERSONNEL_SALARY_BAND_REQUIRED');
+    const band = await this.getSalaryBand(salaryAssignment.salary_band_id, orgId);
+    if (!band) throw new Error('SALARY_BAND_NOT_FOUND');
+
+    const history = await this.getPersonnelAssignments(orgId, undefined, false, targetDate);
+    const sameOperationalSlot = history.filter((row) => row.personnel_id === assignment.personnel_id && row.sector === assignment.sector &&
+      (row.machine_generation || null) === (assignment.machine_generation || null));
+    const sameStart = sameOperationalSlot.find((row) => row.valid_from === targetDate);
+    const previousRows = sameOperationalSlot.filter((row) => row.valid_from < targetDate && (!row.valid_to || row.valid_to >= targetDate));
+    const nextRow = sameOperationalSlot
+      .filter((a) => a.valid_from > targetDate)
+      .sort((a, b) => a.valid_from.localeCompare(b.valid_from))[0];
+    const requestedEnd = assignment.valid_to || null;
+    const nextStartEnd = nextRow ? shiftIsoDate(nextRow.valid_from, -1) : null;
+    const effectiveEnd = requestedEnd && nextStartEnd
+      ? (requestedEnd < nextStartEnd ? requestedEnd : nextStartEnd)
+      : requestedEnd || nextStartEnd;
+
+    const existingActive = await this.getPersonnelAssignments(orgId, undefined, true, targetDate);
+    const otherAllocationsSum = existingActive
+      .filter((a) => a.personnel_id === assignment.personnel_id && a.id !== sameStart?.id)
+      .reduce((sum, a) => sum + a.allocation_percent, 0);
+    if (otherAllocationsSum + allocationPercent > 100) throw new Error('ASSIGNMENT_ALLOCATION_EXCEEDED');
+
+    const id = sameStart?.id || crypto.randomUUID();
+    const item: PlantPersonnelAssignment = {
+      id,
+      organization_id: orgId,
+      personnel_id: assignment.personnel_id,
+      salary_band_id: salaryAssignment.salary_band_id,
+      sector: assignment.sector,
+      machine_generation: assignment.machine_generation || null,
+      line_id: assignment.line_id,
+      allocation_percent: allocationPercent,
+      valid_from: targetDate,
+      valid_to: effectiveEnd,
+      created_at: now,
+      updated_at: now,
+    };
+
+    for (const previous of previousRows) {
+      const stored = store.personnelAssignments.find((a) => a.id === previous.id);
+      if (stored) stored.valid_to = shiftIsoDate(targetDate, -1);
+    }
+    if (sameStart) {
+      const index = store.personnelAssignments.findIndex((a) => a.id === id);
+      if (index >= 0) store.personnelAssignments[index] = { ...store.personnelAssignments[index], ...item };
+      else store.personnelAssignments.push(item);
+    } else {
+      store.personnelAssignments.push(item);
+    }
+
+    return item;
+  },
+
+  async deletePersonnelAssignment(id: string, organizationId?: string): Promise<void> {
+    const orgId = organizationId || store.organizations[0].id;
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('plant_personnel_assignments')
+        .delete()
+        .eq('id', id)
+        .eq('organization_id', orgId)
+        .select('id');
+      if (error) throwPersistenceError(error, 'plant_personnel_assignments');
+      if (!data?.length) throw new Error('PERSONNEL_ASSIGNMENT_NOT_FOUND');
+      return;
+    }
+    store.personnelAssignments = store.personnelAssignments.filter((a) => !(a.id === id && a.organization_id === orgId));
+  },
+
+  // 4. Resumen Sectorial de Personal (Sector Personnel Summary)
+  async getSectorPersonnelSummary(
+    organizationId?: string,
+    onDate?: string,
+    monthlySalaryHours = 200,
+    laborChargesPercent = 16.5
+  ): Promise<Record<IndustrialSector, SectorPersonnelSummary>> {
+    const orgId = organizationId || store.organizations[0].id;
+    const targetDate = onDate || new Date().toISOString().split('T')[0];
+
+    const sectors: IndustrialSector[] = ['FORMADO', 'CALIDAD', 'EMPAQUE'];
+    const assignments = await this.getPersonnelAssignments(orgId, undefined, true, targetDate);
+    const personnelMembers = await this.getPersonnel(orgId, undefined, targetDate);
+    const laborMultiplier = 1 + (Number(laborChargesPercent) || 0) / 100;
+    const safeHours = monthlySalaryHours > 0 ? monthlySalaryHours : 200;
+
+    const result: Partial<Record<IndustrialSector, SectorPersonnelSummary>> = {};
+
+    for (const sector of sectors) {
+      const sectorAssignments = assignments.filter((assignment) => assignment.sector === sector);
+      const items: SectorPersonnelItem[] = [];
+
+      let totalBasePyg = 0;
+      let totalHourlyRatePyg = 0;
+
+      const personnelIds = [...new Set(sectorAssignments.map((assignment) => assignment.personnel_id))];
+      for (const personnelId of personnelIds) {
+        const member = personnelMembers.find((candidate) => candidate.id === personnelId);
+        if (!member || member.hire_date > targetDate || (member.termination_date && member.termination_date < targetDate)) continue;
+        if (member.status !== 'ACTIVE' && (!member.termination_date || member.termination_date <= targetDate)) continue;
+        const memberAssignments = sectorAssignments.filter((assignment) => assignment.personnel_id === personnelId);
+        const allocationPercent = memberAssignments.reduce((sum, assignment) => sum + Number(assignment.allocation_percent || 0), 0);
+        const monthlySalary = Number(member.current_salary_pyg) || 0;
+        const allocationFactor = Math.min(allocationPercent, 100) / 100;
+        const effectiveSalaryPyg = monthlySalary * allocationFactor;
+        const hourlyRatePyg = safeHours > 0 ? (effectiveSalaryPyg * laborMultiplier) / safeHours : 0;
+        const generationAllocations = sector === 'FORMADO'
+          ? {
+              GEN1: memberAssignments.filter((assignment) => assignment.machine_generation === 'GEN1')
+                .reduce((sum, assignment) => sum + Number(assignment.allocation_percent || 0), 0),
+              GEN2: memberAssignments.filter((assignment) => assignment.machine_generation === 'GEN2')
+                .reduce((sum, assignment) => sum + Number(assignment.allocation_percent || 0), 0),
+            }
+          : undefined;
+
+        totalBasePyg += effectiveSalaryPyg;
+        totalHourlyRatePyg += hourlyRatePyg;
+
+        items.push({
+          personnel_id: member.id,
+          employee_code: member.employee_code,
+          display_name: member.display_name,
+          band_id: member.current_band_id || '',
+          band_name: member.current_band_name || 'Sin banda',
+          monthly_salary_pyg: monthlySalary,
+          allocation_percent: allocationPercent,
+          effective_monthly_salary_pyg: effectiveSalaryPyg,
+          hourly_rate_pyg: hourlyRatePyg,
+          generation_allocations: generationAllocations,
+        });
+      }
+
+      const assignedCount = items.length;
+      const hourlyAvgPyg = assignedCount > 0 ? totalHourlyRatePyg / assignedCount : 0;
+      const totalWithChargesPyg = totalBasePyg * laborMultiplier;
+
+      result[sector] = {
+        sector,
+        assigned_count: assignedCount,
+        monthly_salary_base_pyg: totalBasePyg,
+        monthly_salary_with_charges_pyg: totalWithChargesPyg,
+        hourly_rate_avg_pyg: hourlyAvgPyg,
+        personnel: items,
+        is_configured: assignedCount > 0 && items.every((item) => item.monthly_salary_pyg > 0),
+      };
+    }
+
+    return result as Record<IndustrialSector, SectorPersonnelSummary>;
+  },
+
+  // 5. Imputaciones Salariales de Empaque (Packing Labor Allocations)
+  async getPackingLaborAllocations(
+    sessionIdOrIds?: string | string[],
+    organizationId?: string
+  ): Promise<PackingLaborAllocation[]> {
+    const orgId = organizationId || store.organizations[0].id;
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      let query = supabaseAdmin
+        .from('packing_labor_allocations')
+        .select('*')
+        .eq('organization_id', orgId);
+      if (typeof sessionIdOrIds === 'string') {
+        query = query.eq('session_id', sessionIdOrIds);
+      } else if (Array.isArray(sessionIdOrIds) && sessionIdOrIds.length > 0) {
+        query = query.in('session_id', sessionIdOrIds);
+      }
+      const { data, error } = await query;
+      if (error) throwPersistenceError(error, 'packing_labor_allocations');
+      const bands = await this.getSalaryBands(orgId, undefined, false);
+      return (data || []).map((a: any) => {
+        const band = bands.find((b) => b.id === a.salary_band_id);
+        return {
+          id: a.id,
+          organization_id: a.organization_id,
+          session_id: a.session_id,
+          session_segment_id: a.session_segment_id || undefined,
+          salary_band_id: a.salary_band_id,
+          salary_band_name: band?.name || 'Banda',
+          headcount: Number(a.headcount),
+          hourly_rate_snapshot_pyg: Number(a.hourly_rate_snapshot_pyg),
+          calculated_cost_pyg: Number(a.calculated_cost_pyg),
+          notes: a.notes || undefined,
+          approved_by: a.approved_by || undefined,
+          approved_at: a.approved_at,
+        };
+      });
+    }
+
+    let allocs = store.packingLaborAllocations.filter((a) => !organizationId || a.organization_id === orgId);
+    if (typeof sessionIdOrIds === 'string') {
+      allocs = allocs.filter((a) => a.session_id === sessionIdOrIds);
+    } else if (Array.isArray(sessionIdOrIds) && sessionIdOrIds.length > 0) {
+      allocs = allocs.filter((a) => sessionIdOrIds.includes(a.session_id));
+    }
+    return allocs;
+  },
+
+  async approvePackingSessionWithLaborAllocations(
+    sessionId: string,
+    allocations: Array<{
+      segment_id?: string;
+      salary_band_id: string;
+      headcount: number;
+      duration_hours?: number;
+    }>,
+    supervisorId?: string,
+    organizationId?: string,
+    context?: PackingMutationContext
+  ): Promise<PackingSession> {
+    const orgId = organizationId || store.organizations[0].id;
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const requestId = requirePackingRequestId(context);
+      if (!supervisorId) throw new Error('PACKING_SUPERVISOR_REQUIRED');
+      const normalizedAllocations = allocations.map((allocation) => ({
+        ...(allocation.segment_id ? { segment_id: allocation.segment_id } : {}),
+        salary_band_id: allocation.salary_band_id,
+        headcount: Number(allocation.headcount),
+        ...(allocation.duration_hours === undefined ? {} : { duration_hours: Number(allocation.duration_hours) }),
+      }));
+      const { data, error } = await supabaseAdmin.rpc('approve_packing_session_with_labor_atomic', {
+        p_organization_id: orgId,
+        p_session_id: sessionId,
+        p_idempotency_key: requestId,
+        p_allocations: normalizedAllocations,
+        p_supervisor_id: supervisorId,
+        p_line_name: context?.lineName ?? null,
+        p_token_id: context?.tokenId ?? null,
+      });
+      if (error) throwPersistenceError(error, 'approve_packing_session_with_labor_atomic');
+      if (!data) throw new Error('PACKING_SESSION_APPROVAL_EMPTY_RESULT');
+      return mapPackingSessionRow(data);
+    }
+
+    const now = new Date().toISOString();
+    let session = await this.getPackingSession(sessionId, orgId);
+    if (!session) throw new Error(`Sesión ${sessionId} no encontrada.`);
+    if (session.status === 'APPROVED') throw new Error('La sesión ya está aprobada.');
+    if (session.status === 'VOIDED') throw new Error('La sesión está anulada.');
+
+    const existingAllocations = await this.getPackingLaborAllocations(sessionId, orgId);
+    if (existingAllocations.length > 0) throw new Error('La sesión ya tiene imputaciones salariales.');
+
+    const bands = await this.getSalaryBands(orgId, session.started_at.split('T')[0], false);
+    const params = await this.getPlantParameters(orgId);
+    const safeHours = Number(params.monthly_salary_hours) || 200;
+    const laborMultiplier = 1 + (Number(params.labor_charges_percent) || 0) / 100;
+
+    // Validate all rows before saving so an invalid band cannot leave a partially allocated session.
+    const normalized = allocations.map((alloc) => {
+      const headcount = Number(alloc.headcount);
+      const durationHours = alloc.duration_hours === undefined ? undefined : Number(alloc.duration_hours);
+      if (!Number.isInteger(headcount) || headcount <= 0) throw new Error('La cantidad de personas debe ser un entero mayor a 0.');
+      if (durationHours !== undefined && (!Number.isFinite(durationHours) || durationHours <= 0)) {
+        throw new Error('La duración asignada debe ser mayor a 0.');
+      }
+      const segment = alloc.segment_id ? session!.segments?.find((entry) => entry.id === alloc.segment_id) : undefined;
+      if (alloc.segment_id && !segment) throw new Error('El segmento indicado no pertenece a la sesión.');
+      if (segment && headcount > segment.headcount) throw new Error('La dotación asignada supera el segmento de la sesión.');
+      const band = bands.find((candidate) => candidate.id === alloc.salary_band_id);
+      if (!band || !band.current_rate) throw new Error('La banda salarial indicada no tiene tarifa vigente para la sesión.');
+      return { ...alloc, headcount, duration_hours: durationHours, segment, band };
+    });
+
+    if (session.segments?.length && normalized.some((alloc) => alloc.segment)) {
+      for (const segment of session.segments) {
+        const assignedHeads = normalized
+          .filter((alloc) => alloc.segment_id === segment.id)
+          .reduce((sum, alloc) => sum + alloc.headcount, 0);
+        if (assignedHeads !== segment.headcount) {
+          throw new Error(`La dotación asignada del segmento ${segment.segment_order} debe sumar ${segment.headcount} personas.`);
+        }
+      }
+    }
+
+    // Preserve the existing approval behavior: a running session is stopped before its final hours are costed.
+    if (session.status === 'RUNNING') {
+      session = await this.stopPackingSession(sessionId, orgId);
+    }
+
+    // Create allocation snapshots
+    const createdAllocations: PackingLaborAllocation[] = [];
+    for (const alloc of normalized) {
+      const bandSalary = alloc.band.monthly_salary_pyg;
+      const hourlyRate = safeHours > 0 ? (bandSalary * laborMultiplier) / safeHours : 0;
+      const hours = Number(alloc.duration_hours) > 0
+        ? Number(alloc.duration_hours)
+        : alloc.segment
+          ? (Number(alloc.segment.person_hours) / alloc.segment.headcount)
+          : (session.total_person_hours && alloc.headcount > 0 ? session.total_person_hours / alloc.headcount : 0);
+      if (hours <= 0) throw new Error('No se pudo determinar la duración de la imputación.');
+      const calculatedCost = alloc.headcount * hours * hourlyRate;
+
+      const record: PackingLaborAllocation = {
+        id: crypto.randomUUID(),
+        organization_id: orgId,
+        session_id: sessionId,
+        session_segment_id: alloc.segment_id,
+        salary_band_id: alloc.salary_band_id,
+        salary_band_name: alloc.band.name,
+        headcount: alloc.headcount,
+        hourly_rate_snapshot_pyg: hourlyRate,
+        calculated_cost_pyg: calculatedCost,
+        approved_by: supervisorId,
+        approved_at: now,
+      };
+
+      createdAllocations.push(record);
+    }
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      const { error } = await supabaseAdmin.from('packing_labor_allocations').insert(createdAllocations.map((record) => ({
+        id: record.id,
+        organization_id: orgId,
+        session_id: record.session_id,
+        session_segment_id: record.session_segment_id || null,
+        salary_band_id: record.salary_band_id,
+        headcount: record.headcount,
+        hourly_rate_snapshot_pyg: record.hourly_rate_snapshot_pyg,
+        calculated_cost_pyg: record.calculated_cost_pyg,
+        approved_by: supervisorId || null,
+        approved_at: now,
+      })));
+      if (error && !isSchemaMissingError(error)) throw error;
+      if (error && isSchemaMissingError(error)) {
+        store.packingLaborAllocations.push(...createdAllocations);
+      }
+    } else {
+      store.packingLaborAllocations.push(...createdAllocations);
+    }
+
+    // Approve the session
+    const approvedSession = await this.approvePackingSession(sessionId, supervisorId, orgId);
+    return approvedSession;
   },
 };

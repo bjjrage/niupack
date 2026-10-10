@@ -1,4 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["gru1"]
+  "regions": ["gru1"],
+  "git": {
+    "deploymentEnabled": {
+      "integration/cost-intelligence-industrial-v2": false
+    }
+  },
+  "ignoreCommand": "[ \"$VERCEL_GIT_COMMIT_REF\" = \"integration/cost-intelligence-industrial-v2\" ]"
 }
