@@ -7,6 +7,8 @@ export async function middleware(request: NextRequest) {
   const isLogin = pathname === '/login';
   const isPublicMagicLink =
     pathname.startsWith('/api/logistics/public/') ||
+    pathname.startsWith('/api/rfq/public/') ||
+    pathname.startsWith('/rfq/respond/') ||
     pathname.startsWith('/logistics/quote/') ||
     pathname.startsWith('/planta/empaque') ||
     pathname.startsWith('/api/cost/processes/packing/sessions');

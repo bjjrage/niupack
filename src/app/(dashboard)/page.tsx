@@ -17,6 +17,8 @@ import { KPICard } from '@/components/ui/KPICard';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { repository } from '@/lib/db/repository';
+import { requireNiuIdentity } from '@/lib/auth/identity';
+import { listRfqs } from '@/lib/rfq/service';
 import { VisibilityEngine } from '@/lib/engines/visibility-engine';
 import { MarketBenchmarkEngine } from '@/lib/engines/market-benchmark';
 import { TrueCostEngine } from '@/lib/engines/true-cost-engine';
@@ -24,16 +26,28 @@ import { ScenarioEngine } from '@/lib/engines/scenario-engine';
 
 export const revalidate = 0;
 
+/** Tasa de respuesta real de las RFQ de la organización; sin datos o ante un error no se muestra un porcentaje inventado. */
+async function rfqResponseRate(): Promise<{ value: string; delta: string; subtitle: string }> {
+  try {
+    const identity = await requireNiuIdentity();
+    const rfqs = await listRfqs(identity.organizationId);
+    const sent = rfqs.reduce((sum, r) => sum + r.invitations_sent, 0);
+    const replied = rfqs.reduce((sum, r) => sum + r.invitations_replied, 0);
+    if (sent === 0) return { value: '—', delta: '0 / 0', subtitle: 'Todavía no se enviaron invitaciones' };
+    return { value: `${((replied / sent) * 100).toFixed(1)}%`, delta: `${replied} / ${sent}`, subtitle: 'Invitaciones respondidas por los proveedores' };
+  } catch {
+    return { value: 'No disponible', delta: '—', subtitle: 'No se pudo consultar las RFQ' };
+  }
+}
+
 export default async function DashboardPage() {
+  const rfqRate = await rfqResponseRate();
   const [
     markets,
     skus,
     batteries,
     queries,
     mentions,
-    suppliers,
-    rfqs,
-    quotes,
     prices,
     costSheets,
     actions,
@@ -43,9 +57,6 @@ export default async function DashboardPage() {
     repository.getBatteries(),
     repository.getQueries(),
     repository.getMentions(),
-    repository.getSuppliers(),
-    repository.getRFQs(),
-    repository.getQuotes(),
     repository.getMarketPrices(),
     repository.getCostSheets(),
     repository.getActions(),
@@ -150,10 +161,10 @@ export default async function DashboardPage() {
         />
         <KPICard
           title="Tasa de Respuesta RFQ"
-          value="50.0%"
-          unit="de cotizaciones"
-          delta={{ value: "2 / 4", isPositive: true, label: "proveedores respondieron" }}
-          subtitle="Cotizaciones válidas extraídas"
+          value={rfqRate.value}
+          unit="de invitaciones"
+          delta={{ value: rfqRate.delta, isPositive: true, label: "proveedores respondieron" }}
+          subtitle={rfqRate.subtitle}
         />
         <KPICard
           title="Costo Unitario Real (12 oz)"

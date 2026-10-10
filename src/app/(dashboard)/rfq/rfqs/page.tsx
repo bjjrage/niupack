@@ -1,375 +1,127 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { FileText, Plus, Send, CheckCircle2, ShieldCheck, Mail, ArrowRight, Layers } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
+import { useRouter } from 'next/navigation';
+import { Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
-import { DataTable, Column } from '@/components/ui/DataTable';
-import { Modal } from '@/components/ui/Modal';
-import { RFQ, RFQStatus, Supplier } from '@/types';
+import { Button } from '@/components/ui/Button';
+import { api, errorText } from '@/components/rfq/types';
 
-export default function RFQsPage() {
-  const [rfqs, setRfqs] = useState<RFQ[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isDispatchModalOpen, setIsDispatchModalOpen] = useState(false);
-  const [selectedRFQ, setSelectedRFQ] = useState<RFQ | null>(null);
-  const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([]);
+interface RfqSummary { id: string; code: string; title: string; status: string; incoterm: string; delivery_destination: string; deadline_at: string | null; items_count: number; invitations: number; invitations_sent: number; quotes_count: number }
 
-  // Form fields
-  const [code, setCode] = useState('RFQ-2026-001');
-  const [title, setTitle] = useState('Cotización Vaso 12 oz Pared Simple Mercosul');
-  const [sku, setSku] = useState('CUP-12OZ-SW');
-  const [quantity, setQuantity] = useState('300000');
-  const [destination, setDestination] = useState('São Paulo, Brasil');
-  const [incoterm, setIncoterm] = useState<'EXW' | 'FOB' | 'CIF' | 'CIP' | 'DDP'>('FOB');
-  const [material, setMaterial] = useState('Cartulina Cupstock Virgen 260g');
-  const [feedback, setFeedback] = useState<string | null>(null);
+const STATUS_LABEL: Record<string, string> = { DRAFT: 'Borrador', APPROVED: 'Invitaciones preparadas', SENT: 'Enviada', REPLIED: 'Con ofertas', PARSED: 'Ofertas por validar', BENCHMARKED: 'Comparada', DECIDED: 'Con decisión', CANCELLED: 'Cancelada', REVIEW_REQUIRED: 'En revisión' };
+const input = 'w-full rounded border border-slate-700 bg-[#0c0f14] px-2 py-1.5 text-xs text-white';
+const lbl = 'block text-[11px] text-slate-400 mb-1';
 
-  useEffect(() => {
-    fetchData();
+// Todo en blanco: ni código, ni SKU, ni cantidades vienen pre-cargados.
+const blankItem = () => ({ sku: '', description: '', quantity: '', unit: 'UN', alternatives: '', material: '', technical_conditions: '' });
+
+export default function RfqListPage() {
+  const router = useRouter();
+  const [rfqs, setRfqs] = useState<RfqSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [form, setForm] = useState({ title: '', delivery_destination: '', incoterm: 'FOB', payment_terms: '', deadline: '', technical_conditions: '', notes: '' });
+  const [items, setItems] = useState([blankItem()]);
+
+  const load = useCallback(async () => {
+    const result = await api<{ rfqs: RfqSummary[] }>('/api/rfq/rfqs');
+    if (!result.ok) setLoadError(errorText(result));
+    else { setLoadError(null); setRfqs(result.data.rfqs); }
+    setLoading(false);
   }, []);
+  useEffect(() => { void load(); }, [load]);
 
-  const fetchData = async () => {
-    try {
-      const [resRfq, resSupp] = await Promise.all([
-        fetch('/api/rfq/rfqs'),
-        fetch('/api/market/suppliers'),
-      ]);
-      if (resRfq.ok) {
-        const data = await resRfq.json();
-        setRfqs(data.rfqs || []);
-      }
-      if (resSupp.ok) {
-        const data = await resSupp.json();
-        setSuppliers(data.suppliers || []);
-      }
-    } catch (e) {
-      console.error(e);
-    }
+  const setItem = (index: number, patch: Partial<ReturnType<typeof blankItem>>) => setItems((prev) => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)));
+
+  const create = async () => {
+    setBusy(true);
+    setFormError(null);
+    const payload = {
+      title: form.title, delivery_destination: form.delivery_destination, incoterm: form.incoterm, payment_terms: form.payment_terms || undefined,
+      deadline_at: form.deadline ? new Date(`${form.deadline}T23:59:59`).toISOString() : undefined, technical_conditions: form.technical_conditions || undefined, notes: form.notes || undefined,
+      items: items.map((it) => ({
+        sku: it.sku, description: it.description || undefined, quantity: Number(it.quantity.replace(/\./g, '').replace(',', '.')), unit: it.unit || 'UN', material: it.material || undefined,
+        technical_conditions: it.technical_conditions || undefined,
+        alternative_quantities: it.alternatives.split(/[;,\s]+/).filter(Boolean).map((v) => Number(v.replace(/\./g, ''))),
+      })),
+    };
+    const result = await api<{ rfq_id: string }>('/api/rfq/rfqs', { method: 'POST', body: JSON.stringify(payload) });
+    setBusy(false);
+    if (!result.ok) { setFormError(errorText(result)); return; }
+    router.push(`/rfq/rfqs/${result.data.rfq_id}`);
   };
 
-  const handleCreateRFQ = async () => {
-    try {
-      const res = await fetch('/api/rfq/rfqs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code,
-          title,
-          sku,
-          quantity,
-          delivery_destination: destination,
-          incoterm,
-          material,
-        }),
-      });
-
-      if (res.ok) {
-        setIsModalOpen(false);
-        setFeedback(`Especificación técnica ${code} creada exitosamente.`);
-        fetchData();
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleDispatch = async () => {
-    if (!selectedRFQ || selectedSuppliers.length === 0) return;
-
-    // Transition status to SENT
-    try {
-      const res = await fetch(`/api/rfq/rfqs/${selectedRFQ.id}/dispatch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ supplierIds: selectedSuppliers }),
-      });
-
-      if (res.ok) {
-        setIsDispatchModalOpen(false);
-        setFeedback(`RFQ ${selectedRFQ.code} despachado a ${selectedSuppliers.length} proveedores aprobados.`);
-        fetchData();
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const approvedSuppliers = suppliers.filter((s) => s.status === 'APPROVED_FOR_CONTACT' || s.status === 'REVIEWED');
-
-  const columns: Column<RFQ>[] = [
-    {
-      key: 'code',
-      header: 'Código RFQ',
-      render: (r) => (
-        <div>
-          <span className="font-mono text-xs font-bold text-brand-400">{r.code}</span>
-          <span className="text-[11px] text-slate-400 block font-sans">{r.title}</span>
-        </div>
-      ),
-      className: 'w-48',
-    },
-    {
-      key: 'status',
-      header: 'Estado RFQ',
-      render: (r) => {
-        const variants: Record<RFQStatus, 'neutral' | 'warning' | 'success' | 'brand' | 'danger'> = {
-          DRAFT: 'neutral',
-          REVIEW_REQUIRED: 'warning',
-          APPROVED: 'brand',
-          SENT: 'brand',
-          REPLIED: 'success',
-          PARSED: 'success',
-          BENCHMARKED: 'success',
-          CANCELLED: 'danger',
-        };
-        return <Badge variant={variants[r.status] || 'neutral'}>{r.status}</Badge>;
-      },
-      className: 'w-32 text-center',
-    },
-    {
-      key: 'delivery_destination',
-      header: 'Destino & Incoterm',
-      render: (r) => (
-        <span className="text-xs text-slate-300">
-          {r.delivery_destination} ({r.incoterm})
-        </span>
-      ),
-      className: 'w-40',
-    },
-    {
-      key: 'items',
-      header: 'Ítems & Cantidad Base',
-      render: (r) => (
-        <div className="font-mono text-xs">
-          <span className="text-white font-medium">{r.items?.[0]?.sku || 'CUP-12OZ-SW'}</span>
-          <span className="text-slate-400 block text-[11px]">
-            {r.items?.[0]?.quantity?.toLocaleString() || '300,000'} u
-          </span>
-        </div>
-      ),
-      className: 'w-36',
-    },
-    {
-      key: 'created_at',
-      header: 'Fecha',
-      render: (r) => <span className="font-mono text-[11px] text-slate-400">{r.created_at ? new Date(r.created_at).toLocaleDateString('es') : 'Hoy'}</span>,
-      className: 'w-24',
-    },
-  ];
+  const ready = form.title.trim().length >= 3 && form.delivery_destination.trim().length >= 2 && items.every((it) => it.sku.trim() && Number(it.quantity.replace(/\./g, '').replace(',', '.')) > 0);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-mono text-brand-400 font-semibold uppercase">Módulo 4</span>
-            <span className="text-slate-600 text-xs">/</span>
-            <span className="text-xs text-slate-400">RFQ Intelligence</span>
-          </div>
-          <h1 className="text-xl font-bold text-white tracking-tight mt-1">
-            Especificaciones Técnicas RFQ (Multi-Proveedor)
-          </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Generación y broadcast de pliegos técnicos homogéneos para cotización formal en Brasil, Argentina y Bolivia.
-          </p>
+          <h1 className="text-xl font-semibold text-white tracking-tight">RFQ · Solicitudes de cotización</h1>
+          <p className="text-xs text-slate-400 mt-0.5">Pedí precios a varios proveedores por ítem, recibí sus ofertas, compará contra tu costo y registrá la decisión.</p>
         </div>
-
-        <Button variant="primary" size="sm" onClick={() => setIsModalOpen(true)}>
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          Nueva Especificación RFQ
-        </Button>
+        <Button size="sm" onClick={() => setCreating((v) => !v)}><Plus className="h-3.5 w-3.5" />Nueva RFQ</Button>
       </div>
 
-      {feedback && (
-        <div className="p-3 bg-emerald-950/40 border border-emerald-800/60 rounded text-xs text-emerald-300 flex items-center justify-between">
-          <span>{feedback}</span>
-          <button onClick={() => setFeedback(null)} className="text-slate-400 hover:text-white">✕</button>
-        </div>
+      {creating && (
+        <section className="rounded border border-slate-800 bg-[#141820] p-4 space-y-4" aria-label="Nueva RFQ">
+          {formError && <p role="alert" className="rounded border border-red-800/60 bg-red-950/40 p-2.5 text-xs text-red-300">{formError}</p>}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="md:col-span-2"><label className={lbl} htmlFor="f-title">Título *</label><input id="f-title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={input} /></div>
+            <div><label className={lbl} htmlFor="f-dest">Destino de entrega *</label><input id="f-dest" value={form.delivery_destination} onChange={(e) => setForm({ ...form, delivery_destination: e.target.value })} className={input} /></div>
+            <div><label className={lbl} htmlFor="f-inc">Incoterm *</label><select id="f-inc" value={form.incoterm} onChange={(e) => setForm({ ...form, incoterm: e.target.value })} className={input}>{['EXW', 'FOB', 'CIF', 'CIP', 'DDP'].map((i) => <option key={i}>{i}</option>)}</select></div>
+            <div><label className={lbl} htmlFor="f-pay">Condición de pago</label><input id="f-pay" value={form.payment_terms} onChange={(e) => setForm({ ...form, payment_terms: e.target.value })} className={input} /></div>
+            <div><label className={lbl} htmlFor="f-dl">Fecha límite de respuesta</label><input id="f-dl" type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} className={input} /></div>
+            <div className="md:col-span-3"><label className={lbl} htmlFor="f-tc">Condiciones técnicas generales</label><input id="f-tc" value={form.technical_conditions} onChange={(e) => setForm({ ...form, technical_conditions: e.target.value })} className={input} /></div>
+          </div>
+
+          <div className="space-y-3">
+            {items.map((it, index) => (
+              <fieldset key={index} className="rounded border border-slate-800 p-3">
+                <legend className="px-1 text-xs font-semibold text-white">Ítem {index + 1}</legend>
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                  <div><label className={lbl} htmlFor={`sku-${index}`}>SKU *</label><input id={`sku-${index}`} value={it.sku} onChange={(e) => setItem(index, { sku: e.target.value })} className={input} /></div>
+                  <div className="md:col-span-2"><label className={lbl} htmlFor={`desc-${index}`}>Descripción</label><input id={`desc-${index}`} value={it.description} onChange={(e) => setItem(index, { description: e.target.value })} className={input} /></div>
+                  <div><label className={lbl} htmlFor={`qty-${index}`}>Cantidad *</label><input id={`qty-${index}`} inputMode="numeric" value={it.quantity} onChange={(e) => setItem(index, { quantity: e.target.value })} className={input} /></div>
+                  <div><label className={lbl} htmlFor={`unit-${index}`}>Unidad</label><input id={`unit-${index}`} value={it.unit} onChange={(e) => setItem(index, { unit: e.target.value })} className={input} /></div>
+                  <div><label className={lbl} htmlFor={`alt-${index}`}>Escalas (cantidades)</label><input id={`alt-${index}`} value={it.alternatives} onChange={(e) => setItem(index, { alternatives: e.target.value })} className={input} placeholder="separadas por coma" /></div>
+                  <div className="md:col-span-2"><label className={lbl} htmlFor={`mat-${index}`}>Material</label><input id={`mat-${index}`} value={it.material} onChange={(e) => setItem(index, { material: e.target.value })} className={input} /></div>
+                  <div className="md:col-span-3"><label className={lbl} htmlFor={`tc-${index}`}>Especificaciones técnicas</label><input id={`tc-${index}`} value={it.technical_conditions} onChange={(e) => setItem(index, { technical_conditions: e.target.value })} className={input} /></div>
+                  {items.length > 1 && <div className="flex items-end"><Button size="sm" variant="ghost" aria-label={`Quitar ítem ${index + 1}`} onClick={() => setItems((prev) => prev.filter((_, i) => i !== index))}><Trash2 className="h-3.5 w-3.5" /></Button></div>}
+                </div>
+              </fieldset>
+            ))}
+            <Button size="sm" variant="secondary" onClick={() => setItems((prev) => [...prev, blankItem()])}><Plus className="h-3.5 w-3.5" />Agregar ítem</Button>
+          </div>
+
+          <div className="flex gap-2">
+            <Button size="sm" isLoading={busy} disabled={!ready} onClick={create}>Crear RFQ</Button>
+            <Button size="sm" variant="outline" onClick={() => setCreating(false)}>Cancelar</Button>
+          </div>
+        </section>
       )}
 
-      {/* Table */}
-      <DataTable
-        columns={columns}
-        data={rfqs}
-        searchKey="code"
-        searchPlaceholder="Buscar por código o título..."
-        exportFilename="rfqs_list.csv"
-        emptyMessage="No hay especificaciones RFQ activas. Crea una nueva especificación para comenzar."
-        actions={(row) => (
-          <div className="flex items-center justify-end gap-1">
-            {row.status === 'DRAFT' && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSelectedRFQ(row);
-                  setIsDispatchModalOpen(true);
-                }}
-              >
-                <Send className="h-3 w-3 mr-1" /> Despachar
-              </Button>
-            )}
-          </div>
-        )}
-      />
-
-      {/* Modal: Nueva Especificación RFQ */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title="Crear Especificación Técnica Comparable (RFQ)"
-        description="Esta misma especificación podrá enviarse de manera estandarizada a múltiples proveedores."
-        footer={
-          <>
-            <Button variant="outline" size="sm" onClick={() => setIsModalOpen(false)}>
-              Cancelar
-            </Button>
-            <Button variant="primary" size="sm" onClick={handleCreateRFQ}>
-              Crear RFQ
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-medium text-slate-400 mb-1">Código de RFQ</label>
-              <input
-                type="text"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                className="w-full bg-[#0c0f14] border border-slate-700 rounded p-2 text-xs text-white font-mono"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-medium text-slate-400 mb-1">SKU Homogéneo</label>
-              <select
-                value={sku}
-                onChange={(e) => setSku(e.target.value)}
-                className="w-full bg-[#0c0f14] border border-slate-700 rounded p-2 text-xs text-white font-mono"
-              >
-                <option value="CUP-12OZ-SW">CUP-12OZ-SW (12 oz Pared Simple)</option>
-                <option value="CUP-8OZ-SW">CUP-8OZ-SW (8 oz)</option>
-                <option value="CUP-16OZ-SW">CUP-16OZ-SW (16 oz)</option>
-                <option value="CUP-12OZ-DW">CUP-12OZ-DW (12 oz Doble Pared)</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">Título de la Especificación</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full bg-[#0c0f14] border border-slate-700 rounded p-2 text-xs text-white"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-medium text-slate-400 mb-1">Cantidad Base</label>
-              <input
-                type="number"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                className="w-full bg-[#0c0f14] border border-slate-700 rounded p-2 text-xs text-white font-mono"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-medium text-slate-400 mb-1">Incoterm Requerido</label>
-              <select
-                value={incoterm}
-                onChange={(e) => setIncoterm(e.target.value as any)}
-                className="w-full bg-[#0c0f14] border border-slate-700 rounded p-2 text-xs text-white font-mono"
-              >
-                <option value="FOB">FOB (Puerto / Ciudad origen)</option>
-                <option value="EXW">EXW (En fábrica)</option>
-                <option value="CIF">CIF (Costo y flete)</option>
-                <option value="DDP">DDP (Entregado con aranceles)</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">Destino de Entrega</label>
-            <input
-              type="text"
-              value={destination}
-              onChange={(e) => setDestination(e.target.value)}
-              placeholder="Ej. São Paulo, Brasil"
-              className="w-full bg-[#0c0f14] border border-slate-700 rounded p-2 text-xs text-white"
-            />
-          </div>
-        </div>
-      </Modal>
-
-      {/* Modal: Despachar a Proveedores Aprobados */}
-      <Modal
-        isOpen={isDispatchModalOpen}
-        onClose={() => setIsDispatchModalOpen(false)}
-        title={`Despachar ${selectedRFQ?.code} a Proveedores`}
-        description="Selecciona los fabricantes aprobados que recibirán la solicitud de cotización por correo corporativo."
-        footer={
-          <>
-            <Button variant="outline" size="sm" onClick={() => setIsDispatchModalOpen(false)}>
-              Cancelar
-            </Button>
-            <Button variant="primary" size="sm" onClick={handleDispatch}>
-              <Send className="h-3.5 w-3.5 mr-1" />
-              Autorizar y Despachar ({selectedSuppliers.length})
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <div className="p-3 bg-amber-950/30 border border-amber-800/60 rounded text-xs text-amber-300 flex items-start gap-2">
-            <ShieldCheck className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
-            <span>
-              <strong>Aprobación Humana Obligatoria:</strong> Al confirmar, se generarán los borradores y se autorizará el primer envío desde el Gmail corporativo conectado.
-            </span>
-          </div>
-
-          <div className="space-y-2">
-            <span className="text-[11px] font-medium text-slate-400 block">Proveedores Disponibles:</span>
-            {approvedSuppliers.map((s) => {
-              const isChecked = selectedSuppliers.includes(s.id);
-              return (
-                <label
-                  key={s.id}
-                  className="flex items-center justify-between p-2.5 rounded bg-[#0c0f14] border border-slate-800 hover:border-slate-700 cursor-pointer"
-                >
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={() => {
-                        if (isChecked) {
-                          setSelectedSuppliers(selectedSuppliers.filter((id) => id !== s.id));
-                        } else {
-                          setSelectedSuppliers([...selectedSuppliers, s.id]);
-                        }
-                      }}
-                      className="accent-brand-500 rounded"
-                    />
-                    <div>
-                      <span className="font-semibold text-white text-xs block">{s.name}</span>
-                      <span className="text-[11px] text-slate-500 font-mono">
-                        {s.country_code} · {s.email || 'Sin correo directo'}
-                      </span>
-                    </div>
-                  </div>
-                  <Badge variant="neutral" size="sm">{s.status}</Badge>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      </Modal>
+      {loadError && <p role="alert" className="rounded border border-red-800/60 bg-red-950/40 p-3 text-xs text-red-300">No se pudieron cargar las RFQ: {loadError}</p>}
+      {loading && <p className="text-xs text-slate-400">Cargando…</p>}
+      {!loading && !loadError && rfqs.length === 0 && <p className="py-8 text-center text-xs text-slate-400">Todavía no hay RFQ. Creá la primera con “Nueva RFQ”.</p>}
+      <ul className="space-y-2">
+        {rfqs.map((r) => (
+          <li key={r.id}>
+            <Link href={`/rfq/rfqs/${r.id}`} className="block rounded border border-slate-800 bg-[#141820] p-3 hover:border-slate-600" data-testid="rfq-row">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-white">{r.code} · {r.title}</p>
+                <Badge variant={r.status === 'DECIDED' ? 'success' : 'brand'}>{STATUS_LABEL[r.status] ?? r.status}</Badge>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">{r.items_count} ítem(s) · {r.invitations_sent}/{r.invitations} invitaciones enviadas · {r.quotes_count} oferta(s) · {r.incoterm} · {r.delivery_destination}</p>
+            </Link>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

@@ -1,44 +1,30 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { QuoteMatcherEngine } from '@/lib/engines/quote-matcher-engine';
-import { repository } from '@/lib/db/repository';
+import { NextResponse } from 'next/server';
+import { domainErrorResponse, READ_ROLES, requireIdentityWithRole } from '@/lib/auth/role-guard';
+
+/**
+ * Retirado: este matcher usaba tipos de cambio y fletes fijos, asignaba el primer SKU del catálogo como respaldo
+ * y guardaba el resultado en memoria sin organización. Lo reemplaza el comparador de RFQ (/api/rfq/rfqs/{id}/comparison),
+ * que normaliza con el FX de NIUPACK, exige datos explícitos y compara contra la hoja de costos vigente del SKU.
+ */
+const GONE = {
+  error: 'QUOTE_MATCHER_RETIRED',
+  message: 'El matcher de cotizaciones fue reemplazado por el comparador de la RFQ. Abrí la RFQ y usá la pestaña Comparador.',
+};
 
 export async function GET() {
   try {
-    const matches = await repository.getQuoteMatches();
-    return NextResponse.json({ success: true, matches });
-  } catch {
-    return NextResponse.json({ success: false, error: 'QUOTE_MATCHES_UNAVAILABLE' }, { status: 500 });
+    await requireIdentityWithRole(READ_ROLES);
+    return NextResponse.json(GONE, { status: 410 });
+  } catch (error) {
+    return domainErrorResponse(error);
   }
 }
 
-export async function POST(req: NextRequest) {
+export async function POST() {
   try {
-    const body = await req.json();
-
-    let quoteInput = body.quote_input;
-    if (!quoteInput && body.raw_text) {
-      quoteInput = QuoteMatcherEngine.parseRawTextToQuote(
-        body.raw_text,
-        body.supplier_name || 'Competidor Analizado',
-        body.country || 'BR',
-        body.source_type || 'MANUAL_TEXT'
-      );
-    }
-
-    if (!quoteInput) {
-      return NextResponse.json(
-        { success: false, error: 'Provide either raw_text or structured quote_input' },
-        { status: 400 }
-      );
-    }
-
-    const matchResult = await QuoteMatcherEngine.compareQuote(quoteInput, body.override_sku);
-
-    return NextResponse.json({
-      success: true,
-      match: matchResult,
-    });
-  } catch {
-    return NextResponse.json({ success: false, error: 'QUOTE_MATCH_FAILED' }, { status: 500 });
+    await requireIdentityWithRole(READ_ROLES);
+    return NextResponse.json(GONE, { status: 410 });
+  } catch (error) {
+    return domainErrorResponse(error);
   }
 }

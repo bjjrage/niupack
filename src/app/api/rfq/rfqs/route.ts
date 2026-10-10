@@ -1,46 +1,25 @@
 import { NextResponse } from 'next/server';
-import { repository } from '@/lib/db/repository';
+import { domainErrorResponse, READ_ROLES, requireIdentityWithRole, WRITE_ROLES } from '@/lib/auth/role-guard';
+import { createRfq, listRfqs, listSuppliers, rfqInputSchema } from '@/lib/rfq/service';
 
 export async function GET() {
   try {
-    const rfqs = await repository.getRFQs();
-    return NextResponse.json({ rfqs });
-  } catch {
-    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
+    const identity = await requireIdentityWithRole(READ_ROLES);
+    const [rfqs, suppliers] = await Promise.all([listRfqs(identity.organizationId), listSuppliers(identity.organizationId)]);
+    return NextResponse.json({ rfqs, suppliers, role: identity.role });
+  } catch (error) {
+    return domainErrorResponse(error);
   }
 }
 
-export async function POST(req: Request) {
+/** Crea una RFQ multi-ítem. Nada viene pre-cargado: el código lo genera el servidor y los datos los ingresa la persona. */
+export async function POST(request: Request) {
   try {
-    const body = await req.json();
-    const org = await repository.getOrganization();
-
-    const created = await repository.createRFQ({
-      organization_id: org.id,
-      code: body.code || `RFQ-${Date.now().toString().slice(-4)}`,
-      title: body.title,
-      status: 'DRAFT',
-      delivery_destination: body.delivery_destination || 'São Paulo, Brasil',
-      incoterm: body.incoterm || 'FOB',
-      target_lead_time_days: body.target_lead_time_days || 30,
-      payment_terms: body.payment_terms || '30 días',
-      items: [
-        {
-          id: crypto.randomUUID(),
-          rfq_id: '',
-          sku: body.sku || 'CUP-12OZ-SW',
-          quantity: parseInt(body.quantity) || 300000,
-          alternative_quantities: [100000, 300000, 500000],
-          material: body.material || 'Cartulina Cupstock Virgen 260g',
-          printing_spec: 'Impresión flexográfica 4 colores',
-          color_count: 4,
-          packaging_spec: 'Caja corrugada x 1000 unidades con bolsa PE interna',
-        },
-      ],
-    });
-
-    return NextResponse.json({ rfq: created });
-  } catch {
-    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
+    const identity = await requireIdentityWithRole(WRITE_ROLES);
+    const input = rfqInputSchema.parse(await request.json());
+    const created = await createRfq(identity.organizationId, identity.profileId, input);
+    return NextResponse.json(created, { status: 201 });
+  } catch (error) {
+    return domainErrorResponse(error);
   }
 }

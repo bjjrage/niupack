@@ -9,7 +9,9 @@ import { fileURLToPath } from 'node:url';
 import { sign } from './jwt.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const env = { ...process.env, PACKING_TOKEN_SECRET: 'local-qa-packing-token-secret-32-bytes-min', DATABASE_URL: 'postgres://postgres:postgres@localhost:54329/niupack_qa' };
+const env = { ...process.env, PACKING_TOKEN_SECRET: 'local-qa-packing-token-secret-32-bytes-min', DATABASE_URL: 'postgres://postgres:postgres@localhost:54329/niupack_qa',
+  // Correos del flujo RFQ: se capturan en un archivo local, nunca salen por SMTP.
+  QA_MAIL_CAPTURE_FILE: path.join(here, '.data', 'mail-capture.jsonl') };
 for (const line of fs.readFileSync(path.join(here, 'qa.env'), 'utf8').split(/\r?\n/)) {
   const i = line.indexOf('=');
   if (i > 0) env[line.slice(0, i)] = line.slice(i + 1);
