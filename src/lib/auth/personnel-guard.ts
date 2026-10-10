@@ -26,6 +26,19 @@ export async function requirePersonnelAdminIdentity(req: NextRequest): Promise<N
 }
 
 export function personnelAuthErrorResponse(error: unknown) {
+  if (error instanceof Error && error.message.startsWith('SUPABASE_SCHEMA_NOT_READY:')) {
+    return NextResponse.json({
+      error: 'SUPABASE_SCHEMA_NOT_READY',
+      table: error.message.slice('SUPABASE_SCHEMA_NOT_READY:'.length),
+      message: 'La base de datos no está preparada para esta operación. Aplicá las migraciones industriales en un entorno QA.',
+    }, { status: 503 });
+  }
+  if (error instanceof Error && error.message === 'SUPABASE_PERSISTENCE_UNAVAILABLE') {
+    return NextResponse.json({
+      error: error.message,
+      message: 'La persistencia de Supabase no está configurada para esta operación.',
+    }, { status: 503 });
+  }
   if (error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === '23505') {
     return NextResponse.json({ error: 'DUPLICATE_VALUE', message: 'El código o nombre ya existe en esta organización.' }, { status: 409 });
   }
@@ -43,13 +56,14 @@ export function personnelAuthErrorResponse(error: unknown) {
     if (code.endsWith('_NOT_FOUND')) {
       return NextResponse.json({ error: code }, { status: 404 });
     }
-    if (code.includes('ALREADY_EXISTS') || code.includes('ALLOCATION_EXCEEDED') || code.includes('ya tiene imputaciones')) {
+    if (code.includes('ALREADY_EXISTS') || code.includes('ALLOCATION_EXCEEDED') || code.includes('ya tiene imputaciones') || code === 'SALARY_BAND_RATE_NOT_FOUND') {
       return NextResponse.json({ error: code, message: code }, { status: 409 });
     }
     if (
       code.startsWith('INVALID_') ||
       code === 'PERSONNEL_INACTIVE' ||
       code === 'PERSONNEL_NOT_ACTIVE_ON_DATE' ||
+      code === 'PERSONNEL_SALARY_BAND_REQUIRED' ||
       code.includes('ya está aprobada') ||
       code.includes('está anulada') ||
       code.includes('no pertenece a la sesión') ||

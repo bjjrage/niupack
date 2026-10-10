@@ -74,5 +74,18 @@ export async function requireNiuIdentity(): Promise<NiuIdentity> {
 
 export function authErrorResponse(error: unknown) {
   if (error instanceof NiuAuthError) return NextResponse.json({ error: error.message }, { status: error.status });
+  if (error instanceof Error && error.message.startsWith('SUPABASE_SCHEMA_NOT_READY:')) {
+    return NextResponse.json({
+      error: 'SUPABASE_SCHEMA_NOT_READY',
+      table: error.message.slice('SUPABASE_SCHEMA_NOT_READY:'.length),
+      message: 'La base de datos no está preparada para esta operación. Aplicá las migraciones industriales en un entorno QA.',
+    }, { status: 503 });
+  }
+  if (error instanceof Error && error.message === 'SUPABASE_PERSISTENCE_UNAVAILABLE') {
+    return NextResponse.json({
+      error: error.message,
+      message: 'La persistencia de Supabase no está configurada para esta operación.',
+    }, { status: 503 });
+  }
   return NextResponse.json({ error: 'AUTH_FAILED' }, { status: 500 });
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   Factory,
@@ -73,6 +73,9 @@ export default function ProcessesPage() {
     quality_labor_charges_included: true,
     packaging_materials_cost_per_thousand_usd: 3.5,
   });
+  const [paramsDirty, setParamsDirty] = useState(false);
+  const paramsDirtyRef = useRef(false);
+  const paramsEditVersionRef = useRef(0);
 
   // Packing sessions
   const [sessions, setSessions] = useState<PackingSession[]>([]);
@@ -104,9 +107,6 @@ export default function ProcessesPage() {
   const [applyOperationalSwitch, setApplyOperationalSwitch] = useState(true);
   const [applyPackagingSwitch, setApplyPackagingSwitch] = useState(true);
 
-  // Schema warning flag
-  const [schemaWarning, setSchemaWarning] = useState<string | null>(null);
-
   // Load all initial data
   const loadData = async () => {
     setLoading(true);
@@ -116,16 +116,12 @@ export default function ProcessesPage() {
       const targetDate = /^\d{4}-\d{2}$/.test(selectedPeriod) ? `${selectedPeriod}-01` : undefined;
       const paramRes = await fetch(`/api/cost/processes/parameters${targetDate ? `?target_date=${targetDate}` : ''}`);
       const paramData = await paramRes.json();
-      if (paramData.success) {
-        if (paramData.parameters) {
-          setParams(paramData.parameters);
-          if (paramData.parameters._schemaWarning) {
-            setSchemaWarning('Base de datos: Migración 20261008000001_industrial_processes_v2.sql pendiente en Supabase. Operando con persistencia local de respaldo.');
-          }
-        }
-        setSectorPersonnelSummaries(paramData.sectorPersonnelSummaries || {});
-        if (paramData.fx) setFx(paramData.fx);
+      if (!paramRes.ok || !paramData.success) {
+        throw new Error(paramData.message || paramData.error || 'No se pudieron recuperar los parámetros persistidos.');
       }
+      if (paramData.parameters && !paramsDirtyRef.current) setParams(paramData.parameters);
+      setSectorPersonnelSummaries(paramData.sectorPersonnelSummaries || {});
+      if (paramData.fx) setFx(paramData.fx);
 
       // 2. Packing sessions
       const sessionRes = await fetch('/api/cost/processes/packing/sessions');
@@ -166,7 +162,7 @@ export default function ProcessesPage() {
       await runProvisionalCalculation(selectedSku || loadedSkus[0]?.sku || 'CUP-12OZ-SW', selectedPeriod, goodUnits, totalPeriodUnits);
     } catch (err: any) {
       console.error('Error loading process data', err);
-      setFeedback({ message: 'Error de conexión al cargar datos de planta.', type: 'error' });
+      setFeedback({ message: `No se pudieron cargar los datos de planta: ${err.message}`, type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -225,6 +221,7 @@ export default function ProcessesPage() {
 
   // Save parameters to server
   const handleSaveParameters = async () => {
+    const savedEditVersion = paramsEditVersionRef.current;
     setSavingParams(true);
     setFeedback(null);
     try {
@@ -234,9 +231,16 @@ export default function ProcessesPage() {
         body: JSON.stringify(params),
       });
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Error al guardar');
-      setParams(data.parameters);
-      setFeedback({ message: 'Parámetros industriales guardados exitosamente.', type: 'success' });
+      if (!res.ok || !data.success) throw new Error(data.message || data.error || 'Error al guardar');
+      if (savedEditVersion === paramsEditVersionRef.current) {
+        setParams(data.parameters);
+        paramsDirtyRef.current = false;
+        setParamsDirty(false);
+        setFeedback({ message: 'Parámetros industriales guardados exitosamente.', type: 'success' });
+      } else {
+        setParamsDirty(true);
+        setFeedback({ message: 'Se guardaron los parámetros enviados. Hay cambios nuevos sin guardar.', type: 'warning' });
+      }
     } catch (err: any) {
       setFeedback({ message: `Error al guardar parámetros: ${err.message}`, type: 'error' });
     } finally {
@@ -440,7 +444,10 @@ export default function ProcessesPage() {
   };
 
   const updateParam = (field: keyof PlantGeneralParameters, val: any) => {
+    paramsEditVersionRef.current += 1;
+    paramsDirtyRef.current = true;
     setParams((prev) => ({ ...prev, [field]: val }));
+    setParamsDirty(true);
   };
 
   return (
@@ -488,21 +495,10 @@ export default function ProcessesPage() {
           >
             <Save className="h-3.5 w-3.5" /> {savingParams ? 'Guardando…' : 'Guardar Parámetros'}
           </Button>
+          {paramsDirty && <span className="text-xs font-medium text-amber-300">Cambios sin guardar</span>}
         </div>
       </div>
 
-      {/* Schema / Warning Banners */}
-      {schemaWarning && (
-        <div className="rounded-xl border border-amber-800/80 bg-amber-950/30 p-4 text-xs text-amber-200 flex items-start gap-3">
-          <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <span className="font-semibold block">{schemaWarning}</span>
-            <span className="text-[11px] text-amber-300/80 block">
-              Los datos se guardan y recalculan con el almacén local para garantizar operatividad continua.
-            </span>
-          </div>
-        </div>
-      )}
 
       {feedback && (
         <div

@@ -98,12 +98,84 @@ function isSchemaMissingError(error: unknown): boolean {
   return (
     code === 'PGRST204' ||
     code === 'PGRST205' ||
+    code === 'PGRST202' ||
     code === '42P01' ||
+    code === '42703' ||
     msg.includes('schema cache') ||
-    msg.includes('relation') ||
-    msg.includes('does not exist') ||
-    msg.includes('could not find the table')
+    msg.includes('could not find the table') ||
+    /relation [^ ]+ does not exist/.test(msg) ||
+    /function [^(]+\([^)]*\) does not exist/.test(msg)
   );
+}
+
+function persistentOrganizationStore(organizationId?: string): boolean {
+  if (!organizationId) {
+    if (process.env.NODE_ENV === 'production') throw new Error('ORGANIZATION_REQUIRED');
+    return false;
+  }
+  if (isSupabaseAdminConfigured && supabaseAdmin) return true;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SUPABASE_PERSISTENCE_UNAVAILABLE');
+  }
+  return false;
+}
+
+function throwPersistenceError(error: unknown, relation: string): never {
+  if (isSchemaMissingError(error)) {
+    throw new Error(`SUPABASE_SCHEMA_NOT_READY:${relation}`);
+  }
+  if (error instanceof Error) throw error;
+  const source = error && typeof error === 'object' ? error as { message?: string; code?: string } : undefined;
+  const normalized = new Error(source?.message || String(error || 'SUPABASE_PERSISTENCE_ERROR')) as Error & { code?: string };
+  normalized.code = source?.code;
+  throw normalized;
+}
+
+function mapSalaryBandRecord(record: any): PlantSalaryBand {
+  const rate = record.current_rate;
+  return {
+    id: record.id,
+    organization_id: record.organization_id,
+    name: record.name,
+    description: record.description || undefined,
+    status: record.status,
+    monthly_salary_pyg: Number(record.monthly_salary_pyg) || 0,
+    current_rate: rate ? {
+      id: rate.id,
+      organization_id: rate.organization_id,
+      band_id: rate.band_id,
+      monthly_salary_pyg: Number(rate.monthly_salary_pyg),
+      valid_from: rate.valid_from,
+      valid_to: rate.valid_to || null,
+      notes: rate.notes || undefined,
+      created_at: rate.created_at,
+      created_by: rate.created_by || undefined,
+    } : undefined,
+    created_at: record.created_at,
+    updated_at: record.updated_at,
+  };
+}
+
+const persistedPlantParameterFields = [
+  'electricity_rate_pyg_kwh', 'monthly_salary_hours', 'labor_charges_percent',
+  'operator_monthly_salary_pyg', 'packer_monthly_salary_pyg',
+  'gen1_machines_count', 'gen1_power_kw', 'gen1_operators_count', 'gen1_operating_hours',
+  'gen2_machines_count', 'gen2_power_kw', 'gen2_operators_count', 'gen2_operating_hours',
+  'quality_inspectors_count', 'quality_monthly_salary_pyg', 'quality_polypaper_percent',
+  'quality_labor_charges_included', 'packaging_materials_cost_per_thousand_usd',
+] as const;
+
+function mapPlantParametersRecord(record: any): PlantGeneralParameters {
+  const numericFields = persistedPlantParameterFields.filter((field) => field !== 'quality_labor_charges_included');
+  const normalized = Object.fromEntries(numericFields.map((field) => [field, Number(record[field])])) as Partial<PlantGeneralParameters>;
+  return {
+    ...normalized,
+    id: record.id,
+    organization_id: record.organization_id,
+    quality_labor_charges_included: Boolean(record.quality_labor_charges_included),
+    updated_at: record.updated_at,
+    updated_by: record.updated_by || undefined,
+  } as PlantGeneralParameters;
 }
 
 function isIsoDate(value: string): boolean {
@@ -1215,77 +1287,33 @@ export const repository = {
 
   // Industrial Processes V2 — Plant Parameters
   async getPlantParameters(organizationId?: string): Promise<PlantGeneralParameters> {
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        const { data, error } = await supabaseAdmin
-          .from('plant_process_parameters')
-          .select('*')
-          .eq('organization_id', organizationId)
-          .maybeSingle();
+    const useDatabase = persistentOrganizationStore(organizationId);
+    const adminClient = supabaseAdmin;
+    if (useDatabase && adminClient) {
+      const read = () => adminClient
+        .from('plant_process_parameters')
+        .select('*')
+        .eq('organization_id', organizationId!)
+        .maybeSingle();
+      const { data, error } = await read();
+      if (error) throwPersistenceError(error, 'plant_process_parameters');
+      if (data) return mapPlantParametersRecord(data);
 
-        if (error) {
-          if (isSchemaMissingError(error)) {
-            console.warn('[Industrial Processes V2] Tabla plant_process_parameters no encontrada en Supabase (migración 20261008000001_industrial_processes_v2.sql pendiente). Usando store en memoria.');
-            return { ...store.plantParameters };
-          }
-          throw new Error(`plant_process_parameters: ${error.message}`);
-        }
-
-        if (data) {
-          return {
-            id: data.id,
-            organization_id: data.organization_id,
-            electricity_rate_pyg_kwh: Number(data.electricity_rate_pyg_kwh),
-            monthly_salary_hours: Number(data.monthly_salary_hours),
-            labor_charges_percent: Number(data.labor_charges_percent),
-            operator_monthly_salary_pyg: Number(data.operator_monthly_salary_pyg),
-            packer_monthly_salary_pyg: Number(data.packer_monthly_salary_pyg),
-            gen1_machines_count: Number(data.gen1_machines_count),
-            gen1_power_kw: Number(data.gen1_power_kw),
-            gen1_operators_count: Number(data.gen1_operators_count),
-            gen1_operating_hours: Number(data.gen1_operating_hours),
-            gen2_machines_count: Number(data.gen2_machines_count),
-            gen2_power_kw: Number(data.gen2_power_kw),
-            gen2_operators_count: Number(data.gen2_operators_count),
-            gen2_operating_hours: Number(data.gen2_operating_hours),
-            quality_inspectors_count: Number(data.quality_inspectors_count),
-            quality_monthly_salary_pyg: Number(data.quality_monthly_salary_pyg),
-            quality_polypaper_percent: Number(data.quality_polypaper_percent),
-            quality_labor_charges_included: Boolean(data.quality_labor_charges_included),
-            packaging_materials_cost_per_thousand_usd: Number(data.packaging_materials_cost_per_thousand_usd),
-            updated_at: data.updated_at,
-            updated_by: data.updated_by,
-          };
-        }
-
-        // Insert default if not present
-        const defaultRecord = {
-          ...INITIAL_PLANT_PARAMETERS,
-          id: crypto.randomUUID(),
-          organization_id: organizationId,
-          updated_at: new Date().toISOString(),
-        };
-        const { data: inserted, error: insertError } = await supabaseAdmin
-          .from('plant_process_parameters')
-          .insert(defaultRecord)
-          .select('*')
-          .single();
-
-        if (insertError) {
-          if (isSchemaMissingError(insertError)) {
-            console.warn('[Industrial Processes V2] Tabla plant_process_parameters pendiente en Supabase. Usando store en memoria.');
-            return { ...store.plantParameters };
-          }
-          throw new Error(`plant_process_parameters insert: ${insertError.message}`);
-        }
-        return inserted as PlantGeneralParameters;
-      } catch (err: any) {
-        if (isSchemaMissingError(err)) {
-          console.warn('[Industrial Processes V2] Error de esquema en plant_process_parameters. Usando store en memoria.', err.message);
-          return { ...store.plantParameters };
-        }
-        throw err;
-      }
+      // Insert defaults once with an idempotent upsert, then read back the winner.
+      // Concurrent first reads cannot overwrite parameters another request already saved.
+      const defaultRecord = {
+        ...INITIAL_PLANT_PARAMETERS,
+        organization_id: organizationId,
+        updated_at: new Date().toISOString(),
+      };
+      const { error: insertError } = await adminClient
+        .from('plant_process_parameters')
+        .upsert(defaultRecord, { onConflict: 'organization_id', ignoreDuplicates: true });
+      if (insertError) throwPersistenceError(insertError, 'plant_process_parameters');
+      const { data: persisted, error: readError } = await read();
+      if (readError) throwPersistenceError(readError, 'plant_process_parameters');
+      if (!persisted) throw new Error('PLANT_PARAMETERS_PERSISTENCE_FAILED');
+      return mapPlantParametersRecord(persisted);
     }
     return { ...store.plantParameters };
   },
@@ -1296,37 +1324,27 @@ export const repository = {
     actorId?: string
   ): Promise<PlantGeneralParameters> {
     const orgId = organizationId || store.organizations[0].id;
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        const record = {
-          ...params,
-          organization_id: orgId,
-          updated_at: new Date().toISOString(),
-          updated_by: actorId,
-        };
-        const { data, error } = await supabaseAdmin
-          .from('plant_process_parameters')
-          .upsert(record, { onConflict: 'organization_id' })
-          .select('*')
-          .single();
-
-        if (error) {
-          if (isSchemaMissingError(error)) {
-            console.warn('[Industrial Processes V2] Tabla plant_process_parameters no encontrada en Supabase. Guardando en memoria local.');
-            store.plantParameters = { ...store.plantParameters, ...params, updated_at: new Date().toISOString() };
-            return { ...store.plantParameters };
-          }
-          throw new Error(`plant_process_parameters update: ${error.message}`);
-        }
-        return data as PlantGeneralParameters;
-      } catch (err: any) {
-        if (isSchemaMissingError(err)) {
-          console.warn('[Industrial Processes V2] Error de esquema al actualizar parámetros. Guardando en memoria local.', err.message);
-          store.plantParameters = { ...store.plantParameters, ...params, updated_at: new Date().toISOString() };
-          return { ...store.plantParameters };
-        }
-        throw err;
-      }
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const allowedParams = Object.fromEntries(
+        persistedPlantParameterFields
+          .filter((field) => params[field] !== undefined)
+          .map((field) => [field, params[field]])
+      );
+      const record = {
+        ...allowedParams,
+        organization_id: orgId,
+        updated_at: new Date().toISOString(),
+        updated_by: actorId || null,
+      };
+      const { data, error } = await supabaseAdmin
+        .from('plant_process_parameters')
+        .upsert(record, { onConflict: 'organization_id' })
+        .select('*')
+        .single();
+      if (error) throwPersistenceError(error, 'plant_process_parameters');
+      if (!data) throw new Error('PLANT_PARAMETERS_PERSISTENCE_FAILED');
+      return mapPlantParametersRecord(data);
     }
     store.plantParameters = {
       ...store.plantParameters,
@@ -2052,58 +2070,33 @@ export const repository = {
   // 1. Bandas Salariales (Plant Salary Bands)
   async getSalaryBands(organizationId?: string, onDate?: string, activeOnly = true): Promise<PlantSalaryBand[]> {
     const today = onDate || new Date().toISOString().split('T')[0];
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        const { data: bandsData, error: bandsError } = await supabaseAdmin
-          .from('plant_salary_bands')
-          .select('*')
-          .eq('organization_id', organizationId)
-          .order('name');
-        if (bandsError) {
-          if (isSchemaMissingError(bandsError)) {
-            console.warn('[Salary Bands] Tabla plant_salary_bands pendiente en Supabase. Usando store en memoria.');
-          } else {
-            throw new Error(`getSalaryBands: ${bandsError.message}`);
-          }
-        } else if (bandsData) {
-          // Fetch current rates
-          const { data: ratesData, error: ratesError } = await supabaseAdmin
-            .from('plant_salary_band_rates')
-            .select('*')
-            .eq('organization_id', organizationId)
-            .lte('valid_from', today)
-            .order('valid_from', { ascending: false });
-          if (ratesError) throw ratesError;
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data: bandsData, error: bandsError } = await supabaseAdmin
+        .from('plant_salary_bands')
+        .select('*')
+        .eq('organization_id', organizationId!)
+        .order('name');
+      if (bandsError) throwPersistenceError(bandsError, 'plant_salary_bands');
 
-          const mapped = bandsData.map((band: any) => {
-            const bandRates = (ratesData || []).filter((r: any) => r.band_id === band.id);
-            const activeRate = bandRates.find((r: any) => !r.valid_to || r.valid_to >= today);
-            return {
-              id: band.id,
-              organization_id: band.organization_id,
-              name: band.name,
-              description: band.description || undefined,
-              status: band.status,
-              monthly_salary_pyg: activeRate ? Number(activeRate.monthly_salary_pyg) : 0,
-              current_rate: activeRate ? {
-                id: activeRate.id,
-                organization_id: activeRate.organization_id,
-                band_id: activeRate.band_id,
-                monthly_salary_pyg: Number(activeRate.monthly_salary_pyg),
-                valid_from: activeRate.valid_from,
-                valid_to: activeRate.valid_to || null,
-                notes: activeRate.notes || undefined,
-                created_at: activeRate.created_at,
-              } : undefined,
-              created_at: band.created_at,
-              updated_at: band.updated_at,
-            };
-          });
-          return activeOnly ? mapped.filter((b: any) => b.status === 'ACTIVE') : mapped;
-        }
-      } catch (err: any) {
-        if (!isSchemaMissingError(err)) throw err;
-      }
+      const { data: ratesData, error: ratesError } = await supabaseAdmin
+        .from('plant_salary_band_rates')
+        .select('*')
+        .eq('organization_id', organizationId!)
+        .lte('valid_from', today)
+        .order('valid_from', { ascending: false });
+      if (ratesError) throwPersistenceError(ratesError, 'plant_salary_band_rates');
+
+      const mapped = (bandsData || []).map((band: any) => {
+        const bandRates = (ratesData || []).filter((rate: any) => rate.band_id === band.id);
+        const activeRate = bandRates.find((rate: any) => !rate.valid_to || rate.valid_to >= today);
+        return mapSalaryBandRecord({
+          ...band,
+          monthly_salary_pyg: activeRate ? Number(activeRate.monthly_salary_pyg) : 0,
+          current_rate: activeRate,
+        });
+      });
+      return activeOnly ? mapped.filter((band) => band.status === 'ACTIVE') : mapped;
     }
 
     // In-memory fallback
@@ -2139,72 +2132,30 @@ export const repository = {
     const now = new Date().toISOString();
     const today = validFrom || now.split('T')[0];
     if (!isIsoDate(today)) throw new Error('INVALID_VALID_FROM');
-    const safeSalary = Math.max(Number(initialSalaryPyg) || 0, 0);
+    if (!Number.isFinite(Number(initialSalaryPyg)) || Number(initialSalaryPyg) < 0) throw new Error('INVALID_SALARY');
+    const safeSalary = Number(initialSalaryPyg);
+    const useDatabase = persistentOrganizationStore(organizationId || band.organization_id);
 
-    if ((!organizationId || !isSupabaseAdminConfigured) && store.salaryBands.some((candidate) =>
+    if (!useDatabase && store.salaryBands.some((candidate) =>
       candidate.organization_id === orgId && candidate.name.trim().toLowerCase() === band.name.trim().toLowerCase()
     )) throw new Error('BAND_NAME_ALREADY_EXISTS');
 
     const bandId = crypto.randomUUID();
     const rateId = crypto.randomUUID();
 
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        const { data: bandData, error: bandErr } = await supabaseAdmin
-          .from('plant_salary_bands')
-          .insert({
-            id: bandId,
-            organization_id: orgId,
-            name: band.name.trim(),
-            description: band.description || null,
-            status: band.status || 'ACTIVE',
-            created_at: now,
-            updated_at: now,
-          })
-          .select()
-          .single();
-        if (bandErr) throw new Error(`createSalaryBand: ${bandErr.message}`);
-
-        const { error: rateErr } = await supabaseAdmin
-          .from('plant_salary_band_rates')
-          .insert({
-            id: rateId,
-            organization_id: orgId,
-            band_id: bandId,
-            monthly_salary_pyg: safeSalary,
-            valid_from: today,
-            valid_to: null,
-            notes: 'Tarifa inicial de creación de banda',
-            created_at: now,
-            created_by: actorId || null,
-          });
-        if (rateErr) {
-          await supabaseAdmin.from('plant_salary_bands').delete().eq('id', bandId).eq('organization_id', orgId);
-          throw rateErr;
-        }
-
-        return {
-          id: bandId,
-          organization_id: orgId,
-          name: band.name.trim(),
-          description: band.description,
-          status: band.status || 'ACTIVE',
-          monthly_salary_pyg: safeSalary,
-          current_rate: {
-            id: rateId,
-            organization_id: orgId,
-            band_id: bandId,
-            monthly_salary_pyg: safeSalary,
-            valid_from: today,
-            valid_to: null,
-            created_at: now,
-          },
-          created_at: now,
-          updated_at: now,
-        };
-      } catch (err: any) {
-        if (!isSchemaMissingError(err)) throw err;
-      }
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('create_plant_salary_band_with_rate', {
+        p_organization_id: orgId,
+        p_name: band.name.trim(),
+        p_description: band.description || null,
+        p_status: band.status || 'ACTIVE',
+        p_monthly_salary_pyg: safeSalary,
+        p_valid_from: today,
+        p_created_by: actorId || null,
+      });
+      if (error) throwPersistenceError(error, 'create_plant_salary_band_with_rate');
+      if (!data) throw new Error('SALARY_BAND_PERSISTENCE_FAILED');
+      return mapSalaryBandRecord(data);
     }
 
     const newBand: PlantSalaryBand = {
@@ -2243,81 +2194,28 @@ export const repository = {
     const now = new Date().toISOString();
     const today = validFrom || now.split('T')[0];
     if (newSalaryPyg !== undefined && !isIsoDate(today)) throw new Error('INVALID_VALID_FROM');
-    const existingBand = await this.getSalaryBand(id, organizationId, false);
-    if (!existingBand) throw new Error('SALARY_BAND_NOT_FOUND');
+    const useDatabase = persistentOrganizationStore(organizationId);
+    const existingBand = useDatabase ? undefined : await this.getSalaryBand(id, organizationId, false);
+    if (!useDatabase && !existingBand) throw new Error('SALARY_BAND_NOT_FOUND');
     if (newSalaryPyg !== undefined && (!Number.isFinite(Number(newSalaryPyg)) || Number(newSalaryPyg) < 0)) {
       throw new Error('INVALID_SALARY');
     }
-    if (updates.name !== undefined && (!updates.name.trim() || ((!organizationId || !isSupabaseAdminConfigured) && store.salaryBands.some((candidate) =>
+    if (updates.name !== undefined && (!updates.name.trim() || (!useDatabase && store.salaryBands.some((candidate) =>
       candidate.organization_id === orgId && candidate.id !== id && candidate.name.trim().toLowerCase() === updates.name!.trim().toLowerCase()
     )))) throw new Error('BAND_NAME_ALREADY_EXISTS');
 
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        const updateFields: any = { updated_at: now };
-        if (updates.name !== undefined) updateFields.name = updates.name.trim();
-        if (updates.description !== undefined) updateFields.description = updates.description;
-        if (updates.status !== undefined) updateFields.status = updates.status;
-
-        const { data: updatedBand, error: updateErr } = await supabaseAdmin
-          .from('plant_salary_bands')
-          .update(updateFields)
-          .eq('id', id)
-          .eq('organization_id', orgId)
-          .select()
-          .single();
-        if (updateErr) throw new Error(`updateSalaryBand: ${updateErr.message}`);
-
-        if (newSalaryPyg !== undefined && Number(newSalaryPyg) >= 0) {
-          const safeSalary = Number(newSalaryPyg);
-          const { data: rates, error: ratesError } = await supabaseAdmin
-            .from('plant_salary_band_rates')
-            .select('id, valid_from, valid_to')
-            .eq('band_id', id)
-            .eq('organization_id', orgId)
-            .order('valid_from');
-          if (ratesError) throw ratesError;
-
-          const sameStart = (rates || []).find((rate: any) => rate.valid_from === today);
-          if (sameStart) {
-            const { error } = await supabaseAdmin
-              .from('plant_salary_band_rates')
-              .update({ monthly_salary_pyg: safeSalary })
-              .eq('id', sameStart.id)
-              .eq('organization_id', orgId);
-            if (error) throw error;
-          } else {
-            const priorRates = (rates || []).filter(
-              (rate: any) => rate.valid_from < today && (!rate.valid_to || rate.valid_to >= today)
-            );
-            for (const rate of priorRates) {
-              const { error } = await supabaseAdmin
-                .from('plant_salary_band_rates')
-                .update({ valid_to: shiftIsoDate(today, -1) })
-                .eq('id', rate.id)
-                .eq('organization_id', orgId);
-              if (error) throw error;
-            }
-            const nextRate = (rates || []).find((rate: any) => rate.valid_from > today);
-            const { error } = await supabaseAdmin
-              .from('plant_salary_band_rates')
-              .insert({
-                id: crypto.randomUUID(),
-                organization_id: orgId,
-                band_id: id,
-                monthly_salary_pyg: safeSalary,
-                valid_from: today,
-                valid_to: nextRate ? shiftIsoDate(nextRate.valid_from, -1) : null,
-                notes: 'Actualización de tarifa salarial con vigencia',
-                created_at: now,
-                created_by: actorId || null,
-              });
-            if (error) throw error;
-          }
-        }
-      } catch (err: any) {
-        if (!isSchemaMissingError(err)) throw err;
-      }
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('update_plant_salary_band_with_rate', {
+        p_organization_id: orgId,
+        p_band_id: id,
+        p_updates: updates,
+        p_monthly_salary_pyg: newSalaryPyg ?? null,
+        p_valid_from: newSalaryPyg === undefined ? null : today,
+        p_created_by: actorId || null,
+      });
+      if (error) throwPersistenceError(error, 'update_plant_salary_band_with_rate');
+      if (!data) throw new Error('SALARY_BAND_PERSISTENCE_FAILED');
+      return mapSalaryBandRecord(data);
     }
 
     // In-memory update
@@ -2370,6 +2268,7 @@ export const repository = {
     organizationId?: string
   ): Promise<{ success: boolean; deactivated?: boolean }> {
     const orgId = organizationId || store.organizations[0].id;
+    const useDatabase = persistentOrganizationStore(organizationId);
     const band = await this.getSalaryBand(id, organizationId, false);
     if (!band) throw new Error('SALARY_BAND_NOT_FOUND');
 
@@ -2387,13 +2286,12 @@ export const repository = {
       return { success: true, deactivated: true };
     }
 
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        const { error } = await supabaseAdmin.from('plant_salary_bands').delete().eq('id', id).eq('organization_id', orgId);
-        if (error) throw error;
-      } catch (err: any) {
-        if (!isSchemaMissingError(err)) throw err;
-      }
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.from('plant_salary_bands')
+        .delete().eq('id', id).eq('organization_id', orgId).select('id');
+      if (error) throwPersistenceError(error, 'plant_salary_bands');
+      if (!data?.length) throw new Error('SALARY_BAND_NOT_FOUND');
+      return { success: true, deactivated: false };
     }
 
     store.salaryBands = store.salaryBands.filter((b) => b.id !== id);
@@ -2402,32 +2300,26 @@ export const repository = {
   },
 
   async getSalaryBandRates(bandId: string, organizationId?: string): Promise<PlantSalaryBandRate[]> {
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        const { data, error } = await supabaseAdmin
-          .from('plant_salary_band_rates')
-          .select('*')
-          .eq('band_id', bandId)
-          .eq('organization_id', organizationId)
-          .order('valid_from', { ascending: false });
-        if (error) {
-          if (!isSchemaMissingError(error)) throw error;
-        } else if (data) {
-          return data.map((r: any) => ({
-            id: r.id,
-            organization_id: r.organization_id,
-            band_id: r.band_id,
-            monthly_salary_pyg: Number(r.monthly_salary_pyg),
-            valid_from: r.valid_from,
-            valid_to: r.valid_to || null,
-            notes: r.notes || undefined,
-            created_at: r.created_at,
-            created_by: r.created_by,
-          }));
-        }
-      } catch (err) {
-        if (!isSchemaMissingError(err)) throw err;
-      }
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('plant_salary_band_rates')
+        .select('*')
+        .eq('band_id', bandId)
+        .eq('organization_id', organizationId!)
+        .order('valid_from', { ascending: false });
+      if (error) throwPersistenceError(error, 'plant_salary_band_rates');
+      return (data || []).map((r: any) => ({
+        id: r.id,
+        organization_id: r.organization_id,
+        band_id: r.band_id,
+        monthly_salary_pyg: Number(r.monthly_salary_pyg),
+        valid_from: r.valid_from,
+        valid_to: r.valid_to || null,
+        notes: r.notes || undefined,
+        created_at: r.created_at,
+        created_by: r.created_by,
+      }));
     }
     return store.salaryBandRates
       .filter((r) => r.band_id === bandId && (!organizationId || r.organization_id === organizationId))
@@ -2443,38 +2335,29 @@ export const repository = {
     const orgId = organizationId || store.organizations[0].id;
     const targetDate = onDate || new Date().toISOString().split('T')[0];
     let rows: PlantPersonnelSalaryAssignment[] = [];
-    let loadedFromDatabase = false;
+    const useDatabase = persistentOrganizationStore(organizationId);
 
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        const { data, error } = await supabaseAdmin
-          .from('plant_personnel_salary_assignments')
-          .select('*')
-          .eq('organization_id', organizationId);
-        if (error) {
-          if (!isSchemaMissingError(error)) throw error;
-        } else if (data) {
-          loadedFromDatabase = true;
-          rows = data.map((row: any) => ({
-            id: row.id,
-            organization_id: row.organization_id,
-            personnel_id: row.personnel_id,
-            salary_band_id: row.salary_band_id,
-            valid_from: row.valid_from,
-            valid_to: row.valid_to || null,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-          }));
-        }
-      } catch (error) {
-        if (!isSchemaMissingError(error)) throw error;
-      }
-    }
-
-    if (!loadedFromDatabase) {
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('plant_personnel_salary_assignments')
+        .select('*')
+        .eq('organization_id', organizationId!);
+      if (error) throwPersistenceError(error, 'plant_personnel_salary_assignments');
+      rows = (data || []).map((row: any) => ({
+        id: row.id,
+        organization_id: row.organization_id,
+        personnel_id: row.personnel_id,
+        salary_band_id: row.salary_band_id,
+        valid_from: row.valid_from,
+        valid_to: row.valid_to || null,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      }));
+    } else {
       rows = store.personnelSalaryAssignments.filter((row) => row.organization_id === orgId);
       if (!rows.length) {
-        // Compatibility path for databases/local snapshots before the salary-history migration.
+        // Legacy compatibility is limited to local fixture mode; production never treats
+        // operational assignments as authoritative salary history.
         const legacyAssignments = await this.getPersonnelAssignments(orgId, undefined, false, targetDate);
         const byPersonAndStart = new Map<string, PlantPersonnelSalaryAssignment>();
         for (const assignment of legacyAssignments) {
@@ -2511,8 +2394,25 @@ export const repository = {
   ): Promise<PlantPersonnelSalaryAssignment> {
     const orgId = organizationId || assignment.organization_id || store.organizations[0].id;
     const targetDate = assignment.valid_from;
+    const useDatabase = persistentOrganizationStore(organizationId || assignment.organization_id);
     if (!isIsoDate(targetDate) || (assignment.valid_to && (!isIsoDate(assignment.valid_to) || assignment.valid_to < targetDate))) {
       throw new Error('INVALID_SALARY_ASSIGNMENT_DATES');
+    }
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('save_plant_personnel_salary_assignment', {
+        p_organization_id: orgId,
+        p_personnel_id: assignment.personnel_id,
+        p_salary_band_id: assignment.salary_band_id,
+        p_valid_from: assignment.valid_from,
+        p_valid_to: assignment.valid_to || null,
+      });
+      if (error) throwPersistenceError(error, 'save_plant_personnel_salary_assignment');
+      if (!data) throw new Error('PERSONNEL_SALARY_ASSIGNMENT_PERSISTENCE_FAILED');
+      return {
+        ...data,
+        monthly_salary_pyg: Number(data.monthly_salary_pyg) || 0,
+        valid_to: data.valid_to || null,
+      } as PlantPersonnelSalaryAssignment;
     }
     const member = await this.getPersonnelMember(assignment.personnel_id, orgId);
     if (!member) throw new Error('PERSONNEL_NOT_FOUND');
@@ -2585,36 +2485,29 @@ export const repository = {
   async getPersonnel(organizationId?: string, sector?: IndustrialSector, onDate?: string): Promise<PlantPersonnel[]> {
     const orgId = organizationId || store.organizations[0].id;
     const today = onDate || new Date().toISOString().split('T')[0];
+    const useDatabase = persistentOrganizationStore(organizationId);
     const allAssignments = await this.getPersonnelAssignments(orgId, undefined, true, today);
     const allSalaryAssignments = await this.getPersonnelSalaryAssignments(orgId, true, today);
 
     let members: PlantPersonnel[] = [];
-    let loadedFromDatabase = false;
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        const { data, error } = await supabaseAdmin.from('plant_personnel').select('*')
-          .eq('organization_id', organizationId).order('employee_code');
-        if (error) {
-          if (!isSchemaMissingError(error)) throw error;
-        } else if (data) {
-          loadedFromDatabase = true;
-          members = data.map((person: any) => ({
-            id: person.id,
-            organization_id: person.organization_id,
-            employee_code: person.employee_code,
-            display_name: person.display_name,
-            status: person.status,
-            hire_date: person.hire_date,
-            termination_date: person.termination_date || null,
-            created_at: person.created_at,
-            updated_at: person.updated_at,
-          }));
-        }
-      } catch (error) {
-        if (!isSchemaMissingError(error)) throw error;
-      }
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.from('plant_personnel').select('*')
+        .eq('organization_id', organizationId!).order('employee_code');
+      if (error) throwPersistenceError(error, 'plant_personnel');
+      members = (data || []).map((person: any) => ({
+        id: person.id,
+        organization_id: person.organization_id,
+        employee_code: person.employee_code,
+        display_name: person.display_name,
+        status: person.status,
+        hire_date: person.hire_date,
+        termination_date: person.termination_date || null,
+        created_at: person.created_at,
+        updated_at: person.updated_at,
+      }));
+    } else {
+      members = store.plantPersonnel.filter((person) => person.organization_id === orgId);
     }
-    if (!loadedFromDatabase) members = store.plantPersonnel.filter((person) => person.organization_id === orgId);
 
     const populated = members.map((member) => {
       const employed = member.hire_date <= today && (!member.termination_date || member.termination_date >= today) &&
@@ -2648,6 +2541,7 @@ export const repository = {
     const orgId = organizationId || member.organization_id || store.organizations[0].id;
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
+    const useDatabase = persistentOrganizationStore(organizationId || member.organization_id);
 
     const newMember: PlantPersonnel = {
       id,
@@ -2670,30 +2564,31 @@ export const repository = {
       throw new Error('INVALID_TERMINATION_DATE');
     }
 
-    if ((!organizationId || !isSupabaseAdminConfigured) && store.plantPersonnel.some((p) =>
+    if (!useDatabase && store.plantPersonnel.some((p) =>
       p.organization_id === orgId && p.employee_code.toLowerCase() === newMember.employee_code.toLowerCase()
     )) throw new Error('EMPLOYEE_CODE_ALREADY_EXISTS');
 
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        const { error } = await supabaseAdmin.from('plant_personnel').insert({
-          id,
-          organization_id: orgId,
-          employee_code: newMember.employee_code,
-          display_name: newMember.display_name,
-          status: newMember.status,
-          hire_date: newMember.hire_date,
-          termination_date: newMember.termination_date,
-          created_at: now,
-          updated_at: now,
-        });
-        if (error) {
-          if (error.code === '23505') throw new Error('EMPLOYEE_CODE_ALREADY_EXISTS');
-          throw error;
-        }
-      } catch (err: any) {
-        if (!isSchemaMissingError(err)) throw err;
-      }
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('create_plant_personnel_with_assignments', {
+        p_organization_id: orgId,
+        p_employee_code: newMember.employee_code,
+        p_display_name: newMember.display_name,
+        p_status: newMember.status,
+        p_hire_date: newMember.hire_date,
+        p_termination_date: newMember.termination_date,
+        p_salary_band_id: initialBandId || null,
+        p_sector: initialSector || null,
+        p_machine_generation: initialSector === 'FORMADO' ? 'GEN1' : null,
+        p_allocation_percent: 100,
+      });
+      if (error) throwPersistenceError(error, 'create_plant_personnel_with_assignments');
+      if (!data) throw new Error('PERSONNEL_PERSISTENCE_FAILED');
+      return {
+        ...data,
+        termination_date: data.termination_date || null,
+        primary_sector: initialSector || undefined,
+        current_band_id: initialBandId,
+      } as PlantPersonnel;
     }
 
     store.plantPersonnel.push(newMember);
@@ -2730,10 +2625,29 @@ export const repository = {
   async updatePersonnel(
     id: string,
     updates: Pick<Partial<PlantPersonnel>, 'employee_code' | 'display_name' | 'status' | 'hire_date' | 'termination_date'>,
-    organizationId?: string
+    organizationId?: string,
+    salaryBandId?: string,
+    salaryValidFrom?: string
   ): Promise<PlantPersonnel> {
     const orgId = organizationId || store.organizations[0].id;
     const now = new Date().toISOString();
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      if (salaryBandId && (!salaryValidFrom || !isIsoDate(salaryValidFrom))) {
+        throw new Error('INVALID_SALARY_ASSIGNMENT_DATES');
+      }
+      const { data, error } = await supabaseAdmin.rpc('update_plant_personnel_with_salary', {
+        p_organization_id: orgId,
+        p_personnel_id: id,
+        p_updates: updates,
+        p_salary_band_id: salaryBandId || null,
+        p_salary_valid_from: salaryBandId ? salaryValidFrom : null,
+      });
+      if (error) throwPersistenceError(error, 'update_plant_personnel_with_salary');
+      if (!data) throw new Error('PERSONNEL_PERSISTENCE_FAILED');
+      return { ...data, termination_date: data.termination_date || null } as PlantPersonnel;
+    }
+
     const existingMember = await this.getPersonnelMember(id, organizationId);
     if (!existingMember) throw new Error('PERSONNEL_NOT_FOUND');
     if (updates.hire_date !== undefined && !isIsoDate(updates.hire_date)) throw new Error('INVALID_HIRE_DATE');
@@ -2780,6 +2694,17 @@ export const repository = {
       };
     }
 
+    if (salaryBandId) {
+      if (!salaryValidFrom) throw new Error('INVALID_SALARY_ASSIGNMENT_DATES');
+      await this.savePersonnelSalaryAssignment({
+        organization_id: orgId,
+        personnel_id: id,
+        salary_band_id: salaryBandId,
+        valid_from: salaryValidFrom,
+        valid_to: null,
+      }, organizationId);
+    }
+
     const updated = await this.getPersonnelMember(id, organizationId);
     if (!updated && idx < 0) throw new Error('PERSONNEL_NOT_FOUND');
     return updated || store.plantPersonnel[idx];
@@ -2802,47 +2727,34 @@ export const repository = {
   ): Promise<PlantPersonnelAssignment[]> {
     const orgId = organizationId || store.organizations[0].id;
     const targetDate = onDate || new Date().toISOString().split('T')[0];
+    const useDatabase = persistentOrganizationStore(organizationId);
 
     const allBands = await this.getSalaryBands(orgId, targetDate, false);
 
     let rawAssignments: PlantPersonnelAssignment[] = [];
-    let loadedFromDatabase = false;
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        const query = supabaseAdmin
-          .from('plant_personnel_assignments')
-          .select('*')
-          .eq('organization_id', organizationId);
-        let scopedQuery = query;
-        if (activeOnly) {
-          scopedQuery = scopedQuery.lte('valid_from', targetDate);
-        }
-        const { data, error } = await scopedQuery;
-        if (error) {
-          if (!isSchemaMissingError(error)) throw error;
-        } else if (data) {
-          loadedFromDatabase = true;
-          rawAssignments = data.map((a: any) => ({
-            id: a.id,
-            organization_id: a.organization_id,
-            personnel_id: a.personnel_id,
-            salary_band_id: a.salary_band_id,
-            sector: (a.sector === 'FORMADO_GEN1' || a.sector === 'FORMADO_GEN2' ? 'FORMADO' : a.sector) as IndustrialSector,
-            machine_generation: (a.machine_generation || (a.sector === 'FORMADO_GEN1' ? 'GEN1' : a.sector === 'FORMADO_GEN2' ? 'GEN2' : null)) as MachineGeneration | null,
-            line_id: a.line_id || undefined,
-            allocation_percent: Number(a.allocation_percent),
-            valid_from: a.valid_from,
-            valid_to: a.valid_to || null,
-            created_at: a.created_at,
-            updated_at: a.updated_at,
-          }));
-        }
-      } catch (err) {
-        if (!isSchemaMissingError(err)) throw err;
-      }
-    }
-
-    if (!loadedFromDatabase) {
+    if (useDatabase && supabaseAdmin) {
+      let query = supabaseAdmin
+        .from('plant_personnel_assignments')
+        .select('*')
+        .eq('organization_id', organizationId!);
+      if (activeOnly) query = query.lte('valid_from', targetDate);
+      const { data, error } = await query;
+      if (error) throwPersistenceError(error, 'plant_personnel_assignments');
+      rawAssignments = (data || []).map((a: any) => ({
+        id: a.id,
+        organization_id: a.organization_id,
+        personnel_id: a.personnel_id,
+        salary_band_id: a.salary_band_id,
+        sector: (a.sector === 'FORMADO_GEN1' || a.sector === 'FORMADO_GEN2' ? 'FORMADO' : a.sector) as IndustrialSector,
+        machine_generation: (a.machine_generation || (a.sector === 'FORMADO_GEN1' ? 'GEN1' : a.sector === 'FORMADO_GEN2' ? 'GEN2' : null)) as MachineGeneration | null,
+        line_id: a.line_id || undefined,
+        allocation_percent: Number(a.allocation_percent),
+        valid_from: a.valid_from,
+        valid_to: a.valid_to || null,
+        created_at: a.created_at,
+        updated_at: a.updated_at,
+      }));
+    } else {
       rawAssignments = store.personnelAssignments.filter((a) => !organizationId || a.organization_id === orgId);
     }
 
@@ -2873,6 +2785,7 @@ export const repository = {
     const now = new Date().toISOString();
     const targetDate = assignment.valid_from || now.split('T')[0];
     const allocationPercent = Number(assignment.allocation_percent);
+    const useDatabase = persistentOrganizationStore(organizationId || assignment.organization_id);
     const sectors: IndustrialSector[] = ['FORMADO', 'CALIDAD', 'EMPAQUE'];
     if (!sectors.includes(assignment.sector)) throw new Error('INVALID_SECTOR');
     if (assignment.sector === 'FORMADO' && !assignment.machine_generation) throw new Error('MACHINE_GENERATION_REQUIRED');
@@ -2884,6 +2797,29 @@ export const repository = {
     }
     if (!Number.isFinite(allocationPercent) || allocationPercent <= 0 || allocationPercent > 100) {
       throw new Error('INVALID_ALLOCATION_PERCENT');
+    }
+
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('save_plant_personnel_assignment', {
+        p_organization_id: orgId,
+        p_personnel_id: assignment.personnel_id,
+        p_sector: assignment.sector,
+        p_machine_generation: assignment.machine_generation || null,
+        p_line_id: assignment.line_id || null,
+        p_allocation_percent: allocationPercent,
+        p_valid_from: targetDate,
+        p_valid_to: assignment.valid_to || null,
+      });
+      if (error) throwPersistenceError(error, 'save_plant_personnel_assignment');
+      if (!data) throw new Error('PERSONNEL_ASSIGNMENT_PERSISTENCE_FAILED');
+      return {
+        ...data,
+        allocation_percent: Number(data.allocation_percent),
+        monthly_salary_pyg: Number(data.monthly_salary_pyg) || 0,
+        machine_generation: data.machine_generation || null,
+        line_id: data.line_id || undefined,
+        valid_to: data.valid_to || null,
+      } as PlantPersonnelAssignment;
     }
 
     const member = await this.getPersonnelMember(assignment.personnel_id, orgId);
@@ -2934,41 +2870,6 @@ export const repository = {
       updated_at: now,
     };
 
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        for (const previous of previousRows) {
-          const { error } = await supabaseAdmin
-            .from('plant_personnel_assignments')
-            .update({ valid_to: shiftIsoDate(targetDate, -1), updated_at: now })
-            .eq('id', previous.id)
-            .eq('organization_id', orgId);
-          if (error) throw error;
-        }
-        const values = {
-          personnel_id: item.personnel_id,
-          salary_band_id: item.salary_band_id,
-          sector: item.sector,
-          machine_generation: item.machine_generation || null,
-          line_id: item.line_id || null,
-          allocation_percent: item.allocation_percent,
-          valid_from: item.valid_from,
-          valid_to: item.valid_to,
-          updated_at: now,
-        };
-        const result = sameStart
-          ? await supabaseAdmin.from('plant_personnel_assignments').update(values).eq('id', id).eq('organization_id', orgId)
-          : await supabaseAdmin.from('plant_personnel_assignments').insert({
-              id,
-              organization_id: orgId,
-              ...values,
-              created_at: now,
-            });
-        if (result.error) throw result.error;
-      } catch (err: any) {
-        if (!isSchemaMissingError(err)) throw err;
-      }
-    }
-
     for (const previous of previousRows) {
       const stored = store.personnelAssignments.find((a) => a.id === previous.id);
       if (stored) stored.valid_to = shiftIsoDate(targetDate, -1);
@@ -2986,17 +2887,17 @@ export const repository = {
 
   async deletePersonnelAssignment(id: string, organizationId?: string): Promise<void> {
     const orgId = organizationId || store.organizations[0].id;
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        const { error } = await supabaseAdmin
-          .from('plant_personnel_assignments')
-          .delete()
-          .eq('id', id)
-          .eq('organization_id', orgId);
-        if (error) throw error;
-      } catch (err: any) {
-        if (!isSchemaMissingError(err)) throw err;
-      }
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('plant_personnel_assignments')
+        .delete()
+        .eq('id', id)
+        .eq('organization_id', orgId)
+        .select('id');
+      if (error) throwPersistenceError(error, 'plant_personnel_assignments');
+      if (!data?.length) throw new Error('PERSONNEL_ASSIGNMENT_NOT_FOUND');
+      return;
     }
     store.personnelAssignments = store.personnelAssignments.filter((a) => !(a.id === id && a.organization_id === orgId));
   },
@@ -3087,43 +2988,37 @@ export const repository = {
     organizationId?: string
   ): Promise<PackingLaborAllocation[]> {
     const orgId = organizationId || store.organizations[0].id;
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        let query = supabaseAdmin
-          .from('packing_labor_allocations')
-          .select('*')
-          .eq('organization_id', orgId);
-        if (typeof sessionIdOrIds === 'string') {
-          query = query.eq('session_id', sessionIdOrIds);
-        } else if (Array.isArray(sessionIdOrIds) && sessionIdOrIds.length > 0) {
-          query = query.in('session_id', sessionIdOrIds);
-        }
-        const { data, error } = await query;
-        if (error) {
-          if (!isSchemaMissingError(error)) throw error;
-        } else if (data) {
-          const bands = await this.getSalaryBands(orgId, undefined, false);
-          return data.map((a: any) => {
-            const band = bands.find((b) => b.id === a.salary_band_id);
-            return {
-              id: a.id,
-              organization_id: a.organization_id,
-              session_id: a.session_id,
-              session_segment_id: a.session_segment_id || undefined,
-              salary_band_id: a.salary_band_id,
-              salary_band_name: band?.name || 'Banda',
-              headcount: Number(a.headcount),
-              hourly_rate_snapshot_pyg: Number(a.hourly_rate_snapshot_pyg),
-              calculated_cost_pyg: Number(a.calculated_cost_pyg),
-              notes: a.notes || undefined,
-              approved_by: a.approved_by || undefined,
-              approved_at: a.approved_at,
-            };
-          });
-        }
-      } catch (err) {
-        if (!isSchemaMissingError(err)) throw err;
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      let query = supabaseAdmin
+        .from('packing_labor_allocations')
+        .select('*')
+        .eq('organization_id', orgId);
+      if (typeof sessionIdOrIds === 'string') {
+        query = query.eq('session_id', sessionIdOrIds);
+      } else if (Array.isArray(sessionIdOrIds) && sessionIdOrIds.length > 0) {
+        query = query.in('session_id', sessionIdOrIds);
       }
+      const { data, error } = await query;
+      if (error) throwPersistenceError(error, 'packing_labor_allocations');
+      const bands = await this.getSalaryBands(orgId, undefined, false);
+      return (data || []).map((a: any) => {
+        const band = bands.find((b) => b.id === a.salary_band_id);
+        return {
+          id: a.id,
+          organization_id: a.organization_id,
+          session_id: a.session_id,
+          session_segment_id: a.session_segment_id || undefined,
+          salary_band_id: a.salary_band_id,
+          salary_band_name: band?.name || 'Banda',
+          headcount: Number(a.headcount),
+          hourly_rate_snapshot_pyg: Number(a.hourly_rate_snapshot_pyg),
+          calculated_cost_pyg: Number(a.calculated_cost_pyg),
+          notes: a.notes || undefined,
+          approved_by: a.approved_by || undefined,
+          approved_at: a.approved_at,
+        };
+      });
     }
 
     let allocs = store.packingLaborAllocations.filter((a) => !organizationId || a.organization_id === orgId);

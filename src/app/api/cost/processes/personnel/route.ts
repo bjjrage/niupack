@@ -83,11 +83,9 @@ export async function POST(req: NextRequest) {
       identity.organizationId
     );
 
-    const refreshed = await repository.getPersonnelMember(member.id, identity.organizationId);
-
     return NextResponse.json({
       success: true,
-      personnel: refreshed || member,
+      personnel: member,
     });
   } catch (error: any) {
     if (error?.message === 'EMPLOYEE_CODE_ALREADY_EXISTS') {
@@ -138,19 +136,10 @@ export async function PUT(req: NextRequest) {
         hire_date: typeof body.hire_date === 'string' ? body.hire_date.trim() : undefined,
         termination_date: body.termination_date !== undefined ? body.termination_date : undefined,
       },
-      identity.organizationId
+      identity.organizationId,
+      salary_band_id || undefined,
+      salary_band_id ? salary_valid_from : undefined
     );
-
-    if (salary_band_id) {
-      await repository.savePersonnelSalaryAssignment({
-        organization_id: identity.organizationId,
-        personnel_id: id,
-        salary_band_id,
-        valid_from: salary_valid_from,
-        valid_to: null,
-      }, identity.organizationId);
-    }
-
     return NextResponse.json({
       success: true,
       personnel: updated,

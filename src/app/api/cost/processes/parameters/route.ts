@@ -50,16 +50,10 @@ export async function POST(req: NextRequest) {
       identity.organizationId,
       identity.profileId
     );
-    const fxQuote = await FxEngine.getEffectiveQuote();
 
     return NextResponse.json({
       success: true,
       parameters: updated,
-      fx: {
-        rate: fxQuote.costingRate,
-        mode: fxQuote.settings.costing_rate_mode,
-        source: fxQuote.quote.source,
-      },
     });
   } catch (error) {
     return authErrorResponse(error);
