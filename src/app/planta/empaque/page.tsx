@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Play, Square, Users, Clock, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Play, Square, Users, Clock, AlertCircle, CheckCircle2, RefreshCw, CalendarDays, Sun, Sunset } from 'lucide-react';
 import { PackingSession } from '@/types';
+import { clockLabel, longDayLabel, shiftFor, asuncionDate, type TodaySessionSummary } from '@/lib/packing/shift';
 
 function requestStorageKey(key: string) {
   return `niupack_packing_request:${key}`;
@@ -42,12 +43,48 @@ function reconcileConfirmedRequestIds(session: PackingSession) {
 
 type PackingClockAnchor = { serverNow: number; performanceNow: number };
 
+const hoursFormat = new Intl.NumberFormat('es-PY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function peopleLabel(count: number) {
+  return count === 1 ? '1 persona' : `${count} personas`;
+}
+
+function describeHeadcount(summary: TodaySessionSummary) {
+  const counts = summary.segments.map((segment) => segment.headcount).filter((value) => value > 0);
+  if (counts.length === 0) return '—';
+  const distinct = counts.filter((value, index) => index === 0 || value !== counts[index - 1]);
+  return distinct.length === 1 ? peopleLabel(distinct[0]) : `${distinct.join(' → ')} personas`;
+}
+
+function describeStatus(status: string) {
+  switch (status) {
+    case 'RUNNING': return { text: 'En curso', tone: 'text-emerald-300 border-emerald-700/60 bg-emerald-950/40' };
+    case 'STOPPED': return { text: 'Pendiente de revisión', tone: 'text-amber-200 border-amber-700/60 bg-amber-950/30' };
+    case 'APPROVED': return { text: 'Aprobado', tone: 'text-sky-200 border-sky-700/60 bg-sky-950/30' };
+    case 'CORRECTED': return { text: 'Corregido', tone: 'text-sky-200 border-sky-700/60 bg-sky-950/30' };
+    default: return { text: status, tone: 'text-slate-300 border-slate-600 bg-slate-800/60' };
+  }
+}
+
+function InfoStat({ label, value, icon, accent = false }: { label: string; value: React.ReactNode; icon?: React.ReactNode; accent?: boolean }) {
+  return (
+    <div className="flex min-w-0 flex-col items-center gap-1 px-2 py-3.5 text-center">
+      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</span>
+      <span className={`flex items-center gap-1.5 font-black ${accent ? 'text-2xl text-white' : 'text-base text-slate-100'}`}>
+        {icon}
+        <span className="truncate">{value}</span>
+      </span>
+    </div>
+  );
+}
+
 export default function PlantaEmpaquePage() {
   const [token, setToken] = useState<string>('');
   const [tokenReady, setTokenReady] = useState(false);
   const [lineName] = useState('Polipapel');
   const [headcount, setHeadcount] = useState(3);
   const [activeSession, setActiveSession] = useState<PackingSession | null>(null);
+  const [todaySessions, setTodaySessions] = useState<TodaySessionSummary[]>([]);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isChangingHeadcount, setIsChangingHeadcount] = useState(false);
   const [newHeadcountInput, setNewHeadcountInput] = useState(3);
@@ -56,6 +93,7 @@ export default function PlantaEmpaquePage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const clockAnchor = React.useRef<PackingClockAnchor | null>(null);
   const loadInProgress = React.useRef(false);
 
@@ -72,6 +110,17 @@ export default function PlantaEmpaquePage() {
     setTokenReady(true);
   }, []);
 
+  // Keeps the day / shift header correct if the phone stays open across a shift change or midnight.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const serverNowMs = () => {
+    const anchor = clockAnchor.current;
+    return anchor ? anchor.serverNow + (window.performance.now() - anchor.performanceNow) : Date.now();
+  };
+
   const loadActiveSession = async () => {
     if (!tokenReady || loadInProgress.current) return;
     loadInProgress.current = true;
@@ -80,7 +129,7 @@ export default function PlantaEmpaquePage() {
       const headers: Record<string, string> = {};
       if (token) headers['x-packing-token'] = token;
       const res = await fetch(
-        `/api/cost/processes/packing/sessions?status=RUNNING&line_name=${encodeURIComponent(lineName)}`,
+        `/api/cost/processes/packing/sessions?status=RUNNING&scope=today&line_name=${encodeURIComponent(lineName)}`,
         { headers, cache: 'no-store' }
       );
       const data = await res.json();
@@ -90,6 +139,8 @@ export default function PlantaEmpaquePage() {
       const serverNow = Date.parse(data.server_now);
       if (!Number.isFinite(serverNow)) throw new Error('Server response has no valid clock.');
       clockAnchor.current = { serverNow, performanceNow: window.performance.now() };
+      setNow(serverNow);
+      setTodaySessions(Array.isArray(data.today_sessions) ? data.today_sessions : []);
       const current = data.sessions[0] as PackingSession | undefined;
       if (current) {
         reconcileConfirmedRequestIds(current);
@@ -132,15 +183,13 @@ export default function PlantaEmpaquePage() {
       return;
     }
     const updateTimer = () => {
-      const anchor = clockAnchor.current;
-      if (!anchor) return;
-      const estimatedServerNow = anchor.serverNow + (window.performance.now() - anchor.performanceNow);
       const startedAt = Date.parse(activeSession.started_at);
-      setElapsedSeconds(Math.max(0, Math.floor((estimatedServerNow - startedAt) / 1000)));
+      setElapsedSeconds(Math.max(0, Math.floor((serverNowMs() - startedAt) / 1000)));
     };
     updateTimer();
     const timer = setInterval(updateTimer, 1000);
     return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSession]);
 
   const postAction = async (payload: Record<string, unknown>, key: string) => {
@@ -166,9 +215,18 @@ export default function PlantaEmpaquePage() {
     setFeedback(null);
     const key = `start:${lineName}`;
     try {
-      const data = await postAction({ action: 'start', line_name: lineName, initial_headcount: headcount, reason: 'Inicio de jornada de empaque' }, key);
+      const moment = new Date(serverNowMs());
+      const data = await postAction({
+        action: 'start',
+        line_name: lineName,
+        initial_headcount: headcount,
+        reason: 'Inicio de jornada de empaque',
+        shift_code: shiftFor(moment).code,
+        shift_date: asuncionDate(moment),
+      }, key);
       setActiveSession(data.session);
-      setFeedback({ message: 'Cronometro iniciado con exito', type: 'success' });
+      setFeedback({ message: 'Trabajo iniciado.', type: 'success' });
+      void loadActiveSession();
     } catch (error) {
       setFeedback({ message: `Error: ${error instanceof Error ? error.message : 'No se pudo iniciar'}`, type: 'error' });
     } finally {
@@ -186,9 +244,10 @@ export default function PlantaEmpaquePage() {
       setActiveSession(data.session);
       setHeadcount(newHeadcountInput);
       setIsChangingHeadcount(false);
-      setFeedback({ message: `Dotacion cambiada a ${newHeadcountInput} personas`, type: 'success' });
+      setFeedback({ message: `Ahora trabajan ${peopleLabel(newHeadcountInput)}.`, type: 'success' });
+      void loadActiveSession();
     } catch (error) {
-      setFeedback({ message: `Error: ${error instanceof Error ? error.message : 'No se pudo cambiar dotacion'}`, type: 'error' });
+      setFeedback({ message: `Error: ${error instanceof Error ? error.message : 'No se pudo cambiar la cantidad de personas'}`, type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -202,13 +261,15 @@ export default function PlantaEmpaquePage() {
     try {
       await postAction({ action: 'stop', session_id: activeSession.id }, key);
       setActiveSession(null);
-      setFeedback({ message: 'Cronometro detenido. Registro enviado a revision del supervisor.', type: 'success' });
+      setFeedback({ message: 'Trabajo finalizado. Registro enviado a revisión del supervisor.', type: 'success' });
+      void loadActiveSession();
     } catch (error) {
-      setFeedback({ message: `Error: ${error instanceof Error ? error.message : 'No se pudo detener'}`, type: 'error' });
+      setFeedback({ message: `Error: ${error instanceof Error ? error.message : 'No se pudo finalizar'}`, type: 'error' });
     } finally {
       setLoading(false);
     }
   };
+
   const formatTimer = (totalSec: number) => {
     const hrs = Math.floor(totalSec / 3600);
     const mins = Math.floor((totalSec % 3600) / 60);
@@ -216,19 +277,49 @@ export default function PlantaEmpaquePage() {
     return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const shift = shiftFor(now);
+  const personsNow = activeSession ? headcount : 0;
+  const closedToday = todaySessions.filter((item) => item.status !== 'RUNNING');
+  const totalPersonHoursToday = closedToday.reduce((sum, item) => sum + item.total_person_hours, 0);
+
   return (
-    <div className="w-full flex flex-col items-center gap-6 py-2">
+    <div className="w-full flex flex-col items-center gap-4 py-2">
       {/* Brand Header */}
       <div className="text-center w-full">
         <h1 className="text-2xl font-black tracking-widest text-white uppercase">NIUPACK</h1>
         <p className="text-xs font-semibold tracking-wider text-brand-400 uppercase mt-0.5">Control de Empaque</p>
       </div>
 
+      {/* Always visible: which day, which shift, which line, how many people */}
+      <section aria-label="Día y turno" className="w-full overflow-hidden rounded-2xl border border-slate-600/60 bg-[#1a2130] shadow-xl">
+        <div className="flex items-center gap-2.5 border-b border-slate-700/70 px-5 py-3.5">
+          <CalendarDays className="h-5 w-5 shrink-0 text-brand-400" />
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Hoy</p>
+            <p className="truncate text-lg font-black text-white">{longDayLabel(now)}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 divide-x divide-slate-700/70">
+          <InfoStat
+            label="Turno"
+            value={shift.label}
+            icon={shift.code === 'MANANA' ? <Sun className="h-4 w-4 text-amber-300" /> : <Sunset className="h-4 w-4 text-orange-300" />}
+          />
+          <InfoStat label="Línea" value={lineName} />
+          <InfoStat
+            label="Personas ahora"
+            value={personsNow}
+            icon={<Users className={`h-5 w-5 ${personsNow > 0 ? 'text-emerald-400' : 'text-slate-500'}`} />}
+            accent
+          />
+        </div>
+      </section>
+
       {/* Sync indicator */}
       <div className="w-full flex items-center justify-between px-1 text-[11px] text-slate-500 font-mono">
         <div className="flex items-center gap-1.5">
           <span className={`inline-block w-2 h-2 rounded-full ${activeSession ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
-          <span>{syncError ? 'ERROR AL SINCRONIZAR' : !hasLoaded ? 'SIN SINCRONIZAR' : activeSession ? 'SESION ACTIVA' : 'EN ESPERA'}</span>
+          <span>{syncError ? 'ERROR AL SINCRONIZAR' : !hasLoaded ? 'SIN SINCRONIZAR' : activeSession ? 'TRABAJO EN CURSO' : 'SIN TRABAJO EN CURSO'}</span>
         </div>
         {isSyncing && (
           <span className="flex items-center gap-1 text-slate-400">
@@ -243,13 +334,6 @@ export default function PlantaEmpaquePage() {
           <span>No se pudo confirmar el estado guardado: {syncError}</span>
         </div>
       )}
-      {/* Line Indicator */}
-      <div className="w-full bg-[#12161f] border border-slate-800 rounded-xl p-4 flex items-center justify-between">
-        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">LÍNEA</span>
-        <span className="text-sm font-bold text-white bg-brand-950/70 text-brand-300 border border-brand-800/60 px-3 py-1 rounded-md">
-          {lineName}
-        </span>
-      </div>
 
       {feedback && (
         <div
@@ -266,20 +350,20 @@ export default function PlantaEmpaquePage() {
 
       {/* STATE A: STOPPED / IDLE */}
       {!hasLoaded || (!!syncError && !activeSession) ? (
-        <div className="w-full bg-[#12161f] border border-slate-800 rounded-2xl p-6 text-center text-sm text-slate-300">
+        <div className="w-full bg-[#171d29] border border-slate-600/50 rounded-2xl p-6 text-center text-sm text-slate-300">
           {syncError ? 'No se habilitan cambios hasta recuperar la conexion.' : 'Recuperando estado desde el servidor...'}
         </div>
       ) : !activeSession ? (
-        <div className="w-full flex flex-col items-center gap-6 bg-[#12161f] border border-slate-800 rounded-2xl p-6 shadow-xl">
+        <div className="w-full flex flex-col items-center gap-6 bg-[#171d29] border border-slate-600/50 rounded-2xl p-6 shadow-xl">
           <div className="text-center w-full">
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-4">
-              PERSONAS TRABAJANDO
+              ¿CUÁNTAS PERSONAS VAN A TRABAJAR?
             </span>
             <div className="flex items-center justify-center gap-6">
               <button
                 type="button"
                 onClick={() => setHeadcount((prev) => Math.max(1, prev - 1))}
-                className="w-14 h-14 rounded-2xl border border-slate-700 bg-slate-800/90 text-white text-2xl font-bold flex items-center justify-center active:scale-95 transition-transform shadow-md"
+                className="w-14 h-14 rounded-2xl border border-slate-600 bg-slate-800/90 text-white text-2xl font-bold flex items-center justify-center active:scale-95 transition-transform shadow-md"
                 aria-label="Disminuir personas"
               >
                 −
@@ -290,14 +374,14 @@ export default function PlantaEmpaquePage() {
               <button
                 type="button"
                 onClick={() => setHeadcount((prev) => prev + 1)}
-                className="w-14 h-14 rounded-2xl border border-slate-700 bg-slate-800/90 text-white text-2xl font-bold flex items-center justify-center active:scale-95 transition-transform shadow-md"
+                className="w-14 h-14 rounded-2xl border border-slate-600 bg-slate-800/90 text-white text-2xl font-bold flex items-center justify-center active:scale-95 transition-transform shadow-md"
                 aria-label="Aumentar personas"
               >
                 +
               </button>
             </div>
-            <p className="text-[11px] text-slate-500 mt-3 font-medium">
-              {headcount === 1 ? '1 persona' : `${headcount} personas`} en la mesa de empaque
+            <p className="text-[11px] text-slate-400 mt-3 font-medium">
+              {peopleLabel(headcount)} en la mesa de empaque
             </p>
           </div>
 
@@ -308,32 +392,32 @@ export default function PlantaEmpaquePage() {
             className="w-full min-h-14 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-black text-base uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-950/50 transition-all disabled:opacity-50"
           >
             <Play className="w-5 h-5 fill-current" />
-            {loading ? 'Iniciando…' : 'INICIAR CRONÓMETRO'}
+            {loading ? 'Iniciando…' : 'INICIAR TRABAJO'}
           </button>
         </div>
       ) : (
         /* STATE B: RUNNING */
-        <div className="w-full flex flex-col items-center gap-6 bg-[#12161f] border border-emerald-900/60 rounded-2xl p-6 shadow-2xl">
+        <div className="w-full flex flex-col items-center gap-6 bg-[#171d29] border border-emerald-700/50 rounded-2xl p-6 shadow-2xl">
           {/* Elapsed Timer Display */}
           <div className="text-center w-full">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-2">
-              TIEMPO TRANSCURRIDO
+              TIEMPO TRABAJADO
             </span>
             <div className="font-mono text-5xl sm:text-6xl font-black text-emerald-400 tracking-tight tabular-nums py-2">
               {formatTimer(elapsedSeconds)}
             </div>
-            <div className="inline-flex items-center gap-1.5 text-xs text-slate-400 mt-1">
+            <div className="inline-flex items-center gap-1.5 text-xs text-slate-300 mt-1">
               <Clock className="w-3.5 h-3.5" />
-              <span>Iniciado: {new Date(activeSession.started_at).toLocaleTimeString('es-PY', { hour: '2-digit', minute: '2-digit' })}</span>
+              <span>Inició a las {clockLabel(activeSession.started_at)}</span>
             </div>
           </div>
 
-          <hr className="w-full border-slate-800" />
+          <hr className="w-full border-slate-700" />
 
           {/* Current Headcount */}
           <div className="text-center w-full">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
-              DOTACIÓN ACTUAL
+              PERSONAS TRABAJANDO
             </span>
             <div className="font-mono text-2xl font-black text-white flex items-center justify-center gap-2">
               <Users className="w-5 h-5 text-brand-400" />
@@ -343,15 +427,15 @@ export default function PlantaEmpaquePage() {
 
           {/* Headcount change modal / inline form */}
           {isChangingHeadcount ? (
-            <div className="w-full bg-[#0d1017] border border-brand-800/80 rounded-xl p-4 flex flex-col items-center gap-4 animate-in fade-in zoom-in-95">
+            <div className="w-full bg-[#10151f] border border-brand-800/80 rounded-xl p-4 flex flex-col items-center gap-4 animate-in fade-in zoom-in-95">
               <span className="text-xs font-bold text-brand-300 uppercase tracking-wider">
-                NUEVA DOTACIÓN
+                NUEVA CANTIDAD DE PERSONAS
               </span>
               <div className="flex items-center justify-center gap-4">
                 <button
                   type="button"
                   onClick={() => setNewHeadcountInput((prev) => Math.max(1, prev - 1))}
-                  className="w-11 h-11 rounded-xl border border-slate-700 bg-slate-800 text-white text-xl font-bold flex items-center justify-center active:scale-95"
+                  className="w-11 h-11 rounded-xl border border-slate-600 bg-slate-800 text-white text-xl font-bold flex items-center justify-center active:scale-95"
                 >
                   −
                 </button>
@@ -361,7 +445,7 @@ export default function PlantaEmpaquePage() {
                 <button
                   type="button"
                   onClick={() => setNewHeadcountInput((prev) => prev + 1)}
-                  className="w-11 h-11 rounded-xl border border-slate-700 bg-slate-800 text-white text-xl font-bold flex items-center justify-center active:scale-95"
+                  className="w-11 h-11 rounded-xl border border-slate-600 bg-slate-800 text-white text-xl font-bold flex items-center justify-center active:scale-95"
                 >
                   +
                 </button>
@@ -370,7 +454,7 @@ export default function PlantaEmpaquePage() {
                 <button
                   type="button"
                   onClick={() => setIsChangingHeadcount(false)}
-                  className="min-h-10 rounded-lg border border-slate-700 bg-transparent text-slate-300 font-semibold text-xs uppercase"
+                  className="min-h-10 rounded-lg border border-slate-600 bg-transparent text-slate-300 font-semibold text-xs uppercase"
                 >
                   Cancelar
                 </button>
@@ -391,14 +475,14 @@ export default function PlantaEmpaquePage() {
                 setNewHeadcountInput(headcount);
                 setIsChangingHeadcount(true);
               }}
-              className="w-full min-h-12 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-100 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2"
+              className="w-full min-h-12 rounded-xl border border-slate-600 bg-slate-800/80 hover:bg-slate-700 text-slate-100 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2"
             >
               <Users className="w-4 h-4" />
-              CAMBIAR DOTACIÓN
+              CAMBIAR CANTIDAD DE PERSONAS
             </button>
           )}
 
-          {/* Stop Button */}
+          {/* Finish Button */}
           <button
             type="button"
             onClick={handleStop}
@@ -406,9 +490,47 @@ export default function PlantaEmpaquePage() {
             className="w-full min-h-14 rounded-xl bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white font-black text-base uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-lg shadow-rose-950/50 transition-all disabled:opacity-50"
           >
             <Square className="w-5 h-5 fill-current" />
-            {loading ? 'Deteniendo…' : 'DETENER CRONÓMETRO'}
+            {loading ? 'Finalizando…' : 'FINALIZAR TRABAJO'}
           </button>
         </div>
+      )}
+
+      {/* Day summary: what has been worked today on this line */}
+      {hasLoaded && (
+        <section aria-label="Resumen de hoy" className="w-full rounded-2xl border border-slate-600/50 bg-[#171d29] shadow-xl">
+          <div className="flex items-center justify-between border-b border-slate-700/70 px-5 py-3">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-slate-300">Resumen de hoy</h2>
+            <span className="font-mono text-xs text-slate-300">
+              {hoursFormat.format(totalPersonHoursToday)} h-persona
+            </span>
+          </div>
+          {todaySessions.length === 0 ? (
+            <p className="px-5 py-4 text-xs text-slate-400">Todavía no hay trabajo registrado hoy.</p>
+          ) : (
+            <ul className="divide-y divide-slate-700/60">
+              {todaySessions.map((item) => {
+                const status = describeStatus(item.status);
+                const running = item.status === 'RUNNING';
+                return (
+                  <li key={item.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                    <div className="min-w-0">
+                      <p className="font-mono text-sm font-bold text-white">
+                        {clockLabel(item.started_at)} – {running || !item.stopped_at ? 'en curso' : clockLabel(item.stopped_at)}
+                      </p>
+                      <p className="text-xs text-slate-300">{describeHeadcount(item)}</p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <span className={`rounded border px-2 py-0.5 text-[10px] font-semibold ${status.tone}`}>{status.text}</span>
+                      {!running && (
+                        <span className="font-mono text-xs text-slate-300">{hoursFormat.format(item.total_person_hours)} h-persona</span>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
       )}
     </div>
   );

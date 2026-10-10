@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authErrorResponse, NiuAuthError, requireNiuIdentity, NiuIdentity } from '@/lib/auth/identity';
 import { verifyPackingToken } from '@/lib/auth/packing-token';
 import { repository } from '@/lib/db/repository';
+import { asuncionDate, asuncionMonth, toTodaySummary, type TodaySessionSummary } from '@/lib/packing/shift';
 import { PackingSessionStatus } from '@/types';
 
 type PackingCaller = {
@@ -118,7 +119,25 @@ export async function GET(req: NextRequest) {
       identity.organizationId
     );
 
-    return NextResponse.json({ success: true, sessions, server_now: new Date().toISOString() }, {
+    // Optional day summary for the floor screen (times, headcount and hours only). It is limited to
+    // the caller's bound line and to today in Asunción; no salary, approval or SKU data is included.
+    let today_sessions: TodaySessionSummary[] | undefined;
+    if (searchParams.get('scope') === 'today') {
+      const now = new Date();
+      const today = asuncionDate(now);
+      const months = [...new Set([asuncionMonth(now), now.toISOString().slice(0, 7)])];
+      const byId = new Map<string, Awaited<ReturnType<typeof repository.getPackingSessions>>[number]>();
+      for (const month of months) {
+        const monthSessions = await repository.getPackingSessions({ line_name, period: month }, identity.organizationId);
+        for (const item of monthSessions) byId.set(item.id, item);
+      }
+      today_sessions = [...byId.values()]
+        .filter((item) => item.status !== 'VOIDED' && asuncionDate(item.started_at) === today)
+        .sort((a, b) => a.started_at.localeCompare(b.started_at))
+        .map(toTodaySummary);
+    }
+
+    return NextResponse.json({ success: true, sessions, today_sessions, server_now: new Date().toISOString() }, {
       headers: { 'Cache-Control': 'no-store, max-age=0' },
     });
   } catch (error) {
