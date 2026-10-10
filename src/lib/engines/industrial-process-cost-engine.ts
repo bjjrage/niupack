@@ -133,12 +133,9 @@ export class IndustrialProcessCostEngine {
         (sum, person) => sum + person.monthly_salary_pyg * (person.generation_allocations?.GEN1 || 0) / 100,
         0
       );
-      modGen1CostPyg = gen1People.reduce((sum, person) => {
-        const processShare = person.allocation_percent > 0
-          ? (person.generation_allocations?.GEN1 || 0) / person.allocation_percent
-          : 0;
-        return sum + person.hourly_rate_pyg * processShare * gen1Hours;
-      }, 0);
+      // A person is paid one monthly salary: their cost is that salary plus charges, split by
+      // generation allocation. Machine operating hours never multiply a person's pay.
+      modGen1CostPyg = gen1OperatorsSalaryPyg * laborMultiplier;
     } else {
       modGen1CostPyg = gen1OperatorsCount * gen1Hours * legacyOperatorHourlyCostPyg;
     }
@@ -155,12 +152,7 @@ export class IndustrialProcessCostEngine {
         (sum, person) => sum + person.monthly_salary_pyg * (person.generation_allocations?.GEN2 || 0) / 100,
         0
       );
-      modGen2CostPyg = gen2People.reduce((sum, person) => {
-        const processShare = person.allocation_percent > 0
-          ? (person.generation_allocations?.GEN2 || 0) / person.allocation_percent
-          : 0;
-        return sum + person.hourly_rate_pyg * processShare * gen2Hours;
-      }, 0);
+      modGen2CostPyg = gen2OperatorsSalaryPyg * laborMultiplier;
     } else {
       modGen2CostPyg = gen2OperatorsCount * gen2Hours * legacyOperatorHourlyCostPyg;
     }

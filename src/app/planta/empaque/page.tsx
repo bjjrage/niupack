@@ -304,7 +304,7 @@ export default function PlantaEmpaquePage() {
           <button
             type="button"
             onClick={handleStart}
-            disabled={loading || isSyncing || !!syncError}
+            disabled={loading || !hasLoaded || !!syncError}
             className="w-full min-h-14 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-black text-base uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-950/50 transition-all disabled:opacity-50"
           >
             <Play className="w-5 h-5 fill-current" />
@@ -377,7 +377,7 @@ export default function PlantaEmpaquePage() {
                 <button
                   type="button"
                   onClick={handleChangeHeadcount}
-                  disabled={loading || isSyncing || !!syncError}
+                  disabled={loading || !hasLoaded || !!syncError}
                   className="min-h-10 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs uppercase tracking-wider"
                 >
                   {loading ? 'Guardando…' : 'Confirmar'}
@@ -402,7 +402,7 @@ export default function PlantaEmpaquePage() {
           <button
             type="button"
             onClick={handleStop}
-            disabled={loading || isSyncing || !!syncError}
+            disabled={loading || !hasLoaded || !!syncError}
             className="w-full min-h-14 rounded-xl bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white font-black text-base uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-lg shadow-rose-950/50 transition-all disabled:opacity-50"
           >
             <Square className="w-5 h-5 fill-current" />

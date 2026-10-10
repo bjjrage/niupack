@@ -677,7 +677,8 @@ describe('Industrial Processes V2 — Parametrización Industrial & Cronómetro'
       });
 
       expect(calculation.forming.gen1_operators_count).toBe(1);
-      expect(calculation.forming.mod_forming_cost_pyg).toBe(1864000);
+      // One salary of Gs. 2.000.000 plus 16.5% charges, regardless of machine operating hours.
+      expect(calculation.forming.mod_forming_cost_pyg).toBe(2330000);
       expect(calculation.quality.is_personnel_configured).toBe(false);
       expect(calculation.packing_labor.packing_labor_pyg).toBe(120000);
       expect(calculation.packing_labor.allocations_count).toBe(1);
@@ -723,7 +724,8 @@ describe('Industrial Processes V2 — Parametrización Industrial & Cronómetro'
       expect(formingSummary.monthly_salary_base_pyg).toBe(10600000);
       expect(result.forming.gen1_operators_count).toBe(2);
       expect(result.forming.gen2_operators_count).toBe(2);
-      expect(result.forming.mod_forming_cost_pyg).toBe(9879200);
+      // Gs. 10.600.000 of payroll plus 16.5% charges: each salary counted exactly once.
+      expect(result.forming.mod_forming_cost_pyg).toBe(12349000);
     });
 
     it('builds one Formado summary row per employee and totals the three illustrative bands to Gs. 10.600.000', async () => {

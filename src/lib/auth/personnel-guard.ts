@@ -79,6 +79,10 @@ export function personnelAuthErrorResponse(error: unknown) {
     ) {
       return NextResponse.json({ error: code, message: code }, { status: 400 });
     }
+    // Business-rule rejections raised by the atomic RPCs (e.g. a second approval of the same session).
+    if (/^[A-Z][A-Z0-9_]+$/.test(code) && /CANNOT|_STATUS_|CONFLICT|IDEMPOTENCY|NOT_CONFIGURED|REQUIRED/.test(code)) {
+      return NextResponse.json({ error: code, message: code }, { status: 409 });
+    }
   }
-  return NextResponse.json({ error: 'AUTH_FAILED', message: (error as Error)?.message }, { status: 500 });
+  return NextResponse.json({ error: 'OPERATION_FAILED', message: (error as Error)?.message }, { status: 500 });
 }

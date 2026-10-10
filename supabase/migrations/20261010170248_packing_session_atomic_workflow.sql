@@ -154,7 +154,7 @@ CREATE POLICY industrial_idempotency_requests_service_role
     WITH CHECK (true);
 
 CREATE TABLE IF NOT EXISTS public.packing_session_events (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
     session_id UUID NOT NULL,
     request_id UUID NOT NULL,
@@ -188,7 +188,7 @@ ALTER TABLE public.industrial_process_snapshots
     ADD COLUMN IF NOT EXISTS parameters_snapshot JSONB;
 
 CREATE TABLE IF NOT EXISTS public.industrial_process_snapshot_revisions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
     sku TEXT NOT NULL,
     period TEXT NOT NULL,
@@ -222,10 +222,9 @@ SELECT snapshot.organization_id,
        snapshot.period,
        1,
        'SNAPSHOT',
-       public.uuid_generate_v5(
-           '6ba7b811-9dad-11d1-80b4-00c04fd430c8'::uuid,
-           snapshot.organization_id::text || ':' || snapshot.sku || ':' || snapshot.period || ':revision:1'
-       ),
+       -- Deterministic request id without depending on the schema where uuid-ossp lives
+       -- (Supabase installs it in "extensions", not "public").
+       md5(snapshot.organization_id::text || ':' || snapshot.sku || ':' || snapshot.period || ':revision:1')::uuid,
        snapshot.detail_json,
        COALESCE(snapshot.parameters_snapshot, '{}'::jsonb),
        snapshot.calculated_at,
@@ -495,7 +494,7 @@ DECLARE
     v_line_name TEXT;
     v_cached JSONB;
     v_request_payload JSONB;
-    v_session_id UUID := uuid_generate_v4();
+    v_session_id UUID := gen_random_uuid();
     v_now TIMESTAMPTZ := NOW();
     v_session_code TEXT;
     v_result JSONB;
@@ -1602,7 +1601,7 @@ BEGIN
             RAISE EXCEPTION 'INVALID_COST_COMPONENT';
         END IF;
         BEGIN
-            v_component_id := uuid_generate_v4();
+            v_component_id := gen_random_uuid();
             INSERT INTO public.cost_components (
                 id, cost_sheet_id, category, name, component_type, basis,
                 rate_usd, quantity, unit_of_measure, effective_date, notes,

@@ -81,6 +81,11 @@ export async function requireNiuIdentity(): Promise<NiuIdentity> {
 
 export function authErrorResponse(error: unknown) {
   if (error instanceof NiuAuthError) return NextResponse.json({ error: error.message }, { status: error.status });
+  // Guards such as requirePersonnelAdminIdentity throw plain errors carrying an HTTP status.
+  const status = (error as { status?: unknown } | null)?.status;
+  if (error instanceof Error && (status === 401 || status === 403)) {
+    return NextResponse.json({ error: error.message }, { status });
+  }
   if (error instanceof Error && error.message.startsWith('SUPABASE_SCHEMA_NOT_READY:')) {
     return NextResponse.json({
       error: 'SUPABASE_SCHEMA_NOT_READY',
