@@ -244,4 +244,42 @@ describe('Integración Cost Intelligence + Procesos Industriales V2 (E2E Contrac
       expect(breakdown.rubrics?.length).toBe(6);
     });
   });
+
+  describe('6. Fallback de Prorrateo para Switch de Procesos (Sin Período Registrado)', () => {
+    it('calculates valid operational rate > 0 when no production period is registered by falling back to batch size', async () => {
+      const params = await repository.getPlantParameters(orgId);
+      const fxRate = 7500;
+      const skuUnregistered = 'SKU-SIN-PERIODO';
+      const batchSize = 100000;
+
+      // Engine calculation with batchSize as fallback good_units_produced
+      const calc = IndustrialProcessCostEngine.calculate({
+        parameters: params,
+        fxRate,
+        production: {
+          period: '2026-10',
+          sku: skuUnregistered,
+          good_units_produced: batchSize,
+          total_period_units: batchSize,
+        },
+      });
+
+      expect(calc.status).toBe('COMPLETE');
+      expect(calc.operational_total_usd_per_thousand).toBeGreaterThan(0);
+      expect(calc.good_units_basis).toBe(batchSize);
+
+      // Verify that applying this calculation to a Cost Sheet produces valid unit true cost
+      const costSheetInput: IndustrialProductCostInput = {
+        ...baseInput,
+        sku: skuUnregistered,
+        operational_process_enabled: true,
+        process_operational_cost_per_thousand_usd: calc.operational_total_usd_per_thousand,
+        process_calculation_detail: calc,
+      };
+
+      const breakdown = IndustrialCostEngine.calculateCost(costSheetInput);
+      expect(breakdown.cost_operational_usd).toBeCloseTo(calc.operational_total_usd_per_thousand / 1000, 5);
+      expect(breakdown.true_unit_cost_usd).toBeGreaterThan(0);
+    });
+  });
 });

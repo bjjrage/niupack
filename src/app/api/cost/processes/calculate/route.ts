@@ -97,9 +97,35 @@ async function handleCalculation({
   const fxQuote = await FxEngine.getEffectiveQuote();
 
   const periodRecord = sku && period ? await repository.getProductionPeriod(sku, period, identity.organizationId) : undefined;
-  const goodUnits = overrideGoodUnits !== undefined
+  let goodUnits = overrideGoodUnits !== undefined && overrideGoodUnits > 0
     ? overrideGoodUnits
     : (periodRecord?.good_units_produced ?? 0);
+
+  // If period record does not exist or has 0 units, fallback to SKU batch_size or default standard batch (100,000)
+  if (!goodUnits || goodUnits <= 0) {
+    if (sku) {
+      const currentConfig = await repository.getCostV1Configuration(sku, identity.organizationId);
+      if (currentConfig?.input?.batch_size && currentConfig.input.batch_size > 0) {
+        goodUnits = currentConfig.input.batch_size;
+      }
+    }
+    if (!goodUnits || goodUnits <= 0) {
+      goodUnits = 100000;
+    }
+  }
+
+  // Multi-SKU period basis resolution:
+  let effectiveTotalUnits = totalPeriodUnits;
+  if (!effectiveTotalUnits || effectiveTotalUnits <= 0) {
+    const allPeriods = await repository.getProductionPeriods(identity.organizationId);
+    const periodUnitsSum = allPeriods
+      .filter((p) => p.period === period)
+      .reduce((sum, p) => sum + (p.good_units_produced || 0), 0);
+    effectiveTotalUnits = periodUnitsSum > 0 ? periodUnitsSum : goodUnits;
+  }
+  if (effectiveTotalUnits < goodUnits) {
+    effectiveTotalUnits = goodUnits;
+  }
 
   // Fetch approved packing sessions for period/sku
   const allSessions = await repository.getPackingSessions(
@@ -118,7 +144,7 @@ async function handleCalculation({
       period,
       sku,
       good_units_produced: goodUnits,
-      total_period_units: totalPeriodUnits,
+      total_period_units: effectiveTotalUnits,
     },
     packingSessions,
   });

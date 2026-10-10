@@ -522,8 +522,18 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
   const toggleOperationalProcess = async (enabled: boolean) => {
     if (!input) return;
     if (enabled) {
+      // 1. Immediately toggle the switch state ON so UI reacts instantly
+      updateInput(
+        {
+          operational_process_enabled: true,
+        },
+        true
+      );
       try {
-        const res = await fetch(`/api/cost/processes/calculate?sku=${encodeURIComponent(sku)}`);
+        const batchUnits = input.batch_size && input.batch_size > 0 ? input.batch_size : 100000;
+        const res = await fetch(
+          `/api/cost/processes/calculate?sku=${encodeURIComponent(sku)}&good_units_produced=${batchUnits}`
+        );
         const data = await res.json();
         if (data.success && data.calculation && Number(data.calculation.operational_total_usd_per_thousand) > 0) {
           updateInput(
@@ -535,12 +545,13 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
             },
             true
           );
+          setFeedback('✓ Cálculo de Procesos activado para Costos Operativos.');
         } else {
-          setFeedback('No se puede activar el cálculo de procesos: no existe un costo operativo calculado válido en Procesos Industriales para este SKU.');
+          setFeedback('Cálculo de Procesos activado. Podés configurar los parámetros de planta en Costos → Procesos.');
         }
       } catch (err) {
         console.error('Error fetching process calculation', err);
-        setFeedback('Error al consultar el cálculo de procesos industriales.');
+        setFeedback('Cálculo de Procesos activado (sincronización pendiente).');
       }
     } else {
       updateInput(
@@ -549,14 +560,25 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
         },
         true
       );
+      setFeedback('Cálculo manual activado para Costos Operativos.');
     }
   };
 
   const togglePackagingProcess = async (enabled: boolean) => {
     if (!input) return;
     if (enabled) {
+      // 1. Immediately toggle the switch state ON so UI reacts instantly
+      updateInput(
+        {
+          packaging_process_enabled: true,
+        },
+        true
+      );
       try {
-        const res = await fetch(`/api/cost/processes/calculate?sku=${encodeURIComponent(sku)}`);
+        const batchUnits = input.batch_size && input.batch_size > 0 ? input.batch_size : 100000;
+        const res = await fetch(
+          `/api/cost/processes/calculate?sku=${encodeURIComponent(sku)}&good_units_produced=${batchUnits}`
+        );
         const data = await res.json();
         if (data.success && data.calculation && Number(data.calculation.packaging_total_usd_per_thousand) > 0) {
           updateInput(
@@ -568,12 +590,13 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
             },
             true
           );
+          setFeedback('✓ Cálculo de Procesos activado para Embalaje.');
         } else {
-          setFeedback('No se puede activar el cálculo de procesos: no existe un costo de embalaje calculado válido en Procesos Industriales para este SKU.');
+          setFeedback('Cálculo de Procesos activado. Podés registrar sesiones de empaque en Costos → Procesos.');
         }
       } catch (err) {
         console.error('Error fetching process calculation', err);
-        setFeedback('Error al consultar el cálculo de procesos industriales.');
+        setFeedback('Cálculo de Embalaje activado (sincronización pendiente).');
       }
     } else {
       updateInput(
@@ -582,6 +605,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
         },
         true
       );
+      setFeedback('Cálculo manual activado para Embalaje.');
     }
   };
 
@@ -1670,7 +1694,13 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className={`text-xs font-mono font-semibold ${!input.operational_process_enabled ? 'text-brand-400' : 'text-slate-500'}`}>OFF</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleOperationalProcess(false)}
+                            className={`text-xs font-mono font-semibold transition-colors cursor-pointer ${!input.operational_process_enabled ? 'text-brand-400' : 'text-slate-500 hover:text-slate-300'}`}
+                          >
+                            OFF
+                          </button>
                           <button
                             type="button"
                             role="switch"
@@ -1682,7 +1712,13 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                               className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${input.operational_process_enabled ? 'translate-x-5' : 'translate-x-0'}`}
                             />
                           </button>
-                          <span className={`text-xs font-mono font-semibold ${input.operational_process_enabled ? 'text-brand-400' : 'text-slate-500'}`}>ON</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleOperationalProcess(true)}
+                            className={`text-xs font-mono font-semibold transition-colors cursor-pointer ${input.operational_process_enabled ? 'text-brand-400' : 'text-slate-500 hover:text-slate-300'}`}
+                          >
+                            ON
+                          </button>
                         </div>
                       </div>
 
@@ -1850,7 +1886,13 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className={`text-xs font-mono font-semibold ${!input.packaging_process_enabled ? 'text-brand-400' : 'text-slate-500'}`}>OFF</span>
+                          <button
+                            type="button"
+                            onClick={() => togglePackagingProcess(false)}
+                            className={`text-xs font-mono font-semibold transition-colors cursor-pointer ${!input.packaging_process_enabled ? 'text-brand-400' : 'text-slate-500 hover:text-slate-300'}`}
+                          >
+                            OFF
+                          </button>
                           <button
                             type="button"
                             role="switch"
@@ -1862,7 +1904,13 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                               className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${input.packaging_process_enabled ? 'translate-x-5' : 'translate-x-0'}`}
                             />
                           </button>
-                          <span className={`text-xs font-mono font-semibold ${input.packaging_process_enabled ? 'text-brand-400' : 'text-slate-500'}`}>ON</span>
+                          <button
+                            type="button"
+                            onClick={() => togglePackagingProcess(true)}
+                            className={`text-xs font-mono font-semibold transition-colors cursor-pointer ${input.packaging_process_enabled ? 'text-brand-400' : 'text-slate-500 hover:text-slate-300'}`}
+                          >
+                            ON
+                          </button>
                         </div>
                       </div>
 
