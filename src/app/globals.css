@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  --font-sans: 'Inter Variable', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   --font-mono: 'Geist Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
 
@@ -12,6 +12,50 @@
     @apply bg-surface-950 text-slate-100 antialiased font-sans selection:bg-brand-500/30 selection:text-white;
     color-scheme: dark;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Typography (SaaS tone). Inter is now actually loaded (it was only named in the font stack, so
+   Windows fell back to a heavy system font). The utilities below soften the weights used across
+   the app instead of editing hundreds of class names; Inter Variable renders intermediate weights.
+     font-black / font-extrabold -> 700   font-bold -> 600   font-semibold -> 550
+   Wide letter-spacing on uppercase micro-labels is reduced, headings get a slight negative tracking.
+   --------------------------------------------------------------------------- */
+body {
+  font-optical-sizing: auto;
+}
+.font-black,
+.font-extrabold {
+  font-weight: 700;
+}
+.font-bold {
+  font-weight: 600;
+}
+.font-semibold {
+  font-weight: 550;
+}
+.tracking-widest {
+  letter-spacing: 0.08em;
+}
+.tracking-wider {
+  letter-spacing: 0.05em;
+}
+.tracking-wide {
+  letter-spacing: 0.02em;
+}
+.tracking-[0.12em],
+.tracking-[0.14em],
+.tracking-[0.16em] {
+  letter-spacing: 0.07em;
+}
+.tracking-[0.2em],
+.tracking-[0.22em] {
+  letter-spacing: 0.1em;
+}
+h1,
+h2,
+h3 {
+  letter-spacing: -0.012em;
 }
 
 /* Custom crisp scrollbars for enterprise tables */
