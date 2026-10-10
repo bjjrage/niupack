@@ -3,7 +3,7 @@ import { repository } from '@/lib/db/repository';
 import { requirePersonnelAdminIdentity, personnelAuthErrorResponse } from '@/lib/auth/personnel-guard';
 import { IndustrialSector } from '@/types';
 
-const sectors: IndustrialSector[] = ['FORMADO_GEN1', 'FORMADO_GEN2', 'CALIDAD', 'EMPAQUE'];
+const sectors: IndustrialSector[] = ['FORMADO', 'CALIDAD', 'EMPAQUE'];
 const isDate = (value: string) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -60,13 +60,13 @@ export async function POST(req: NextRequest) {
     }
     const salary_band_id = typeof body.salary_band_id === 'string' ? body.salary_band_id.trim() : '';
     const sector = typeof body.sector === 'string' ? body.sector : '';
-    if (salary_band_id && !sector || sector && !salary_band_id) {
-      return NextResponse.json({ error: 'INITIAL_ASSIGNMENT_INCOMPLETE', message: 'La banda y el sector inicial deben enviarse juntos.' }, { status: 400 });
-    }
     if (sector && !sectors.includes(sector as IndustrialSector)) {
       return NextResponse.json({ error: 'INVALID_SECTOR' }, { status: 400 });
     }
-    if (body.status === 'INACTIVE' && salary_band_id) {
+    if (body.status !== 'INACTIVE' && !salary_band_id) {
+      return NextResponse.json({ error: 'SALARY_BAND_REQUIRED', message: 'Cada empleado activo debe tener una banda salarial vigente.' }, { status: 400 });
+    }
+    if (body.status === 'INACTIVE' && (salary_band_id || sector)) {
       return NextResponse.json({ error: 'INACTIVE_PERSONNEL_CANNOT_BE_ASSIGNED' }, { status: 400 });
     }
 
@@ -123,6 +123,12 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'INVALID_TERMINATION_DATE' }, { status: 400 });
     }
 
+    const salary_band_id = typeof body.salary_band_id === 'string' ? body.salary_band_id.trim() : '';
+    const salary_valid_from = typeof body.salary_valid_from === 'string' ? body.salary_valid_from.trim() : '';
+    if (salary_band_id && !isDate(salary_valid_from)) {
+      return NextResponse.json({ error: 'INVALID_SALARY_VALID_FROM' }, { status: 400 });
+    }
+
     const updated = await repository.updatePersonnel(
       id,
       {
@@ -134,6 +140,16 @@ export async function PUT(req: NextRequest) {
       },
       identity.organizationId
     );
+
+    if (salary_band_id) {
+      await repository.savePersonnelSalaryAssignment({
+        organization_id: identity.organizationId,
+        personnel_id: id,
+        salary_band_id,
+        valid_from: salary_valid_from,
+        valid_to: null,
+      }, identity.organizationId);
+    }
 
     return NextResponse.json({
       success: true,

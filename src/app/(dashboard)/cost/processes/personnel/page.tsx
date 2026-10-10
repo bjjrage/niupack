@@ -2,7 +2,7 @@
 
 import React, { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, BriefcaseBusiness, CalendarDays, History, Pencil, Plus, RefreshCw, Save, Trash2, UserRoundPlus, Users, Wallet, X } from 'lucide-react';
+import { ArrowLeft, CalendarDays, History, Pencil, Plus, RefreshCw, Save, Trash2, UserRoundPlus, Users, Wallet, X } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import {
@@ -15,11 +15,11 @@ import {
 } from '@/types';
 
 const sectors: { id: IndustrialSector; label: string }[] = [
-  { id: 'FORMADO_GEN1', label: 'Formado Gen. 1' },
-  { id: 'FORMADO_GEN2', label: 'Formado Gen. 2' },
+  { id: 'FORMADO', label: 'Formado' },
   { id: 'CALIDAD', label: 'Calidad' },
   { id: 'EMPAQUE', label: 'Empaque' },
 ];
+const processLabel = (process?: IndustrialSector | null) => sectors.find((sector) => sector.id === process)?.label || 'Personal de planta';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const money = (amount = 0) => `Gs. ${Math.round(amount).toLocaleString('es-PY')}`;
@@ -59,13 +59,28 @@ export default function PersonnelPage() {
   const [initialBandId, setInitialBandId] = useState('');
   const [initialSector, setInitialSector] = useState<IndustrialSector | ''>('');
   const [assignmentPerson, setAssignmentPerson] = useState<PlantPersonnel | null>(null);
-  const [assignmentBandId, setAssignmentBandId] = useState('');
-  const [assignmentSector, setAssignmentSector] = useState<IndustrialSector>('FORMADO_GEN1');
+  const [assignmentSector, setAssignmentSector] = useState<IndustrialSector>('FORMADO');
+  const [assignmentGeneration, setAssignmentGeneration] = useState<'GEN1' | 'GEN2'>('GEN1');
   const [assignmentPercent, setAssignmentPercent] = useState('100');
   const [assignmentFrom, setAssignmentFrom] = useState(today());
   const [assignmentLine, setAssignmentLine] = useState('');
   const [historyBand, setHistoryBand] = useState<PlantSalaryBand | null>(null);
   const [historyRates, setHistoryRates] = useState<PlantSalaryBandRate[]>([]);
+  const [processContext, setProcessContext] = useState<IndustrialSector | null>(null);
+  const [returnTo, setReturnTo] = useState('/cost/processes');
+
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const requestedProcess = query.get('process');
+    if (requestedProcess && sectors.some((sector) => sector.id === requestedProcess)) {
+      const selectedProcess = requestedProcess as IndustrialSector;
+      setProcessContext(selectedProcess);
+      setInitialSector(selectedProcess);
+      setAssignmentSector(selectedProcess);
+    }
+    const requestedReturn = query.get('returnTo');
+    if (requestedReturn?.startsWith('/cost/processes')) setReturnTo(requestedReturn);
+  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -170,13 +185,14 @@ export default function PersonnelPage() {
     setHireDate(today());
     setPersonStatus('ACTIVE');
     setInitialBandId('');
-    setInitialSector('');
+    setInitialSector(processContext || '');
+    setBandValidFrom(today());
   };
 
   const savePerson = async (event: FormEvent) => {
     event.preventDefault();
-    if (!editingPersonId && Boolean(initialBandId) !== Boolean(initialSector)) {
-      setFeedback({ text: 'Para la asignación inicial debes elegir banda y sector, o dejar ambos vacíos.', error: true });
+    if (!editingPersonId && personStatus === 'ACTIVE' && !initialBandId) {
+      setFeedback({ text: 'Cada empleado activo debe tener una banda salarial vigente.', error: true });
       return;
     }
     setBusy(true);
@@ -189,13 +205,20 @@ export default function PersonnelPage() {
         status: personStatus,
       };
       if (editingPersonId) {
+        const currentPerson = personnel.find((person) => person.id === editingPersonId);
+        const salaryChanged = Boolean(initialBandId && initialBandId !== currentPerson?.current_band_id);
         await api('/api/cost/processes/personnel', {
           method: 'PUT',
-          body: JSON.stringify({ ...body, id: editingPersonId, termination_date: personStatus === 'INACTIVE' ? today() : null }),
+          body: JSON.stringify({
+            ...body,
+            id: editingPersonId,
+            termination_date: personStatus === 'INACTIVE' ? today() : null,
+            ...(salaryChanged ? { salary_band_id: initialBandId, salary_valid_from: bandValidFrom } : {}),
+          }),
         });
       } else {
-        const initialAssignment = initialBandId && initialSector && personStatus === 'ACTIVE'
-          ? { salary_band_id: initialBandId, sector: initialSector }
+        const initialAssignment = personStatus === 'ACTIVE'
+          ? { salary_band_id: initialBandId, sector: initialSector || undefined }
           : {};
         await api('/api/cost/processes/personnel', { method: 'POST', body: JSON.stringify({ ...body, ...initialAssignment }) });
       }
@@ -215,8 +238,9 @@ export default function PersonnelPage() {
     setDisplayName(person.display_name);
     setHireDate(person.hire_date);
     setPersonStatus(person.status);
-    setInitialBandId('');
-    setInitialSector('');
+    setInitialBandId(person.current_band_id || '');
+    setInitialSector(person.primary_sector || processContext || '');
+    setBandValidFrom(today());
   };
 
   const deactivatePerson = async (person: PlantPersonnel) => {
@@ -235,8 +259,8 @@ export default function PersonnelPage() {
 
   const openAssignments = (person: PlantPersonnel) => {
     setAssignmentPerson(person);
-    setAssignmentBandId(activeBands[0]?.id || '');
-    setAssignmentSector('FORMADO_GEN1');
+    setAssignmentSector(processContext || person.primary_sector || 'FORMADO');
+    setAssignmentGeneration('GEN1');
     setAssignmentPercent('100');
     setAssignmentFrom(today());
     setAssignmentLine('');
@@ -251,14 +275,14 @@ export default function PersonnelPage() {
         method: 'POST',
         body: JSON.stringify({
           personnel_id: assignmentPerson.id,
-          salary_band_id: assignmentBandId,
           sector: assignmentSector,
+          ...(assignmentSector === 'FORMADO' ? { machine_generation: assignmentGeneration } : {}),
           allocation_percent: Number(assignmentPercent),
           valid_from: assignmentFrom,
           line_id: assignmentLine.trim() || undefined,
         }),
       });
-      setFeedback({ text: 'Asignación salarial guardada.' });
+      setFeedback({ text: 'Asignación operativa guardada.' });
       await loadData();
       setAssignmentPerson((current) => current ? personnel.find((person) => person.id === current.id) || current : null);
     } catch (error) {
@@ -283,16 +307,19 @@ export default function PersonnelPage() {
   };
 
   const selectedAssignments = assignments.filter((assignment) => assignment.personnel_id === assignmentPerson?.id);
+  const visiblePersonnel = processContext
+    ? personnel.filter((person) => person.assignments?.some((assignment) => assignment.sector === processContext))
+    : personnel;
 
   return (
     <main className="mx-auto max-w-7xl space-y-6 pb-12">
       <header className="flex flex-col gap-4 border-b border-slate-800 pb-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <Link href="/cost/processes" className="mb-2 inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white">
-            <ArrowLeft className="h-3.5 w-3.5" /> Procesos industriales
+          <Link href={returnTo} className="mb-2 inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white">
+            <ArrowLeft className="h-3.5 w-3.5" /> Volver a {processLabel(processContext)}
           </Link>
           <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-white">
-            <Users className="h-5 w-5 text-brand-400" /> PERSONAL Y BANDAS SALARIALES
+            <Users className="h-5 w-5 text-brand-400" /> PERSONAL Y BANDAS SALARIALES{processContext ? ` · ${processLabel(processContext).toUpperCase()}` : ''}
           </h1>
           <p className="mt-1 text-xs text-slate-400">Maestro de empleados, tarifas con vigencia y asignación a sectores industriales.</p>
         </div>
@@ -308,26 +335,19 @@ export default function PersonnelPage() {
         </div>
       )}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {sectors.map(({ id, label }) => {
-          const summary = summaries[id];
-          return (
-            <div key={id} className="rounded-xl border border-slate-800 bg-[#12161f] p-4">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</div>
-              <div className="mt-2 flex items-center justify-between">
-                <span className="text-xl font-bold text-white">{summary?.assigned_count || 0}<span className="ml-1 text-xs font-normal text-slate-500">personas</span></span>
-                <BriefcaseBusiness className="h-4 w-4 text-brand-400" />
-              </div>
-              <div className="mt-2 text-xs font-mono text-slate-300">{money(summary?.monthly_salary_with_charges_pyg)} / mes con cargas</div>
-              <div className="mt-1 text-[10px] font-mono text-slate-500">{money(summary?.hourly_rate_avg_pyg)} / hora promedio</div>
-            </div>
-          );
-        })}
-      </section>
+      {processContext && (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-[#12161f] p-4">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Resumen · {processLabel(processContext)}</div>
+            <div className="mt-1 text-sm font-semibold text-white">{summaries[processContext]?.assigned_count || 0} personas asignadas</div>
+          </div>
+          <div className="font-mono text-sm text-emerald-300">{money(summaries[processContext]?.monthly_salary_base_pyg)} / mes por bandas vigentes</div>
+        </section>
+      )}
 
       <div className="flex gap-2 border-b border-slate-800">
         <button type="button" onClick={() => setTab('personnel')} className={`border-b-2 px-3 py-2 text-xs font-semibold ${tab === 'personnel' ? 'border-brand-400 text-white' : 'border-transparent text-slate-500 hover:text-slate-200'}`}>
-          <Users className="mr-1.5 inline h-3.5 w-3.5" /> Personal ({personnel.length})
+          <Users className="mr-1.5 inline h-3.5 w-3.5" /> Personal ({visiblePersonnel.length})
         </button>
         <button type="button" onClick={() => setTab('bands')} className={`border-b-2 px-3 py-2 text-xs font-semibold ${tab === 'bands' ? 'border-brand-400 text-white' : 'border-transparent text-slate-500 hover:text-slate-200'}`}>
           <Wallet className="mr-1.5 inline h-3.5 w-3.5" /> Bandas salariales ({bands.length})
@@ -406,16 +426,24 @@ export default function PersonnelPage() {
             ) : (
               <>
                 <div className="md:col-span-2">
-                  <label className="mb-1 block text-[11px] text-slate-400">Banda inicial (opcional)</label>
-                  <select value={initialBandId} onChange={(e) => setInitialBandId(e.target.value)} className="field"><option value="">Sin asignar</option>{activeBands.map((band) => <option key={band.id} value={band.id}>{band.name}</option>)}</select>
+                  <label className="mb-1 block text-[11px] text-slate-400">Banda salarial vigente</label>
+                  <select required={personStatus === 'ACTIVE'} value={initialBandId} onChange={(e) => setInitialBandId(e.target.value)} className="field"><option value="">Sin asignar</option>{activeBands.map((band) => <option key={band.id} value={band.id}>{band.name}</option>)}</select>
                 </div>
                 <div className="md:col-span-3">
-                  <label className="mb-1 block text-[11px] text-slate-400">Sector inicial</label>
+                  <label className="mb-1 block text-[11px] text-slate-400">Proceso inicial</label>
                   <select value={initialSector} onChange={(e) => setInitialSector(e.target.value as IndustrialSector | '')} className="field"><option value="">Sin asignar</option>{sectors.map((sector) => <option key={sector.id} value={sector.id}>{sector.label}</option>)}</select>
                 </div>
               </>
             )}
-            <div className="flex gap-2 md:col-span-12 md:justify-end">
+            {editingPersonId && (
+              <div className="md:col-span-3">
+                <label className="mb-1 block text-[11px] text-slate-400">Banda salarial vigente de la persona</label>
+                <select required={personStatus === 'ACTIVE'} value={initialBandId} onChange={(event) => setInitialBandId(event.target.value)} className="field">
+                  <option value="">Sin banda</option>{activeBands.map((band) => <option key={band.id} value={band.id}>{band.name} · {money(band.monthly_salary_pyg)}</option>)}
+                </select>
+                <input type="date" value={bandValidFrom} onChange={(event) => setBandValidFrom(event.target.value)} className="field mt-1" aria-label="Vigente desde" />
+              </div>
+            )}            <div className="flex gap-2 md:col-span-12 md:justify-end">
               {editingPersonId && <Button type="button" variant="outline" size="sm" onClick={resetPersonForm}>Cancelar edición</Button>}
               <Button type="submit" variant="primary" size="sm" disabled={busy}><UserRoundPlus className="h-3.5 w-3.5" /> {editingPersonId ? 'Guardar empleado' : 'Agregar empleado'}</Button>
             </div>
@@ -427,20 +455,20 @@ export default function PersonnelPage() {
                 <tr><th className="px-4 py-3">Empleado</th><th className="px-4 py-3">Sector / banda</th><th className="px-4 py-3">Asignaciones</th><th className="px-4 py-3">Salario actual</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3 text-right">Acciones</th></tr>
               </thead>
               <tbody>
-                {personnel.map((person) => {
+                {visiblePersonnel.map((person) => {
                   const personAssignments = assignments.filter((assignment) => assignment.personnel_id === person.id && (!assignment.valid_to || assignment.valid_to >= today()));
                   return (
                     <tr key={person.id} className="border-t border-slate-800/70">
                       <td className="px-4 py-3"><div className="font-mono font-semibold text-white">{person.employee_code}</div><div className="mt-1 text-slate-400">{person.display_name}</div><div className="mt-1 text-[10px] text-slate-600">Ingreso {person.hire_date}</div></td>
                       <td className="px-4 py-3"><div className="text-slate-200">{sectors.find((sector) => sector.id === person.primary_sector)?.label || 'Sin sector'}</div><div className="mt-1 text-slate-500">{person.current_band_name || 'Sin banda'}</div></td>
-                      <td className="max-w-sm px-4 py-3"><div className="flex flex-wrap gap-1.5">{personAssignments.length ? personAssignments.map((assignment) => <span key={assignment.id} className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] text-slate-300">{sectors.find((sector) => sector.id === assignment.sector)?.label}: {assignment.band_name} · {assignment.allocation_percent}%</span>) : <span className="text-slate-600">Sin asignación</span>}</div></td>
+                      <td className="max-w-sm px-4 py-3"><div className="flex flex-wrap gap-1.5">{personAssignments.length ? personAssignments.map((assignment) => <span key={assignment.id} className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] text-slate-300">{processLabel(assignment.sector)}: {(assignment.machine_generation ? (assignment.machine_generation === 'GEN1' ? 'Gen. 1' : 'Gen. 2') : 'Proceso')} · {assignment.allocation_percent}%</span>) : <span className="text-slate-600">Sin asignación</span>}</div></td>
                       <td className="px-4 py-3 font-mono font-semibold text-emerald-300">{money(person.current_salary_pyg)}</td>
                       <td className="px-4 py-3"><Badge variant={person.status === 'ACTIVE' ? 'success' : 'neutral'} size="sm">{person.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}</Badge></td>
                       <td className="px-4 py-3"><div className="flex justify-end gap-2"><Button variant="outline" size="sm" disabled={person.status !== 'ACTIVE'} onClick={() => openAssignments(person)}><Plus className="h-3.5 w-3.5" /> Asignar</Button><Button variant="outline" size="sm" onClick={() => editPerson(person)}><Pencil className="h-3.5 w-3.5" /> Editar</Button>{person.status === 'ACTIVE' && <Button variant="outline" size="sm" disabled={busy} onClick={() => void deactivatePerson(person)}>Desactivar</Button>}</div></td>
                     </tr>
                   );
                 })}
-                {!personnel.length && <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">{loading ? 'Cargando personal…' : 'Todavía no hay empleados registrados.'}</td></tr>}
+                {!visiblePersonnel.length && <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">{loading ? 'Cargando personal…' : 'Todavía no hay empleados registrados.'}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -456,17 +484,17 @@ export default function PersonnelPage() {
             </div>
             <form onSubmit={saveAssignment} className="grid gap-3 rounded-lg border border-slate-800 bg-[#0e1219] p-3 sm:grid-cols-2">
               <label className="text-[11px] text-slate-400">Sector<select required value={assignmentSector} onChange={(e) => setAssignmentSector(e.target.value as IndustrialSector)} className="field mt-1">{sectors.map((sector) => <option key={sector.id} value={sector.id}>{sector.label}</option>)}</select></label>
-              <label className="text-[11px] text-slate-400">Banda salarial<select required value={assignmentBandId} onChange={(e) => setAssignmentBandId(e.target.value)} className="field mt-1">{activeBands.map((band) => <option key={band.id} value={band.id}>{band.name} · {money(band.monthly_salary_pyg)}</option>)}</select></label>
+              {assignmentSector === 'FORMADO' && <label className="text-[11px] text-slate-400">Generación de máquina<select required value={assignmentGeneration} onChange={(event) => setAssignmentGeneration(event.target.value as 'GEN1' | 'GEN2')} className="field mt-1"><option value="GEN1">Gen. 1</option><option value="GEN2">Gen. 2</option></select></label>}
               <label className="text-[11px] text-slate-400">Porcentaje de dedicación<input required type="number" min="1" max="100" step="0.1" value={assignmentPercent} onChange={(e) => setAssignmentPercent(e.target.value)} className="field mt-1" /></label>
               <label className="text-[11px] text-slate-400">Vigente desde<input required type="date" value={assignmentFrom} onChange={(e) => setAssignmentFrom(e.target.value)} className="field mt-1" /></label>
               <label className="text-[11px] text-slate-400 sm:col-span-2">Línea de planta (opcional)<input value={assignmentLine} onChange={(e) => setAssignmentLine(e.target.value)} className="field mt-1" placeholder="Línea 1" /></label>
-              <div className="flex justify-end sm:col-span-2"><Button type="submit" variant="primary" size="sm" disabled={busy || !activeBands.length}><Plus className="h-3.5 w-3.5" /> Guardar asignación</Button></div>
+              <div className="flex justify-end sm:col-span-2"><Button type="submit" variant="primary" size="sm" disabled={busy || !assignmentPerson.current_band_id}><Plus className="h-3.5 w-3.5" /> Guardar asignación</Button></div>
             </form>
             <div className="space-y-2">
               <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Historial de asignaciones</h3>
               {selectedAssignments.length ? selectedAssignments.map((assignment) => (
                 <div key={assignment.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-[#0e1219] px-3 py-2 text-xs">
-                  <div><div className="text-white">{sectors.find((sector) => sector.id === assignment.sector)?.label} · {assignment.band_name} · {assignment.allocation_percent}%</div><div className="mt-1 text-[10px] text-slate-500">{assignment.valid_from} – {assignment.valid_to || 'actual'}</div></div>
+                  <div><div className="text-white">{processLabel(assignment.sector)} · {(assignment.machine_generation ? (assignment.machine_generation === 'GEN1' ? 'Gen. 1' : 'Gen. 2') : 'Proceso')} · {assignment.allocation_percent}%</div><div className="mt-1 text-[10px] text-slate-500">{assignment.valid_from} – {assignment.valid_to || 'actual'}</div></div>
                   <Button variant="outline" size="sm" disabled={busy} onClick={() => void removeAssignment(assignment)}><Trash2 className="h-3.5 w-3.5" /> Quitar</Button>
                 </div>
               )) : <div className="rounded-lg border border-dashed border-slate-800 p-5 text-center text-xs text-slate-500">Sin asignaciones anteriores.</div>}

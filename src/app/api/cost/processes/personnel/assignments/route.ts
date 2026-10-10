@@ -3,7 +3,7 @@ import { repository } from '@/lib/db/repository';
 import { requirePersonnelAdminIdentity, personnelAuthErrorResponse } from '@/lib/auth/personnel-guard';
 import { IndustrialSector } from '@/types';
 
-const sectors: IndustrialSector[] = ['FORMADO_GEN1', 'FORMADO_GEN2', 'CALIDAD', 'EMPAQUE'];
+const sectors: IndustrialSector[] = ['FORMADO', 'CALIDAD', 'EMPAQUE'];
 const isDate = (value: string) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -52,11 +52,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'PERSONNEL_ID_REQUIRED', message: 'El empleado es obligatorio.' }, { status: 400 });
     }
 
-    const salary_band_id = typeof body.salary_band_id === 'string' ? body.salary_band_id.trim() : '';
-    if (!salary_band_id) {
-      return NextResponse.json({ error: 'SALARY_BAND_ID_REQUIRED', message: 'La banda salarial es obligatoria.' }, { status: 400 });
-    }
-
     const sector = body.sector as IndustrialSector;
     if (!sectors.includes(sector)) {
       return NextResponse.json({ error: 'SECTOR_REQUIRED', message: 'El sector es obligatorio.' }, { status: 400 });
@@ -78,12 +73,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'INVALID_ASSIGNMENT_DATES' }, { status: 400 });
     }
 
+    const person = await repository.getPersonnelMember(personnel_id, identity.organizationId);
+    if (!person?.current_band_id) {
+      return NextResponse.json({ error: 'PERSONNEL_SALARY_BAND_REQUIRED', message: 'Asigná una banda salarial vigente a la persona antes de distribuirla.' }, { status: 400 });
+    }
+    const machine_generation = body.machine_generation === 'GEN1' || body.machine_generation === 'GEN2'
+      ? body.machine_generation
+      : null;
+    if (sector === 'FORMADO' && !machine_generation) {
+      return NextResponse.json({ error: 'MACHINE_GENERATION_REQUIRED' }, { status: 400 });
+    }
+    if (body.machine_generation !== undefined && body.machine_generation !== null && machine_generation === null) {
+      return NextResponse.json({ error: 'INVALID_MACHINE_GENERATION' }, { status: 400 });
+    }
+
     const assignment = await repository.savePersonnelAssignment(
       {
         organization_id: identity.organizationId,
         personnel_id,
-        salary_band_id,
+        salary_band_id: person.current_band_id,
         sector,
+        machine_generation,
         line_id: body.line_id || undefined,
         allocation_percent,
         valid_from,

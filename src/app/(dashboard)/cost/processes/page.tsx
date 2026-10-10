@@ -36,6 +36,11 @@ import {
 } from '@/types';
 import { IndustrialProcessCostEngine } from '@/lib/engines/industrial-process-cost-engine';
 
+const personnelHref = (process: IndustrialSector) => {
+  const returnTo = encodeURIComponent(`/cost/processes#${process.toLowerCase()}`);
+  return `/cost/processes/personnel?process=${process}&returnTo=${returnTo}`;
+};
+
 export default function ProcessesPage() {
   const [loading, setLoading] = useState(true);
   const [savingParams, setSavingParams] = useState(false);
@@ -52,18 +57,18 @@ export default function ProcessesPage() {
     electricity_rate_pyg_kwh: 450,
     monthly_salary_hours: 200,
     labor_charges_percent: 16.5,
-    operator_monthly_salary_pyg: 3500000,
-    packer_monthly_salary_pyg: 3100000,
+    operator_monthly_salary_pyg: 0,
+    packer_monthly_salary_pyg: 0,
     gen1_machines_count: 4,
     gen1_power_kw: 4.5,
-    gen1_operators_count: 2,
+    gen1_operators_count: 0,
     gen1_operating_hours: 160,
     gen2_machines_count: 2,
     gen2_power_kw: 6.0,
-    gen2_operators_count: 1,
+    gen2_operators_count: 0,
     gen2_operating_hours: 160,
-    quality_inspectors_count: 2,
-    quality_monthly_salary_pyg: 3200000,
+    quality_inspectors_count: 0,
+    quality_monthly_salary_pyg: 0,
     quality_polypaper_percent: 70,
     quality_labor_charges_included: true,
     packaging_materials_cost_per_thousand_usd: 3.5,
@@ -452,9 +457,7 @@ export default function ProcessesPage() {
           <p className="mt-1 text-xs text-slate-400">
             Parametrización industrial, cálculo de costos de formado, calidad y empaque por SKU.
           </p>
-          <Link href="/cost/processes/personnel" className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium text-brand-400 hover:text-brand-300">
-            <Users className="h-3.5 w-3.5" /> Gestionar personal y bandas salariales
-          </Link>
+
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
@@ -529,25 +532,7 @@ export default function ProcessesPage() {
         </div>
       )}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {([
-          ['FORMADO_GEN1', 'Personal Formado Gen. 1'],
-          ['FORMADO_GEN2', 'Personal Formado Gen. 2'],
-          ['CALIDAD', 'Personal Calidad'],
-          ['EMPAQUE', 'Personal Empaque'],
-        ] as [IndustrialSector, string][]).map(([sector, label]) => {
-          const summary = sectorPersonnelSummaries[sector];
-          return (
-            <div key={sector} className="rounded-lg border border-slate-800 bg-[#10141b] px-3 py-2.5">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
-              <div className="mt-1 flex items-center justify-between text-xs">
-                <span className="font-semibold text-white">{summary?.assigned_count || 0} asignados</span>
-                <span className="font-mono text-slate-300">Gs. {Math.round(summary?.monthly_salary_with_charges_pyg || 0).toLocaleString('es-PY')} / mes</span>
-              </div>
-            </div>
-          );
-        })}
-      </section>
+
 
       {/* ========================================================
           SECCIÓN 1: PARÁMETROS DE COSTEO
@@ -616,7 +601,7 @@ export default function ProcessesPage() {
       {/* ========================================================
           SECCIÓN 2: FORMADO DE VASOS (Inputs + Inline Cálculos)
       ======================================================== */}
-      <section className="rounded-xl border border-slate-800 bg-[#12161f] p-5 space-y-5">
+      <section id="formado" className="rounded-xl border border-slate-800 bg-[#12161f] p-5 space-y-5">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div>
             <h2 className="text-xs font-bold uppercase tracking-widest text-slate-200 flex items-center gap-2">
@@ -626,7 +611,12 @@ export default function ProcessesPage() {
               Máquinas formadoras de 1.ª y 2.ª generación, operadores de máquina y consumo energético.
             </p>
           </div>
-          <Badge variant="neutral" size="sm">OPERATIVO</Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={personnelHref('FORMADO')} className="inline-flex items-center gap-1.5 rounded-md border border-brand-800 bg-brand-950/30 px-3 py-1.5 text-[11px] font-semibold text-brand-300 hover:bg-brand-950/60">
+              <Users className="h-3.5 w-3.5" /> Gestionar personal →
+            </Link>
+            <Badge variant="neutral" size="sm">OPERATIVO</Badge>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -669,16 +659,6 @@ export default function ProcessesPage() {
                     value={params.gen1_operating_hours ?? ''}
                     placeholder="0"
                     onChange={(e) => updateParam('gen1_operating_hours', Number(e.target.value))}
-                    className="w-full rounded border border-slate-700 bg-[#0c0f14] px-2.5 py-1.5 font-mono text-white text-xs outline-none"
-                  />
-                </div>
-                <div>
-                  <span className="text-[11px] text-slate-400 block mb-1">Operadores</span>
-                  <input
-                    type="number"
-                    value={params.gen1_operators_count ?? ''}
-                    placeholder="0"
-                    onChange={(e) => updateParam('gen1_operators_count', Number(e.target.value))}
                     className="w-full rounded border border-slate-700 bg-[#0c0f14] px-2.5 py-1.5 font-mono text-white text-xs outline-none"
                   />
                 </div>
@@ -725,35 +705,14 @@ export default function ProcessesPage() {
                     className="w-full rounded border border-slate-700 bg-[#0c0f14] px-2.5 py-1.5 font-mono text-white text-xs outline-none"
                   />
                 </div>
-                <div>
-                  <span className="text-[11px] text-slate-400 block mb-1">Operadores</span>
-                  <input
-                    type="number"
-                    value={params.gen2_operators_count ?? ''}
-                    placeholder="0"
-                    onChange={(e) => updateParam('gen2_operators_count', Number(e.target.value))}
-                    className="w-full rounded border border-slate-700 bg-[#0c0f14] px-2.5 py-1.5 font-mono text-white text-xs outline-none"
-                  />
-                </div>
               </div>
             </div>
 
-            {/* Salario operador */}
-            <div className="flex items-center justify-between text-xs px-1">
-              <span className="text-slate-400">Salario mensual operadores:</span>
-              <div className="flex items-center gap-1 font-mono">
-                <span className="text-white font-semibold">
-                  Gs. {Math.round(
-                    sectorPersonnelSummaries.FORMADO_GEN1?.is_configured || sectorPersonnelSummaries.FORMADO_GEN2?.is_configured
-                      ? (sectorPersonnelSummaries.FORMADO_GEN1?.monthly_salary_base_pyg || 0) + (sectorPersonnelSummaries.FORMADO_GEN2?.monthly_salary_base_pyg || 0)
-                      : (params.operator_monthly_salary_pyg || 3500000)
-                  ).toLocaleString('es-PY')}
-                </span>
-                <span className="text-[10px] text-emerald-400">(CONFIRMADO)</span>
-              </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-[#0e1219] px-3 py-2 text-xs">
+              <span className="text-slate-300">Personal de Formado · {sectorPersonnelSummaries.FORMADO?.is_configured ? `${sectorPersonnelSummaries.FORMADO.assigned_count} personas` : 'Sin configurar'}</span>
+              <span className="font-mono font-semibold text-white">Salario mensual por bandas: {sectorPersonnelSummaries.FORMADO?.is_configured ? `Gs. ${Math.round(sectorPersonnelSummaries.FORMADO.monthly_salary_base_pyg).toLocaleString('es-PY')}` : 'Sin configurar'}</span>
             </div>
           </div>
-
           {/* Inline Costo Calculado Column */}
           <div className="lg:col-span-5 rounded-xl border border-slate-800 bg-[#0b0e14] p-4 flex flex-col justify-between">
             <div>
@@ -802,7 +761,7 @@ export default function ProcessesPage() {
       {/* ========================================================
           SECCIÓN 3: CONTROL DE CALIDAD (Inputs + Inline Cálculos)
       ======================================================== */}
-      <section className="rounded-xl border border-slate-800 bg-[#12161f] p-5 space-y-5">
+      <section id="calidad" className="rounded-xl border border-slate-800 bg-[#12161f] p-5 space-y-5">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div>
             <h2 className="text-xs font-bold uppercase tracking-widest text-slate-200 flex items-center gap-2">
@@ -812,7 +771,12 @@ export default function ProcessesPage() {
               Personal de control de calidad imputado proporcionalmente a la línea de polipapel.
             </p>
           </div>
-          <Badge variant="neutral" size="sm">CALIDAD</Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={personnelHref('CALIDAD')} className="inline-flex items-center gap-1.5 rounded-md border border-brand-800 bg-brand-950/30 px-3 py-1.5 text-[11px] font-semibold text-brand-300 hover:bg-brand-950/60">
+              <Users className="h-3.5 w-3.5" /> Gestionar personal →
+            </Link>
+            <Badge variant="neutral" size="sm">CALIDAD</Badge>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -820,46 +784,25 @@ export default function ProcessesPage() {
           <div className="lg:col-span-7 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-slate-300 font-medium">Cantidad personas</span>
-                  <span className="text-[10px] text-emerald-400">(CONFIRMADO)</span>
-                </div>
+                <span className="text-slate-300 font-medium block mb-1">Personal asignado</span>
                 <div className="min-h-10 flex items-center rounded-md border border-slate-700 bg-[#0c0f14] px-3 font-mono text-sm text-white">
-                  {params.quality_inspectors_count ?? 2} personas
+                  {sectorPersonnelSummaries.CALIDAD?.is_configured ? `${sectorPersonnelSummaries.CALIDAD.assigned_count} personas` : 'Sin configurar'}
                 </div>
               </div>
-
               <div>
-                <span className="text-slate-300 font-medium block mb-1">Salario mensual</span>
-                <div className="min-h-10 flex items-center rounded-md border border-slate-700 bg-[#0c0f14] px-3">
-                  <input
-                    type="number"
-                    step="any"
-                    value={params.quality_monthly_salary_pyg || ''}
-                    placeholder="Sin configurar"
-                    onChange={(e) => updateParam('quality_monthly_salary_pyg', Number(e.target.value))}
-                    className="w-full bg-transparent font-mono text-sm text-white outline-none"
-                  />
-                  <span className="text-[11px] text-slate-500 ml-1">Gs.</span>
+                <span className="text-slate-300 font-medium block mb-1">Salario mensual por bandas</span>
+                <div className="min-h-10 flex items-center rounded-md border border-slate-700 bg-[#0c0f14] px-3 font-mono text-sm text-white">
+                  {sectorPersonnelSummaries.CALIDAD?.is_configured ? `Gs. ${Math.round(sectorPersonnelSummaries.CALIDAD.monthly_salary_base_pyg).toLocaleString('es-PY')}` : 'Sin configurar'}
                 </div>
               </div>
-
               <div>
                 <span className="text-slate-300 font-medium block mb-1">% asignado polipapel</span>
                 <div className="min-h-10 flex items-center rounded-md border border-slate-700 bg-[#0c0f14] px-3">
-                  <input
-                    type="number"
-                    step="any"
-                    value={params.quality_polypaper_percent ?? ''}
-                    placeholder="0"
-                    onChange={(e) => updateParam('quality_polypaper_percent', Number(e.target.value))}
-                    className="w-full bg-transparent font-mono text-sm text-white outline-none"
-                  />
+                  <input type="number" min="0" max="100" step="any" value={params.quality_polypaper_percent ?? ''} placeholder="0" onChange={(event) => updateParam('quality_polypaper_percent', Number(event.target.value))} className="w-full bg-transparent font-mono text-sm text-white outline-none" />
                   <span className="text-[11px] text-slate-500 ml-1">%</span>
                 </div>
               </div>
             </div>
-
             <div className="flex items-center gap-2 pt-1">
               <input
                 type="checkbox"
@@ -885,10 +828,7 @@ export default function ProcessesPage() {
                 <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
                   <span className="text-slate-400 font-sans">Costo mensual total:</span>
                   <span className="font-semibold text-white">
-                    Gs. {Math.round(sectorPersonnelSummaries.CALIDAD?.is_configured
-                      ? sectorPersonnelSummaries.CALIDAD.monthly_salary_base_pyg * (params.quality_labor_charges_included !== false ? (1 + (params.labor_charges_percent || 0) / 100) : 1)
-                      : (params.quality_inspectors_count || 2) * (params.quality_monthly_salary_pyg || 0) * (params.quality_labor_charges_included !== false ? (1 + (params.labor_charges_percent || 0) / 100) : 1)
-                    ).toLocaleString('es-PY')}
+                    Gs. {Math.round((sectorPersonnelSummaries.CALIDAD?.monthly_salary_base_pyg || 0) * (params.quality_labor_charges_included !== false ? (1 + (params.labor_charges_percent || 0) / 100) : 1)).toLocaleString('es-PY')}
                   </span>
                 </div>
                 <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
@@ -913,7 +853,7 @@ export default function ProcessesPage() {
       {/* ========================================================
           SECCIÓN 4: EMPAQUE (Inputs + Inline Cálculos + QR)
       ======================================================== */}
-      <section className="rounded-xl border border-slate-800 bg-[#12161f] p-5 space-y-5">
+      <section id="empaque" className="rounded-xl border border-slate-800 bg-[#12161f] p-5 space-y-5">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div>
             <h2 className="text-xs font-bold uppercase tracking-widest text-slate-200 flex items-center gap-2">
@@ -923,7 +863,12 @@ export default function ProcessesPage() {
               Mano de obra proveniente de horas aprobadas de cronómetro de empaque y materiales de embalaje.
             </p>
           </div>
-          <Badge variant="neutral" size="sm">EMBALAJE</Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={personnelHref('EMPAQUE')} className="inline-flex items-center gap-1.5 rounded-md border border-brand-800 bg-brand-950/30 px-3 py-1.5 text-[11px] font-semibold text-brand-300 hover:bg-brand-950/60">
+              <Users className="h-3.5 w-3.5" /> Gestionar personal →
+            </Link>
+            <Badge variant="neutral" size="sm">EMBALAJE</Badge>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -931,18 +876,12 @@ export default function ProcessesPage() {
           <div className="lg:col-span-7 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-slate-300 font-medium">Salario empacador</span>
-                  <span className="text-[10px] text-emerald-400">{sectorPersonnelSummaries.EMPAQUE?.is_configured ? '(BANDAS)' : '(LEGACY)'}</span>
-                </div>
-                <div className="min-h-10 flex items-center rounded-md border border-slate-700 bg-[#0c0f14] px-3 font-mono text-sm text-white">
-                  Gs. {Math.round(sectorPersonnelSummaries.EMPAQUE?.is_configured
-                    ? sectorPersonnelSummaries.EMPAQUE.monthly_salary_base_pyg
-                    : params.packer_monthly_salary_pyg || 3100000
-                  ).toLocaleString('es-PY')} / mes
+                <span className="text-slate-300 font-medium block mb-1">Personal y salario mensual por bandas</span>
+                <div className="min-h-10 rounded-md border border-slate-700 bg-[#0c0f14] px-3 py-1.5 font-mono text-sm text-white">
+                  <div>{sectorPersonnelSummaries.EMPAQUE?.is_configured ? `${sectorPersonnelSummaries.EMPAQUE.assigned_count} personas` : 'Sin configurar'}</div>
+                  <div className="mt-0.5 text-xs text-slate-400">{sectorPersonnelSummaries.EMPAQUE?.is_configured ? `Gs. ${Math.round(sectorPersonnelSummaries.EMPAQUE.monthly_salary_base_pyg).toLocaleString('es-PY')} / mes` : 'Sin configurar'}</div>
                 </div>
               </div>
-
               <div>
                 <span className="text-slate-300 font-medium block mb-1">Materiales de empaque</span>
                 <div className="min-h-10 flex items-center rounded-md border border-slate-700 bg-[#0c0f14] px-3">

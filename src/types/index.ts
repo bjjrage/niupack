@@ -1057,7 +1057,8 @@ export interface PlantProductionPeriod {
 // INDUSTRIAL PERSONNEL & SALARY BANDS TYPES
 // ==========================================
 
-export type IndustrialSector = 'FORMADO_GEN1' | 'FORMADO_GEN2' | 'CALIDAD' | 'EMPAQUE';
+export type IndustrialSector = 'FORMADO' | 'CALIDAD' | 'EMPAQUE';
+export type MachineGeneration = 'GEN1' | 'GEN2';
 
 export interface PlantSalaryBandRate {
   id: string;
@@ -1090,6 +1091,7 @@ export interface PlantPersonnelAssignment {
   personnel_id: string;
   salary_band_id: string;
   sector: IndustrialSector;
+  machine_generation?: MachineGeneration | null;
   line_id?: string;
   allocation_percent: number; // 0 < percent <= 100
   valid_from: string; // YYYY-MM-DD
@@ -1128,6 +1130,20 @@ export interface SectorPersonnelItem {
   allocation_percent: number;
   effective_monthly_salary_pyg: number;
   hourly_rate_pyg: number;
+  generation_allocations?: Partial<Record<MachineGeneration, number>>;
+}
+
+export interface PlantPersonnelSalaryAssignment {
+  id: string;
+  organization_id: string;
+  personnel_id: string;
+  salary_band_id: string;
+  valid_from: string;
+  valid_to?: string | null;
+  band_name?: string;
+  monthly_salary_pyg?: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface SectorPersonnelSummary {

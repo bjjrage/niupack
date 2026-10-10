@@ -39,10 +39,12 @@ import {
   IndustrialProcessSnapshot,
   IndustrialCostBreakdown,
   IndustrialSector,
+  MachineGeneration,
   PlantSalaryBand,
   PlantSalaryBandRate,
   PlantPersonnel,
   PlantPersonnelAssignment,
+  PlantPersonnelSalaryAssignment,
   SectorPersonnelSummary,
   SectorPersonnelItem,
   PackingLaborAllocation,
@@ -159,6 +161,16 @@ class Store {
   salaryBandRates: PlantSalaryBandRate[] = [...INITIAL_SALARY_BAND_RATES];
   plantPersonnel: PlantPersonnel[] = [...INITIAL_PLANT_PERSONNEL];
   personnelAssignments: PlantPersonnelAssignment[] = [...INITIAL_PERSONNEL_ASSIGNMENTS];
+  personnelSalaryAssignments: PlantPersonnelSalaryAssignment[] = INITIAL_PLANT_PERSONNEL
+    .filter((person) => Boolean(person.current_band_id))
+    .map((person) => ({
+      id: `salary-${person.id}`,
+      organization_id: person.organization_id,
+      personnel_id: person.id,
+      salary_band_id: person.current_band_id!,
+      valid_from: '2026-01-01',
+      valid_to: null,
+    }));
   packingLaborAllocations: PackingLaborAllocation[] = [...INITIAL_PACKING_LABOR_ALLOCATIONS];
 }
 
@@ -2422,73 +2434,204 @@ export const repository = {
       .sort((a, b) => b.valid_from.localeCompare(a.valid_from));
   },
 
+  // Salary history belongs to a person. Process assignments only describe operational allocation.
+  async getPersonnelSalaryAssignments(
+    organizationId?: string,
+    activeOnly = true,
+    onDate?: string
+  ): Promise<PlantPersonnelSalaryAssignment[]> {
+    const orgId = organizationId || store.organizations[0].id;
+    const targetDate = onDate || new Date().toISOString().split('T')[0];
+    let rows: PlantPersonnelSalaryAssignment[] = [];
+    let loadedFromDatabase = false;
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('plant_personnel_salary_assignments')
+          .select('*')
+          .eq('organization_id', organizationId);
+        if (error) {
+          if (!isSchemaMissingError(error)) throw error;
+        } else if (data) {
+          loadedFromDatabase = true;
+          rows = data.map((row: any) => ({
+            id: row.id,
+            organization_id: row.organization_id,
+            personnel_id: row.personnel_id,
+            salary_band_id: row.salary_band_id,
+            valid_from: row.valid_from,
+            valid_to: row.valid_to || null,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+          }));
+        }
+      } catch (error) {
+        if (!isSchemaMissingError(error)) throw error;
+      }
+    }
+
+    if (!loadedFromDatabase) {
+      rows = store.personnelSalaryAssignments.filter((row) => row.organization_id === orgId);
+      if (!rows.length) {
+        // Compatibility path for databases/local snapshots before the salary-history migration.
+        const legacyAssignments = await this.getPersonnelAssignments(orgId, undefined, false, targetDate);
+        const byPersonAndStart = new Map<string, PlantPersonnelSalaryAssignment>();
+        for (const assignment of legacyAssignments) {
+          const key = `${assignment.personnel_id}:${assignment.valid_from}`;
+          byPersonAndStart.set(key, {
+            id: `legacy-${assignment.id}`,
+            organization_id: assignment.organization_id,
+            personnel_id: assignment.personnel_id,
+            salary_band_id: assignment.salary_band_id,
+            valid_from: assignment.valid_from,
+            valid_to: assignment.valid_to,
+          });
+        }
+        rows = [...byPersonAndStart.values()];
+      }
+    }
+
+    const bands = await this.getSalaryBands(orgId, targetDate, false);
+    return rows
+      .filter((row) => !activeOnly || (row.valid_from <= targetDate && (!row.valid_to || row.valid_to >= targetDate)))
+      .map((row) => {
+        const band = bands.find((candidate) => candidate.id === row.salary_band_id);
+        return {
+          ...row,
+          band_name: band?.name || 'Banda',
+          monthly_salary_pyg: band?.monthly_salary_pyg || 0,
+        };
+      });
+  },
+
+  async savePersonnelSalaryAssignment(
+    assignment: Omit<PlantPersonnelSalaryAssignment, 'id'>,
+    organizationId?: string
+  ): Promise<PlantPersonnelSalaryAssignment> {
+    const orgId = organizationId || assignment.organization_id || store.organizations[0].id;
+    const targetDate = assignment.valid_from;
+    if (!isIsoDate(targetDate) || (assignment.valid_to && (!isIsoDate(assignment.valid_to) || assignment.valid_to < targetDate))) {
+      throw new Error('INVALID_SALARY_ASSIGNMENT_DATES');
+    }
+    const member = await this.getPersonnelMember(assignment.personnel_id, orgId);
+    if (!member) throw new Error('PERSONNEL_NOT_FOUND');
+    if (member.hire_date > targetDate || (member.termination_date && member.termination_date < targetDate)) {
+      throw new Error('PERSONNEL_NOT_ACTIVE_ON_DATE');
+    }
+    if (member.status !== 'ACTIVE') throw new Error('PERSONNEL_INACTIVE');
+    const band = await this.getSalaryBand(assignment.salary_band_id, orgId, false);
+    if (!band) throw new Error('SALARY_BAND_NOT_FOUND');
+
+    const history = await this.getPersonnelSalaryAssignments(orgId, false, targetDate);
+    const personRows = history.filter((row) => row.personnel_id === assignment.personnel_id);
+    const sameStart = personRows.find((row) => row.valid_from === targetDate);
+    const previousRows = personRows.filter((row) => row.valid_from < targetDate && (!row.valid_to || row.valid_to >= targetDate));
+    const nextRow = personRows.filter((row) => row.valid_from > targetDate).sort((a, b) => a.valid_from.localeCompare(b.valid_from))[0];
+    const requestedEnd = assignment.valid_to || null;
+    const nextStartEnd = nextRow ? shiftIsoDate(nextRow.valid_from, -1) : null;
+    const effectiveEnd = requestedEnd && nextStartEnd
+      ? (requestedEnd < nextStartEnd ? requestedEnd : nextStartEnd)
+      : requestedEnd || nextStartEnd;
+    const now = new Date().toISOString();
+    const id = sameStart?.id.startsWith('legacy-') ? crypto.randomUUID() : sameStart?.id || crypto.randomUUID();
+    const item: PlantPersonnelSalaryAssignment = {
+      ...assignment,
+      id,
+      organization_id: orgId,
+      valid_to: effectiveEnd,
+      band_name: band.name,
+      monthly_salary_pyg: band.monthly_salary_pyg,
+      updated_at: now,
+    };
+
+    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+      try {
+        for (const previous of previousRows.filter((row) => !row.id.startsWith('legacy-'))) {
+          const { error } = await supabaseAdmin.from('plant_personnel_salary_assignments')
+            .update({ valid_to: shiftIsoDate(targetDate, -1), updated_at: now })
+            .eq('id', previous.id).eq('organization_id', orgId);
+          if (error) throw error;
+        }
+        const values = {
+          personnel_id: item.personnel_id,
+          salary_band_id: item.salary_band_id,
+          valid_from: item.valid_from,
+          valid_to: item.valid_to,
+          updated_at: now,
+        };
+        const result = sameStart && !sameStart.id.startsWith('legacy-')
+          ? await supabaseAdmin.from('plant_personnel_salary_assignments').update(values).eq('id', id).eq('organization_id', orgId)
+          : await supabaseAdmin.from('plant_personnel_salary_assignments').insert({ id, organization_id: orgId, ...values, created_at: now });
+        if (result.error) throw result.error;
+      } catch (error) {
+        if (!isSchemaMissingError(error)) throw error;
+        throw new Error('PERSONNEL_SALARY_MIGRATION_REQUIRED');
+      }
+    }
+
+    for (const previous of previousRows) {
+      if (previous.id.startsWith('legacy-')) continue;
+      const row = store.personnelSalaryAssignments.find((candidate) => candidate.id === previous.id);
+      if (row) row.valid_to = shiftIsoDate(targetDate, -1);
+    }
+    const existingIndex = store.personnelSalaryAssignments.findIndex((row) => row.id === id);
+    if (existingIndex >= 0) store.personnelSalaryAssignments[existingIndex] = item;
+    else store.personnelSalaryAssignments.push(item);
+    return item;
+  },
+
   // 2. Maestro de Personal de Planta (Plant Personnel)
   async getPersonnel(organizationId?: string, sector?: IndustrialSector, onDate?: string): Promise<PlantPersonnel[]> {
     const orgId = organizationId || store.organizations[0].id;
     const today = onDate || new Date().toISOString().split('T')[0];
-
     const allAssignments = await this.getPersonnelAssignments(orgId, undefined, true, today);
-    const allBands = await this.getSalaryBands(orgId, today, false);
+    const allSalaryAssignments = await this.getPersonnelSalaryAssignments(orgId, true, today);
 
     let members: PlantPersonnel[] = [];
     let loadedFromDatabase = false;
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
       try {
-        const { data, error } = await supabaseAdmin
-          .from('plant_personnel')
-          .select('*')
-          .eq('organization_id', organizationId)
-          .order('employee_code');
+        const { data, error } = await supabaseAdmin.from('plant_personnel').select('*')
+          .eq('organization_id', organizationId).order('employee_code');
         if (error) {
           if (!isSchemaMissingError(error)) throw error;
         } else if (data) {
           loadedFromDatabase = true;
-          members = data.map((p: any) => ({
-            id: p.id,
-            organization_id: p.organization_id,
-            employee_code: p.employee_code,
-            display_name: p.display_name,
-            status: p.status,
-            hire_date: p.hire_date,
-            termination_date: p.termination_date || null,
-            created_at: p.created_at,
-            updated_at: p.updated_at,
+          members = data.map((person: any) => ({
+            id: person.id,
+            organization_id: person.organization_id,
+            employee_code: person.employee_code,
+            display_name: person.display_name,
+            status: person.status,
+            hire_date: person.hire_date,
+            termination_date: person.termination_date || null,
+            created_at: person.created_at,
+            updated_at: person.updated_at,
           }));
         }
-      } catch (err) {
-        if (!isSchemaMissingError(err)) throw err;
+      } catch (error) {
+        if (!isSchemaMissingError(error)) throw error;
       }
     }
+    if (!loadedFromDatabase) members = store.plantPersonnel.filter((person) => person.organization_id === orgId);
 
-    if (!loadedFromDatabase) {
-      members = store.plantPersonnel.filter((p) => !organizationId || p.organization_id === orgId);
-    }
-
-    // Populate assignments, active band and salary
     const populated = members.map((member) => {
-      const isEmployedToday = member.hire_date <= today && (!member.termination_date || member.termination_date >= today) &&
+      const employed = member.hire_date <= today && (!member.termination_date || member.termination_date >= today) &&
         (member.status === 'ACTIVE' || Boolean(member.termination_date && member.termination_date >= today));
-      const memberAssignments = isEmployedToday ? allAssignments.filter((a) => a.personnel_id === member.id) : [];
-      const primaryAssignment = memberAssignments[0];
-      const band = primaryAssignment ? allBands.find((b) => b.id === primaryAssignment.salary_band_id) : undefined;
-      const currentSalaryPyg = memberAssignments.reduce((sum, assignment) => {
-        const assignedBand = allBands.find((candidate) => candidate.id === assignment.salary_band_id);
-        return sum + (Number(assignedBand?.monthly_salary_pyg) || 0) * assignment.allocation_percent / 100;
-      }, 0);
+      const memberAssignments = employed ? allAssignments.filter((row) => row.personnel_id === member.id) : [];
+      const salary = employed ? allSalaryAssignments.find((row) => row.personnel_id === member.id) : undefined;
+      const band = salary ? { id: salary.salary_band_id, name: salary.band_name, monthly_salary_pyg: salary.monthly_salary_pyg } : undefined;
       return {
         ...member,
-        primary_sector: primaryAssignment?.sector || member.primary_sector,
-        current_band_id: band?.id || member.current_band_id,
-        current_band_name: band?.name || member.current_band_name,
-        current_salary_pyg: memberAssignments.length ? currentSalaryPyg : (member.status === 'ACTIVE' ? member.current_salary_pyg || 0 : 0),
+        primary_sector: memberAssignments[0]?.sector || member.primary_sector,
+        current_band_id: band?.id,
+        current_band_name: band?.name,
+        current_salary_pyg: Number(band?.monthly_salary_pyg) || 0,
         assignments: memberAssignments,
       };
     });
-
-    if (sector) {
-      return populated.filter((m) => m.assignments?.some((a) => a.sector === sector) || m.primary_sector === sector);
-    }
-    return populated;
+    return sector ? populated.filter((member) => member.assignments?.some((row) => row.sector === sector)) : populated;
   },
 
   async getPersonnelMember(id: string, organizationId?: string): Promise<PlantPersonnel | undefined> {
@@ -2555,7 +2698,16 @@ export const repository = {
 
     store.plantPersonnel.push(newMember);
 
-    // Initial assignment if specified
+    // Salary is a person attribute. The optional process assignment is saved separately.
+    if (initialBandId) {
+      await this.savePersonnelSalaryAssignment({
+        organization_id: orgId,
+        personnel_id: id,
+        salary_band_id: initialBandId,
+        valid_from: newMember.hire_date,
+        valid_to: null,
+      }, orgId);
+    }
     if (initialBandId && initialSector) {
       await this.savePersonnelAssignment(
         {
@@ -2563,6 +2715,7 @@ export const repository = {
           personnel_id: id,
           salary_band_id: initialBandId,
           sector: initialSector,
+          machine_generation: initialSector === 'FORMADO' ? 'GEN1' : null,
           allocation_percent: 100,
           valid_from: newMember.hire_date,
           valid_to: null,
@@ -2656,15 +2809,15 @@ export const repository = {
     let loadedFromDatabase = false;
     if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
       try {
-        let query = supabaseAdmin
+        const query = supabaseAdmin
           .from('plant_personnel_assignments')
           .select('*')
           .eq('organization_id', organizationId);
-        if (sector) query = query.eq('sector', sector);
+        let scopedQuery = query;
         if (activeOnly) {
-          query = query.lte('valid_from', targetDate);
+          scopedQuery = scopedQuery.lte('valid_from', targetDate);
         }
-        const { data, error } = await query;
+        const { data, error } = await scopedQuery;
         if (error) {
           if (!isSchemaMissingError(error)) throw error;
         } else if (data) {
@@ -2674,7 +2827,8 @@ export const repository = {
             organization_id: a.organization_id,
             personnel_id: a.personnel_id,
             salary_band_id: a.salary_band_id,
-            sector: a.sector as IndustrialSector,
+            sector: (a.sector === 'FORMADO_GEN1' || a.sector === 'FORMADO_GEN2' ? 'FORMADO' : a.sector) as IndustrialSector,
+            machine_generation: (a.machine_generation || (a.sector === 'FORMADO_GEN1' ? 'GEN1' : a.sector === 'FORMADO_GEN2' ? 'GEN2' : null)) as MachineGeneration | null,
             line_id: a.line_id || undefined,
             allocation_percent: Number(a.allocation_percent),
             valid_from: a.valid_from,
@@ -2719,8 +2873,12 @@ export const repository = {
     const now = new Date().toISOString();
     const targetDate = assignment.valid_from || now.split('T')[0];
     const allocationPercent = Number(assignment.allocation_percent);
-    const sectors: IndustrialSector[] = ['FORMADO_GEN1', 'FORMADO_GEN2', 'CALIDAD', 'EMPAQUE'];
+    const sectors: IndustrialSector[] = ['FORMADO', 'CALIDAD', 'EMPAQUE'];
     if (!sectors.includes(assignment.sector)) throw new Error('INVALID_SECTOR');
+    if (assignment.sector === 'FORMADO' && !assignment.machine_generation) throw new Error('MACHINE_GENERATION_REQUIRED');
+    if (assignment.machine_generation && (assignment.sector !== 'FORMADO' || !['GEN1', 'GEN2'].includes(assignment.machine_generation))) {
+      throw new Error('INVALID_MACHINE_GENERATION');
+    }
     if (!isIsoDate(targetDate) || (assignment.valid_to && (!isIsoDate(assignment.valid_to) || assignment.valid_to < targetDate))) {
       throw new Error('INVALID_ASSIGNMENT_DATES');
     }
@@ -2734,14 +2892,18 @@ export const repository = {
     if (member.hire_date > targetDate || (member.termination_date && member.termination_date < targetDate)) {
       throw new Error('PERSONNEL_NOT_ACTIVE_ON_DATE');
     }
-    const band = await this.getSalaryBand(assignment.salary_band_id, orgId);
+    const salaryAssignment = (await this.getPersonnelSalaryAssignments(orgId, true, targetDate))
+      .find((row) => row.personnel_id === assignment.personnel_id);
+    if (!salaryAssignment) throw new Error('PERSONNEL_SALARY_BAND_REQUIRED');
+    const band = await this.getSalaryBand(salaryAssignment.salary_band_id, orgId);
     if (!band) throw new Error('SALARY_BAND_NOT_FOUND');
 
     const history = await this.getPersonnelAssignments(orgId, undefined, false, targetDate);
-    const sameSector = history.filter((a) => a.personnel_id === assignment.personnel_id && a.sector === assignment.sector);
-    const sameStart = sameSector.find((a) => a.valid_from === targetDate);
-    const previousRows = sameSector.filter((a) => a.valid_from < targetDate && (!a.valid_to || a.valid_to >= targetDate));
-    const nextRow = sameSector
+    const sameOperationalSlot = history.filter((row) => row.personnel_id === assignment.personnel_id && row.sector === assignment.sector &&
+      (row.machine_generation || null) === (assignment.machine_generation || null));
+    const sameStart = sameOperationalSlot.find((row) => row.valid_from === targetDate);
+    const previousRows = sameOperationalSlot.filter((row) => row.valid_from < targetDate && (!row.valid_to || row.valid_to >= targetDate));
+    const nextRow = sameOperationalSlot
       .filter((a) => a.valid_from > targetDate)
       .sort((a, b) => a.valid_from.localeCompare(b.valid_from))[0];
     const requestedEnd = assignment.valid_to || null;
@@ -2752,7 +2914,7 @@ export const repository = {
 
     const existingActive = await this.getPersonnelAssignments(orgId, undefined, true, targetDate);
     const otherAllocationsSum = existingActive
-      .filter((a) => a.personnel_id === assignment.personnel_id && a.sector !== assignment.sector)
+      .filter((a) => a.personnel_id === assignment.personnel_id && a.id !== sameStart?.id)
       .reduce((sum, a) => sum + a.allocation_percent, 0);
     if (otherAllocationsSum + allocationPercent > 100) throw new Error('ASSIGNMENT_ALLOCATION_EXCEEDED');
 
@@ -2761,8 +2923,9 @@ export const repository = {
       id,
       organization_id: orgId,
       personnel_id: assignment.personnel_id,
-      salary_band_id: assignment.salary_band_id,
+      salary_band_id: salaryAssignment.salary_band_id,
       sector: assignment.sector,
+      machine_generation: assignment.machine_generation || null,
       line_id: assignment.line_id,
       allocation_percent: allocationPercent,
       valid_from: targetDate,
@@ -2785,6 +2948,7 @@ export const repository = {
           personnel_id: item.personnel_id,
           salary_band_id: item.salary_band_id,
           sector: item.sector,
+          machine_generation: item.machine_generation || null,
           line_id: item.line_id || null,
           allocation_percent: item.allocation_percent,
           valid_from: item.valid_from,
@@ -2847,7 +3011,7 @@ export const repository = {
     const orgId = organizationId || store.organizations[0].id;
     const targetDate = onDate || new Date().toISOString().split('T')[0];
 
-    const sectors: IndustrialSector[] = ['FORMADO_GEN1', 'FORMADO_GEN2', 'CALIDAD', 'EMPAQUE'];
+    const sectors: IndustrialSector[] = ['FORMADO', 'CALIDAD', 'EMPAQUE'];
     const assignments = await this.getPersonnelAssignments(orgId, undefined, true, targetDate);
     const personnelMembers = await this.getPersonnel(orgId, undefined, targetDate);
     const laborMultiplier = 1 + (Number(laborChargesPercent) || 0) / 100;
@@ -2856,34 +3020,46 @@ export const repository = {
     const result: Partial<Record<IndustrialSector, SectorPersonnelSummary>> = {};
 
     for (const sector of sectors) {
-      const sectorAssignments = assignments.filter((a) => a.sector === sector);
+      const sectorAssignments = assignments.filter((assignment) => assignment.sector === sector);
       const items: SectorPersonnelItem[] = [];
 
       let totalBasePyg = 0;
       let totalHourlyRatePyg = 0;
 
-      for (const assign of sectorAssignments) {
-        const member = personnelMembers.find((m) => m.id === assign.personnel_id);
+      const personnelIds = [...new Set(sectorAssignments.map((assignment) => assignment.personnel_id))];
+      for (const personnelId of personnelIds) {
+        const member = personnelMembers.find((candidate) => candidate.id === personnelId);
         if (!member || member.hire_date > targetDate || (member.termination_date && member.termination_date < targetDate)) continue;
         if (member.status !== 'ACTIVE' && (!member.termination_date || member.termination_date <= targetDate)) continue;
-        const monthlySalary = Number(assign.monthly_salary_pyg) || 0;
-        const allocationFactor = (Number(assign.allocation_percent) || 100) / 100;
+        const memberAssignments = sectorAssignments.filter((assignment) => assignment.personnel_id === personnelId);
+        const allocationPercent = memberAssignments.reduce((sum, assignment) => sum + Number(assignment.allocation_percent || 0), 0);
+        const monthlySalary = Number(member.current_salary_pyg) || 0;
+        const allocationFactor = Math.min(allocationPercent, 100) / 100;
         const effectiveSalaryPyg = monthlySalary * allocationFactor;
         const hourlyRatePyg = safeHours > 0 ? (effectiveSalaryPyg * laborMultiplier) / safeHours : 0;
+        const generationAllocations = sector === 'FORMADO'
+          ? {
+              GEN1: memberAssignments.filter((assignment) => assignment.machine_generation === 'GEN1')
+                .reduce((sum, assignment) => sum + Number(assignment.allocation_percent || 0), 0),
+              GEN2: memberAssignments.filter((assignment) => assignment.machine_generation === 'GEN2')
+                .reduce((sum, assignment) => sum + Number(assignment.allocation_percent || 0), 0),
+            }
+          : undefined;
 
         totalBasePyg += effectiveSalaryPyg;
         totalHourlyRatePyg += hourlyRatePyg;
 
         items.push({
-          personnel_id: assign.personnel_id,
+          personnel_id: member.id,
           employee_code: member.employee_code,
           display_name: member.display_name,
-          band_id: assign.salary_band_id,
-          band_name: assign.band_name || 'Banda',
+          band_id: member.current_band_id || '',
+          band_name: member.current_band_name || 'Sin banda',
           monthly_salary_pyg: monthlySalary,
-          allocation_percent: assign.allocation_percent,
+          allocation_percent: allocationPercent,
           effective_monthly_salary_pyg: effectiveSalaryPyg,
           hourly_rate_pyg: hourlyRatePyg,
+          generation_allocations: generationAllocations,
         });
       }
 
@@ -2898,7 +3074,7 @@ export const repository = {
         monthly_salary_with_charges_pyg: totalWithChargesPyg,
         hourly_rate_avg_pyg: hourlyAvgPyg,
         personnel: items,
-        is_configured: assignedCount > 0,
+        is_configured: assignedCount > 0 && items.every((item) => item.monthly_salary_pyg > 0),
       };
     }
 

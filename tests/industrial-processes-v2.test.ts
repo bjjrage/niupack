@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { IndustrialProcessCostEngine } from '@/lib/engines/industrial-process-cost-engine';
 import { IndustrialCostEngine } from '@/lib/engines/industrial-cost-engine';
 import { repository } from '@/lib/db/repository';
@@ -574,6 +574,7 @@ describe('Industrial Processes V2 — Parametrización Industrial & Cronómetro'
           allocation_percent: 100,
           effective_monthly_salary_pyg: monthlySalary,
           hourly_rate_pyg: hourlyRate,
+          ...(sector === 'FORMADO' ? { generation_allocations: { GEN1: 100 } } : {}),
         }] : [],
       });
 
@@ -595,8 +596,7 @@ describe('Industrial Processes V2 — Parametrización Industrial & Cronómetro'
         calculated_cost_pyg: 80000,
       }];
       const personnelSummaries: Record<IndustrialSector, SectorPersonnelSummary> = {
-        FORMADO_GEN1: makeSummary('FORMADO_GEN1', 11650, 2000000, true),
-        FORMADO_GEN2: makeSummary('FORMADO_GEN2', 0, 0, false),
+        FORMADO: makeSummary('FORMADO', 11650, 2000000, true),
         CALIDAD: makeSummary('CALIDAD', 0, 0, false),
         EMPAQUE: makeSummary('EMPAQUE', 5000, 1000000, true),
       };
@@ -611,11 +611,95 @@ describe('Industrial Processes V2 — Parametrización Industrial & Cronómetro'
       });
 
       expect(calculation.forming.gen1_operators_count).toBe(1);
-      expect(calculation.forming.mod_forming_cost_pyg).toBe(5126000);
+      expect(calculation.forming.mod_forming_cost_pyg).toBe(1864000);
       expect(calculation.quality.is_personnel_configured).toBe(false);
       expect(calculation.packing_labor.packing_labor_pyg).toBe(120000);
       expect(calculation.packing_labor.allocations_count).toBe(1);
       expect(calculation.packing_labor.is_estimated).toBe(true);
+    });
+
+    it('counts a Formado employee once when split across generations and sums three distinct bands', () => {
+      const formingPeople = [
+        { personnel_id: 'a', employee_code: 'OP-001', display_name: 'Operador A', band_id: 'b1', band_name: 'Banda 1', monthly_salary_pyg: 3100000, allocation_percent: 100, effective_monthly_salary_pyg: 3100000, hourly_rate_pyg: 18057.5, generation_allocations: { GEN1: 100 } },
+        { personnel_id: 'b', employee_code: 'OP-002', display_name: 'Operador B', band_id: 'b2', band_name: 'Banda 2', monthly_salary_pyg: 3500000, allocation_percent: 100, effective_monthly_salary_pyg: 3500000, hourly_rate_pyg: 20387.5, generation_allocations: { GEN1: 50, GEN2: 50 } },
+        { personnel_id: 'c', employee_code: 'OP-003', display_name: 'Operador C', band_id: 'b3', band_name: 'Banda 3', monthly_salary_pyg: 4000000, allocation_percent: 100, effective_monthly_salary_pyg: 4000000, hourly_rate_pyg: 23300, generation_allocations: { GEN2: 100 } },
+      ];
+      const formingSummary: SectorPersonnelSummary = {
+        sector: 'FORMADO',
+        assigned_count: formingPeople.length,
+        monthly_salary_base_pyg: formingPeople.reduce((total, person) => total + person.monthly_salary_pyg, 0),
+        monthly_salary_with_charges_pyg: formingPeople.reduce((total, person) => total + person.monthly_salary_pyg, 0) * 1.165,
+        hourly_rate_avg_pyg: formingPeople.reduce((total, person) => total + person.hourly_rate_pyg, 0) / formingPeople.length,
+        personnel: formingPeople,
+        is_configured: true,
+      };
+      const emptySummary = (sector: 'CALIDAD' | 'EMPAQUE'): SectorPersonnelSummary => ({
+        sector,
+        assigned_count: 0,
+        monthly_salary_base_pyg: 0,
+        monthly_salary_with_charges_pyg: 0,
+        hourly_rate_avg_pyg: 0,
+        personnel: [],
+        is_configured: false,
+      });
+      const result = IndustrialProcessCostEngine.calculate({
+        parameters: baseParams,
+        fxRate,
+        production: baseProduction,
+        sectorPersonnelSummaries: {
+          FORMADO: formingSummary,
+          CALIDAD: emptySummary('CALIDAD'),
+          EMPAQUE: emptySummary('EMPAQUE'),
+        },
+      });
+
+      expect(formingSummary.assigned_count).toBe(3);
+      expect(formingSummary.monthly_salary_base_pyg).toBe(10600000);
+      expect(result.forming.gen1_operators_count).toBe(2);
+      expect(result.forming.gen2_operators_count).toBe(2);
+      expect(result.forming.mod_forming_cost_pyg).toBe(9879200);
+    });
+
+    it('builds one Formado summary row per employee and totals the three illustrative bands to Gs. 10.600.000', async () => {
+      const summaries = await repository.getSectorPersonnelSummary(undefined, '2026-10-01', 200, 16.5);
+      const forming = summaries.FORMADO;
+      const splitEmployee = forming.personnel.find((person) => person.employee_code === 'OP-002');
+
+      expect(forming.assigned_count).toBe(3);
+      expect(forming.personnel.map((person) => person.band_name).sort()).toEqual(['Banda 1', 'Banda 2', 'Banda 3']);
+      expect(forming.monthly_salary_base_pyg).toBe(10600000);
+      expect(forming.personnel.map((person) => person.personnel_id)).toHaveLength(3);
+      expect(splitEmployee?.generation_allocations).toEqual({ GEN1: 50, GEN2: 50 });
+    });
+
+    it('does not use legacy salary or headcount defaults when official personnel summaries are present', () => {
+      const emptySummary = (sector: IndustrialSector): SectorPersonnelSummary => ({
+        sector,
+        assigned_count: 0,
+        monthly_salary_base_pyg: 0,
+        monthly_salary_with_charges_pyg: 0,
+        hourly_rate_avg_pyg: 0,
+        personnel: [],
+        is_configured: false,
+      });
+      const result = IndustrialProcessCostEngine.calculate({
+        parameters: baseParams,
+        fxRate,
+        production: baseProduction,
+        packingSessions: [approvedSessions[0]],
+        sectorPersonnelSummaries: {
+          FORMADO: emptySummary('FORMADO'),
+          CALIDAD: emptySummary('CALIDAD'),
+          EMPAQUE: emptySummary('EMPAQUE'),
+        },
+      });
+
+      expect(result.status).toBe('CONFIGURACION_INCOMPLETA');
+      expect(result.forming.mod_forming_cost_pyg).toBe(0);
+      expect(result.quality.assigned_monthly_pyg).toBe(0);
+      expect(result.packing_labor.packer_hourly_cost_pyg).toBe(0);
+      expect(result.packing_labor.packing_labor_pyg).toBe(0);
+      expect(result.missing_fields).toContain('Personal de Calidad con banda salarial vigente');
     });
   });
 });

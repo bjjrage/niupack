@@ -43,19 +43,24 @@ export class IndustrialProcessCostEngine {
       missing.push('Tipo de cambio FX (USD/PYG)');
     }
 
-    const hasFormingPersonnel = Boolean(
-      (sectorSummaries?.FORMADO_GEN1?.is_configured && sectorSummaries.FORMADO_GEN1.assigned_count > 0) ||
-      (sectorSummaries?.FORMADO_GEN2?.is_configured && sectorSummaries.FORMADO_GEN2.assigned_count > 0)
-    );
-    if (!hasFormingPersonnel && (!params.operator_monthly_salary_pyg || params.operator_monthly_salary_pyg <= 0)) {
-      missing.push('Salario operador de formado (Gs./mes)');
-    }
-
-    const hasPackingPersonnel = Boolean(
-      sectorSummaries?.EMPAQUE?.is_configured && sectorSummaries.EMPAQUE.assigned_count > 0
-    );
-    if (!hasPackingPersonnel && (!params.packer_monthly_salary_pyg || params.packer_monthly_salary_pyg <= 0)) {
-      missing.push('Salario mensual de empacador (Gs./mes)');
+    if (sectorSummaries) {
+      if (!sectorSummaries.FORMADO?.is_configured || sectorSummaries.FORMADO.assigned_count <= 0) {
+        missing.push('Personal de Formado con banda salarial vigente');
+      }
+      if (Number(params.quality_polypaper_percent || 0) > 0 &&
+        (!sectorSummaries.CALIDAD?.is_configured || sectorSummaries.CALIDAD.assigned_count <= 0)) {
+        missing.push('Personal de Calidad con banda salarial vigente');
+      }
+      if (!sectorSummaries.EMPAQUE?.is_configured || sectorSummaries.EMPAQUE.assigned_count <= 0) {
+        missing.push('Personal de Empaque con banda salarial vigente');
+      }
+    } else {
+      if (!params.operator_monthly_salary_pyg || params.operator_monthly_salary_pyg <= 0) {
+        missing.push('Salario histórico de operador de formado (Gs./mes)');
+      }
+      if (!params.packer_monthly_salary_pyg || params.packer_monthly_salary_pyg <= 0) {
+        missing.push('Salario histórico de empacador (Gs./mes)');
+      }
     }
 
     const hasGen1 = (params.gen1_machines_count ?? 0) > 0 && (params.gen1_power_kw ?? 0) > 0;
@@ -115,14 +120,21 @@ export class IndustrialProcessCostEngine {
     let gen1OperatorsSalaryPyg = gen1OperatorsCount * legacyOperatorMonthlySalaryPyg;
     let modGen1CostPyg = 0;
 
-    const gen1Summary = sectorPersonnelSummaries?.FORMADO_GEN1;
-    if (gen1Summary && gen1Summary.is_configured && gen1Summary.personnel.length > 0) {
-      gen1OperatorsCount = gen1Summary.assigned_count;
-      gen1OperatorsSalaryPyg = gen1Summary.monthly_salary_base_pyg;
-      modGen1CostPyg = gen1Summary.personnel.reduce(
-        (sum, person) => sum + (person.hourly_rate_pyg * gen1Hours),
+    const formingSummary = sectorPersonnelSummaries?.FORMADO;
+    if (sectorPersonnelSummaries) {
+      const gen1People = (formingSummary?.personnel || [])
+        .filter((person) => (person.generation_allocations?.GEN1 || 0) > 0);
+      gen1OperatorsCount = gen1People.length;
+      gen1OperatorsSalaryPyg = gen1People.reduce(
+        (sum, person) => sum + person.monthly_salary_pyg * (person.generation_allocations?.GEN1 || 0) / 100,
         0
       );
+      modGen1CostPyg = gen1People.reduce((sum, person) => {
+        const processShare = person.allocation_percent > 0
+          ? (person.generation_allocations?.GEN1 || 0) / person.allocation_percent
+          : 0;
+        return sum + person.hourly_rate_pyg * processShare * gen1Hours;
+      }, 0);
     } else {
       modGen1CostPyg = gen1OperatorsCount * gen1Hours * legacyOperatorHourlyCostPyg;
     }
@@ -131,14 +143,20 @@ export class IndustrialProcessCostEngine {
     let gen2OperatorsSalaryPyg = gen2OperatorsCount * legacyOperatorMonthlySalaryPyg;
     let modGen2CostPyg = 0;
 
-    const gen2Summary = sectorPersonnelSummaries?.FORMADO_GEN2;
-    if (gen2Summary && gen2Summary.is_configured && gen2Summary.personnel.length > 0) {
-      gen2OperatorsCount = gen2Summary.assigned_count;
-      gen2OperatorsSalaryPyg = gen2Summary.monthly_salary_base_pyg;
-      modGen2CostPyg = gen2Summary.personnel.reduce(
-        (sum, person) => sum + (person.hourly_rate_pyg * gen2Hours),
+    if (sectorPersonnelSummaries) {
+      const gen2People = (formingSummary?.personnel || [])
+        .filter((person) => (person.generation_allocations?.GEN2 || 0) > 0);
+      gen2OperatorsCount = gen2People.length;
+      gen2OperatorsSalaryPyg = gen2People.reduce(
+        (sum, person) => sum + person.monthly_salary_pyg * (person.generation_allocations?.GEN2 || 0) / 100,
         0
       );
+      modGen2CostPyg = gen2People.reduce((sum, person) => {
+        const processShare = person.allocation_percent > 0
+          ? (person.generation_allocations?.GEN2 || 0) / person.allocation_percent
+          : 0;
+        return sum + person.hourly_rate_pyg * processShare * gen2Hours;
+      }, 0);
     } else {
       modGen2CostPyg = gen2OperatorsCount * gen2Hours * legacyOperatorHourlyCostPyg;
     }
@@ -151,7 +169,9 @@ export class IndustrialProcessCostEngine {
     const formingLineHours = Math.max(gen1Hours, gen2Hours, 0);
     const formingHourlyCostPyg = formingLineHours > 0 ? totalFormingPyg / formingLineHours : 0;
     const totalOperatorHours = gen1OperatorsCount * gen1Hours + gen2OperatorsCount * gen2Hours;
-    const operatorHourlyCostPyg = totalOperatorHours > 0 ? modFormingCostPyg / totalOperatorHours : legacyOperatorHourlyCostPyg;
+    const operatorHourlyCostPyg = totalOperatorHours > 0
+      ? modFormingCostPyg / totalOperatorHours
+      : (sectorPersonnelSummaries ? 0 : legacyOperatorHourlyCostPyg);
 
     // 2. Control de Calidad
     let qualityInspectors = Number(p.quality_inspectors_count || 0);
@@ -161,7 +181,11 @@ export class IndustrialProcessCostEngine {
 
     const qualitySummary = sectorPersonnelSummaries?.CALIDAD;
     let qualityAssignedMonthlyPyg = 0;
-    if (qualitySummary && qualitySummary.is_configured && qualitySummary.personnel.length > 0) {
+    if (sectorPersonnelSummaries) {
+      qualityInspectors = qualitySummary?.assigned_count || 0;
+      qualitySalaryPyg = qualitySummary?.monthly_salary_base_pyg || 0;
+      qualityAssignedMonthlyPyg = qualitySalaryPyg * qualityMultiplier * (qualityPolypaperPercent / 100);
+    } else if (qualitySummary && qualitySummary.is_configured && qualitySummary.personnel.length > 0) {
       qualityInspectors = qualitySummary.assigned_count;
       qualitySalaryPyg = qualitySummary.monthly_salary_base_pyg;
       qualityAssignedMonthlyPyg = qualitySalaryPyg * qualityMultiplier * (qualityPolypaperPercent / 100);
@@ -188,8 +212,8 @@ export class IndustrialProcessCostEngine {
       : 0;
 
     const packingSummary = sectorPersonnelSummaries?.EMPAQUE;
-    const packerHourlyCostPyg = packingSummary?.is_configured
-      ? packingSummary.hourly_rate_avg_pyg
+    const packerHourlyCostPyg = sectorPersonnelSummaries
+      ? (packingSummary?.is_configured ? packingSummary.hourly_rate_avg_pyg : 0)
       : legacyPackerHourlyCostPyg;
 
     let packingLaborPyg = 0;
@@ -299,7 +323,7 @@ export class IndustrialProcessCostEngine {
         gen1_operators_salary_pyg: gen1OperatorsSalaryPyg,
         gen2_operators_count: gen2OperatorsCount,
         gen2_operators_salary_pyg: gen2OperatorsSalaryPyg,
-        is_personnel_configured: Boolean(gen1Summary?.is_configured || gen2Summary?.is_configured),
+        is_personnel_configured: Boolean(formingSummary?.is_configured),
       },
       forming_hourly_cost_pyg: Number(formingHourlyCostPyg.toFixed(0)),
       quality: {
