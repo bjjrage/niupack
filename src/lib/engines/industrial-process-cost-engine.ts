@@ -61,6 +61,10 @@ export class IndustrialProcessCostEngine {
       if (!params.packer_monthly_salary_pyg || params.packer_monthly_salary_pyg <= 0) {
         missing.push('Salario histórico de empacador (Gs./mes)');
       }
+      if (Number(params.quality_polypaper_percent || 0) > 0 &&
+        (!(Number(params.quality_inspectors_count) > 0) || !(Number(params.quality_monthly_salary_pyg) > 0))) {
+        missing.push('Personal de Calidad con banda salarial vigente');
+      }
     }
 
     const hasGen1 = (params.gen1_machines_count ?? 0) > 0 && (params.gen1_power_kw ?? 0) > 0;
@@ -204,7 +208,16 @@ export class IndustrialProcessCostEngine {
     const relevantSessions = approvedSessions.filter(
       (s) => !production.sku || !s.sku || s.sku === production.sku
     );
-    const approvedPersonHours = relevantSessions.reduce((acc, s) => acc + (s.total_person_hours || 0), 0);
+    // A line-wide session contributes only this SKU's share of period production.
+    // SKU-specific sessions remain fully assigned to their matching SKU.
+    const lineWideCostShare = production.sku && totalPeriodUnits > 0
+      ? Math.min(Math.max(goodUnits / totalPeriodUnits, 0), 1)
+      : 1;
+    const sessionCostShare = (session: PackingSession) => session.sku ? 1 : lineWideCostShare;
+    const approvedPersonHours = relevantSessions.reduce(
+      (acc, session) => acc + (session.total_person_hours || 0) * sessionCostShare(session),
+      0
+    );
 
     const legacyPackerMonthlySalaryPyg = Number(p.packer_monthly_salary_pyg || 0);
     const legacyPackerHourlyCostPyg = monthlySalaryHours > 0
@@ -224,14 +237,15 @@ export class IndustrialProcessCostEngine {
 
     for (const session of relevantSessions) {
       const sessionAllocs = (packingLaborAllocations || []).filter((a) => a.session_id === session.id);
+      const costShare = sessionCostShare(session);
       if (sessionAllocs.length > 0) {
         allocationsAppliedCount += sessionAllocs.length;
         for (const alloc of sessionAllocs) {
-          packingLaborPyg += Number(alloc.calculated_cost_pyg || 0);
+          packingLaborPyg += Number(alloc.calculated_cost_pyg || 0) * costShare;
         }
       } else {
         unallocatedSessionsCount += 1;
-        packingLaborPyg += (session.total_person_hours || 0) * packerHourlyCostPyg;
+        packingLaborPyg += (session.total_person_hours || 0) * packerHourlyCostPyg * costShare;
       }
 
       // Discrepancy check: any segment with headcount > assigned packers
@@ -255,7 +269,7 @@ export class IndustrialProcessCostEngine {
     let status: IndustrialProcessCalculationDetail['status'] = 'COMPLETE';
     if (missing.length > 0) {
       status = 'CONFIGURACION_INCOMPLETA';
-    } else if (goodUnits <= 0 && totalPeriodUnits <= 0) {
+    } else if (goodUnits <= 0 || totalPeriodUnits <= 0 || goodUnits > totalPeriodUnits) {
       status = 'SIN_BASE_PRORRATEO';
     }
 
@@ -307,7 +321,11 @@ export class IndustrialProcessCostEngine {
       fx_rate: fxRate,
       fx_source: fxSource,
       status,
-      missing_fields: missing.length > 0 ? missing : undefined,
+      missing_fields: missing.length > 0
+        ? missing
+        : status === 'SIN_BASE_PRORRATEO'
+          ? ['Base de producción ausente o inconsistente para el período']
+          : undefined,
       good_units_basis: goodUnits,
       total_period_units: totalPeriodUnits,
       forming: {

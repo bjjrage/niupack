@@ -106,6 +106,22 @@ describe('Industrial Processes V2 — Parametrización Industrial & Cronómetro'
       expect(calc.forming.electricity_cost_pyg).toBe(38400);
     });
 
+    it('does not calculate quality labor from a missing salary master', () => {
+      const calc = IndustrialProcessCostEngine.calculate({
+        parameters: {
+          ...baseParams,
+          quality_inspectors_count: 0,
+          quality_monthly_salary_pyg: 0,
+        },
+        fxRate,
+        production: { period: '2026-10', sku: 'SKU-QA', good_units_produced: 1000, total_period_units: 1000 },
+      });
+
+      expect(calc.status).toBe('CONFIGURACION_INCOMPLETA');
+      expect(calc.missing_fields).toContain('Personal de Calidad con banda salarial vigente');
+      expect(calc.quality.assigned_monthly_pyg).toBe(0);
+    });
+
     it('calculates forming electricity and direct machine operator costs deterministically', () => {
       const calc = IndustrialProcessCostEngine.calculate({
         parameters: baseParams,
@@ -314,6 +330,27 @@ describe('Industrial Processes V2 — Parametrización Industrial & Cronómetro'
   // ESCENARIO 5 — PRORRATEO MULTISKU Y CONSERVACIÓN DE SUMA
   // ========================================================
   describe('ESCENARIO 5 — Prorrateo Multi-SKU y Conservación de Suma', () => {
+    it('does not mark a zero-production calculation as complete', () => {
+      const calculation = IndustrialProcessCostEngine.calculate({
+        parameters: baseParams,
+        fxRate,
+        production: { period: '2026-10', sku: 'SKU-ZERO', good_units_produced: 0, total_period_units: 0 },
+      });
+
+      expect(calculation.status).toBe('SIN_BASE_PRORRATEO');
+      expect(calculation.missing_fields).toContain('Base de producción ausente o inconsistente para el período');
+    });
+
+    it('does not mark a SKU above the period total as complete', () => {
+      const calculation = IndustrialProcessCostEngine.calculate({
+        parameters: baseParams,
+        fxRate,
+        production: { period: '2026-10', sku: 'SKU-OVER', good_units_produced: 120, total_period_units: 100 },
+      });
+
+      expect(calculation.status).toBe('SIN_BASE_PRORRATEO');
+    });
+
     it('guarantees SUM(Allocated Cost) = Total Shared Cost across SKUs in a period', () => {
       // Specification Requirement #8:
       // Shared period cost: Gs. 12.000.000
@@ -376,6 +413,35 @@ describe('Industrial Processes V2 — Parametrización Industrial & Cronómetro'
       // Proportion test: SKU B has twice the units of SKU A -> receives twice the allocation (within 1 Guaraní integer rounding)
       expect(Math.abs(allocatedB_Pyg - allocatedA_Pyg * 2)).toBeLessThanOrEqual(1);
       expect(allocatedB_Usd).toBeCloseTo(allocatedA_Usd * 2, 2);
+    });
+
+    it('allocates a line-wide packing session by each SKU good-units share without duplicating its cost', () => {
+      const lineWideSession: PackingSession = {
+        ...approvedSessions[0],
+        id: 'ses-line-wide',
+        sku: undefined,
+        total_person_hours: 6,
+        segments: [],
+      };
+      const totalPeriodUnits = 300000;
+      const calculateSku = (sku: string, goodUnits: number) => IndustrialProcessCostEngine.calculate({
+        parameters: baseParams,
+        fxRate,
+        production: { period: '2026-10', sku, good_units_produced: goodUnits, total_period_units: totalPeriodUnits },
+        packingSessions: [lineWideSession],
+      });
+
+      const skuA = calculateSku('SKU-A', 100000);
+      const skuB = calculateSku('SKU-B', 200000);
+      const fullSessionCostPyg = lineWideSession.total_person_hours! *
+        ((baseParams.packer_monthly_salary_pyg! * (1 + baseParams.labor_charges_percent! / 100)) /
+          baseParams.monthly_salary_hours!);
+
+      expect(skuA.packing_labor.packing_labor_pyg).toBe(36115);
+      expect(skuB.packing_labor.packing_labor_pyg).toBe(72230);
+      expect(skuA.packing_labor.packing_labor_pyg + skuB.packing_labor.packing_labor_pyg).toBe(fullSessionCostPyg);
+      expect(skuA.packing_labor.approved_person_hours).toBe(2);
+      expect(skuB.packing_labor.approved_person_hours).toBe(4);
     });
   });
 

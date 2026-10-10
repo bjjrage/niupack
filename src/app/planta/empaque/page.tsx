@@ -1,12 +1,51 @@
 'use client';
 
-import React, { useEffect, useState, useTransition } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Play, Square, Users, Clock, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
 import { PackingSession } from '@/types';
 
+function requestStorageKey(key: string) {
+  return `niupack_packing_request:${key}`;
+}
+
+function requestIdFor(key: string): string {
+  const storageKey = requestStorageKey(key);
+  const existing = window.sessionStorage.getItem(storageKey);
+  if (existing) return existing;
+  const requestId = window.crypto.randomUUID();
+  window.sessionStorage.setItem(storageKey, requestId);
+  return requestId;
+}
+
+function clearRequestId(key: string) {
+  window.sessionStorage.removeItem(requestStorageKey(key));
+}
+
+function reconcileConfirmedRequestIds(session: PackingSession) {
+  const confirmedIds = new Set(
+    (session.segments || [])
+      .map((segment) => (segment as PackingSession['segments'][number] & { request_id?: string }).request_id)
+      .filter((requestId): requestId is string => Boolean(requestId))
+  );
+  const startKey = requestStorageKey(`start:${session.line_name || 'Polipapel'}`);
+  const pendingStartId = window.sessionStorage.getItem(startKey);
+  if (pendingStartId && confirmedIds.has(pendingStartId)) window.sessionStorage.removeItem(startKey);
+
+  const changePrefix = requestStorageKey(`change:${session.id}:`);
+  for (let index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
+    const key = window.sessionStorage.key(index);
+    if (!key?.startsWith(changePrefix)) continue;
+    const requestId = window.sessionStorage.getItem(key);
+    if (requestId && confirmedIds.has(requestId)) window.sessionStorage.removeItem(key);
+  }
+}
+
+type PackingClockAnchor = { serverNow: number; performanceNow: number };
+
 export default function PlantaEmpaquePage() {
   const [token, setToken] = useState<string>('');
-  const [lineName, setLineName] = useState('Polipapel');
+  const [tokenReady, setTokenReady] = useState(false);
+  const [lineName] = useState('Polipapel');
   const [headcount, setHeadcount] = useState(3);
   const [activeSession, setActiveSession] = useState<PackingSession | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -15,165 +54,161 @@ export default function PlantaEmpaquePage() {
   const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [loading, setLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const clockAnchor = React.useRef<PackingClockAnchor | null>(null);
+  const loadInProgress = React.useRef(false);
 
-  // Initialize token from URL or localStorage
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlToken = urlParams.get('token');
-      if (urlToken) {
-        setToken(urlToken);
-        try {
-          localStorage.setItem('niupack_packing_token', urlToken);
-        } catch {}
-      } else {
-        const storedToken = localStorage.getItem('niupack_packing_token') || '';
-        setToken(storedToken);
-      }
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const fragmentToken = hashParams.get('token');
+    const storedToken = window.sessionStorage.getItem('niupack_packing_token') || '';
+    const initialToken = fragmentToken || storedToken;
+    if (fragmentToken) {
+      window.sessionStorage.setItem('niupack_packing_token', fragmentToken);
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
     }
+    setToken(initialToken);
+    setTokenReady(true);
   }, []);
 
-  // Fetch active session with token
   const loadActiveSession = async () => {
+    if (!tokenReady || loadInProgress.current) return;
+    loadInProgress.current = true;
     setIsSyncing(true);
     try {
       const headers: Record<string, string> = {};
       if (token) headers['x-packing-token'] = token;
-
       const res = await fetch(
         `/api/cost/processes/packing/sessions?status=RUNNING&line_name=${encodeURIComponent(lineName)}`,
-        { headers }
+        { headers, cache: 'no-store' }
       );
       const data = await res.json();
-      if (data.success && data.sessions && data.sessions.length > 0) {
-        const current = data.sessions[0] as PackingSession;
+      if (!res.ok || !data.success || !Array.isArray(data.sessions)) {
+        throw new Error(data.message || data.error || `Could not load session (HTTP ${res.status})`);
+      }
+      const serverNow = Date.parse(data.server_now);
+      if (!Number.isFinite(serverNow)) throw new Error('Server response has no valid clock.');
+      clockAnchor.current = { serverNow, performanceNow: window.performance.now() };
+      const current = data.sessions[0] as PackingSession | undefined;
+      if (current) {
+        reconcileConfirmedRequestIds(current);
         setActiveSession(current);
         const latestSegment = current.segments?.[current.segments.length - 1];
-        if (latestSegment && latestSegment.headcount > 0) {
-          setHeadcount(latestSegment.headcount);
-        }
+        if (latestSegment && latestSegment.headcount > 0) setHeadcount(latestSegment.headcount);
       } else {
         setActiveSession(null);
       }
-    } catch (e) {
-      console.error('Planta empaque sync error', e);
+      setHasLoaded(true);
+      setSyncError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Connection to the server failed.';
+      setSyncError(message);
+      console.error('Planta empaque sync error', error);
     } finally {
+      loadInProgress.current = false;
       setIsSyncing(false);
     }
   };
 
   useEffect(() => {
-    loadActiveSession();
-    const interval = setInterval(loadActiveSession, 8000);
-    return () => clearInterval(interval);
+    if (!tokenReady) return;
+    void loadActiveSession();
+    const interval = setInterval(() => void loadActiveSession(), 8000);
+    const refreshOnReturn = () => { if (document.visibilityState === 'visible') void loadActiveSession(); };
+    window.addEventListener('focus', refreshOnReturn);
+    document.addEventListener('visibilitychange', refreshOnReturn);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', refreshOnReturn);
+      document.removeEventListener('visibilitychange', refreshOnReturn);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lineName, token]);
+  }, [lineName, token, tokenReady]);
 
-  // Local tick calculation derived from server started_at
   useEffect(() => {
     if (!activeSession || activeSession.status !== 'RUNNING') {
       setElapsedSeconds(0);
       return;
     }
-
     const updateTimer = () => {
-      const startTime = new Date(activeSession.started_at).getTime();
-      const now = Date.now();
-      const diff = Math.max(0, Math.floor((now - startTime) / 1000));
-      setElapsedSeconds(diff);
+      const anchor = clockAnchor.current;
+      if (!anchor) return;
+      const estimatedServerNow = anchor.serverNow + (window.performance.now() - anchor.performanceNow);
+      const startedAt = Date.parse(activeSession.started_at);
+      setElapsedSeconds(Math.max(0, Math.floor((estimatedServerNow - startedAt) / 1000)));
     };
-
     updateTimer();
     const timer = setInterval(updateTimer, 1000);
     return () => clearInterval(timer);
   }, [activeSession]);
 
+  const postAction = async (payload: Record<string, unknown>, key: string) => {
+    const requestId = requestIdFor(key);
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['x-packing-token'] = token;
+    const res = await fetch('/api/cost/processes/packing/sessions', {
+      method: 'POST', headers,
+      body: JSON.stringify({ ...payload, request_id: requestId }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.message || data.error || `Save failed (HTTP ${res.status})`);
+    const serverNow = Date.parse(data.server_now || data.session?.server_now);
+    if (!Number.isFinite(serverNow)) throw new Error('The server did not confirm the saved state. Retry to verify it.');
+    clockAnchor.current = { serverNow, performanceNow: window.performance.now() };
+    clearRequestId(key);
+    return data;
+  };
+
   const handleStart = async () => {
+    if (!hasLoaded || syncError) return;
     setLoading(true);
     setFeedback(null);
+    const key = `start:${lineName}`;
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['x-packing-token'] = token;
-
-      const res = await fetch('/api/cost/processes/packing/sessions', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          action: 'start',
-          line_name: lineName,
-          initial_headcount: headcount,
-          reason: 'Inicio de jornada de empaque',
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'No se pudo iniciar');
+      const data = await postAction({ action: 'start', line_name: lineName, initial_headcount: headcount, reason: 'Inicio de jornada de empaque' }, key);
       setActiveSession(data.session);
-      setFeedback({ message: 'Cronómetro iniciado con éxito', type: 'success' });
-    } catch (err: any) {
-      setFeedback({ message: `Error: ${err.message}`, type: 'error' });
+      setFeedback({ message: 'Cronometro iniciado con exito', type: 'success' });
+    } catch (error) {
+      setFeedback({ message: `Error: ${error instanceof Error ? error.message : 'No se pudo iniciar'}`, type: 'error' });
     } finally {
       setLoading(false);
     }
   };
 
   const handleChangeHeadcount = async () => {
-    if (!activeSession || newHeadcountInput <= 0) return;
+    if (!activeSession || newHeadcountInput <= 0 || syncError) return;
     setLoading(true);
     setFeedback(null);
+    const key = `change:${activeSession.id}:${newHeadcountInput}`;
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['x-packing-token'] = token;
-
-      const res = await fetch('/api/cost/processes/packing/sessions', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          action: 'change_headcount',
-          session_id: activeSession.id,
-          new_headcount: newHeadcountInput,
-          reason: `Cambio de dotación a ${newHeadcountInput} personas`,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'No se pudo cambiar dotación');
+      const data = await postAction({ action: 'change_headcount', session_id: activeSession.id, new_headcount: newHeadcountInput, reason: `Cambio de dotacion a ${newHeadcountInput} personas` }, key);
       setActiveSession(data.session);
       setHeadcount(newHeadcountInput);
       setIsChangingHeadcount(false);
-      setFeedback({ message: `Dotación cambiada a ${newHeadcountInput} personas`, type: 'success' });
-    } catch (err: any) {
-      setFeedback({ message: `Error: ${err.message}`, type: 'error' });
+      setFeedback({ message: `Dotacion cambiada a ${newHeadcountInput} personas`, type: 'success' });
+    } catch (error) {
+      setFeedback({ message: `Error: ${error instanceof Error ? error.message : 'No se pudo cambiar dotacion'}`, type: 'error' });
     } finally {
       setLoading(false);
     }
   };
 
   const handleStop = async () => {
-    if (!activeSession) return;
+    if (!activeSession || syncError) return;
     setLoading(true);
     setFeedback(null);
+    const key = `stop:${activeSession.id}`;
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['x-packing-token'] = token;
-
-      const res = await fetch('/api/cost/processes/packing/sessions', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          action: 'stop',
-          session_id: activeSession.id,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'No se pudo detener');
+      await postAction({ action: 'stop', session_id: activeSession.id }, key);
       setActiveSession(null);
-      setFeedback({ message: 'Cronómetro detenido. Registro enviado a revisión del supervisor.', type: 'success' });
-    } catch (err: any) {
-      setFeedback({ message: `Error: ${err.message}`, type: 'error' });
+      setFeedback({ message: 'Cronometro detenido. Registro enviado a revision del supervisor.', type: 'success' });
+    } catch (error) {
+      setFeedback({ message: `Error: ${error instanceof Error ? error.message : 'No se pudo detener'}`, type: 'error' });
     } finally {
       setLoading(false);
     }
   };
-
   const formatTimer = (totalSec: number) => {
     const hrs = Math.floor(totalSec / 3600);
     const mins = Math.floor((totalSec % 3600) / 60);
@@ -193,7 +228,7 @@ export default function PlantaEmpaquePage() {
       <div className="w-full flex items-center justify-between px-1 text-[11px] text-slate-500 font-mono">
         <div className="flex items-center gap-1.5">
           <span className={`inline-block w-2 h-2 rounded-full ${activeSession ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
-          <span>{activeSession ? 'SESIÓN ACTIVA' : 'EN ESPERA'}</span>
+          <span>{syncError ? 'ERROR AL SINCRONIZAR' : !hasLoaded ? 'SIN SINCRONIZAR' : activeSession ? 'SESION ACTIVA' : 'EN ESPERA'}</span>
         </div>
         {isSyncing && (
           <span className="flex items-center gap-1 text-slate-400">
@@ -202,6 +237,12 @@ export default function PlantaEmpaquePage() {
         )}
       </div>
 
+      {syncError && (
+        <div className="w-full rounded-xl border border-rose-800/80 bg-rose-950/40 text-rose-200 p-3.5 text-xs flex items-start gap-2.5" role="alert">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>No se pudo confirmar el estado guardado: {syncError}</span>
+        </div>
+      )}
       {/* Line Indicator */}
       <div className="w-full bg-[#12161f] border border-slate-800 rounded-xl p-4 flex items-center justify-between">
         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">LÍNEA</span>
@@ -224,7 +265,11 @@ export default function PlantaEmpaquePage() {
       )}
 
       {/* STATE A: STOPPED / IDLE */}
-      {!activeSession ? (
+      {!hasLoaded || (!!syncError && !activeSession) ? (
+        <div className="w-full bg-[#12161f] border border-slate-800 rounded-2xl p-6 text-center text-sm text-slate-300">
+          {syncError ? 'No se habilitan cambios hasta recuperar la conexion.' : 'Recuperando estado desde el servidor...'}
+        </div>
+      ) : !activeSession ? (
         <div className="w-full flex flex-col items-center gap-6 bg-[#12161f] border border-slate-800 rounded-2xl p-6 shadow-xl">
           <div className="text-center w-full">
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-4">
@@ -259,7 +304,7 @@ export default function PlantaEmpaquePage() {
           <button
             type="button"
             onClick={handleStart}
-            disabled={loading}
+            disabled={loading || isSyncing || !!syncError}
             className="w-full min-h-14 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-black text-base uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-950/50 transition-all disabled:opacity-50"
           >
             <Play className="w-5 h-5 fill-current" />
@@ -332,7 +377,7 @@ export default function PlantaEmpaquePage() {
                 <button
                   type="button"
                   onClick={handleChangeHeadcount}
-                  disabled={loading}
+                  disabled={loading || isSyncing || !!syncError}
                   className="min-h-10 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs uppercase tracking-wider"
                 >
                   {loading ? 'Guardando…' : 'Confirmar'}
@@ -357,7 +402,7 @@ export default function PlantaEmpaquePage() {
           <button
             type="button"
             onClick={handleStop}
-            disabled={loading}
+            disabled={loading || isSyncing || !!syncError}
             className="w-full min-h-14 rounded-xl bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white font-black text-base uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-lg shadow-rose-950/50 transition-all disabled:opacity-50"
           >
             <Square className="w-5 h-5 fill-current" />

@@ -246,13 +246,22 @@ describe('Integración Cost Intelligence + Procesos Industriales V2 (E2E Contrac
   });
 
   describe('6. Fallback de Prorrateo para Switch de Procesos (Sin Período Registrado)', () => {
-    it('calculates valid operational rate > 0 when no production period is registered by falling back to batch size', async () => {
-      const params = await repository.getPlantParameters(orgId);
+    it('calculates a test-only provisional rate from caller-supplied units with explicit payroll inputs', async () => {
+      const persistedParams = await repository.getPlantParameters(orgId);
+      // Test fixture only: official API operations require a production-period row
+      // and never substitute SKU batch_size or seeded payroll defaults.
+      const params: PlantGeneralParameters = {
+        ...persistedParams,
+        operator_monthly_salary_pyg: 3100000,
+        packer_monthly_salary_pyg: 2500000,
+        quality_inspectors_count: 1,
+        quality_monthly_salary_pyg: 3500000,
+      };
       const fxRate = 7500;
       const skuUnregistered = 'SKU-SIN-PERIODO';
       const batchSize = 100000;
 
-      // Engine calculation with batchSize as fallback good_units_produced
+      // Exercise the pure calculation engine with an explicit synthetic unit fixture.
       const calc = IndustrialProcessCostEngine.calculate({
         parameters: params,
         fxRate,

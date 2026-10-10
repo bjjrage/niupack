@@ -165,7 +165,9 @@ describe('industrial salary and personnel persistence', () => {
       error: { code: 'PGRST205', message: 'Could not find the table plant_process_parameters in the schema cache' },
     }));
 
-    await expect(repository.updatePlantParameters({ labor_charges_percent: 20 }, 'org-persisted'))
+    await expect(repository.updatePlantParameters(
+      { labor_charges_percent: 20 }, 'org-persisted', undefined, '2026-10-10T00:00:00.000Z'
+    ))
       .rejects.toThrow('SUPABASE_SCHEMA_NOT_READY:plant_process_parameters');
   });
 });

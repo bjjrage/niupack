@@ -1,71 +1,84 @@
 import crypto from 'crypto';
 
-const PACKING_SECRET =
-  process.env.APP_SECRET ||
-  process.env.SUPABASE_JWT_SECRET ||
-  'niupack-packing-hmac-token-secret-2026';
+export const PACKING_OPERATOR_LINES = ['Polipapel'] as const;
 
 export interface PackingTokenPayload {
   org: string;
+  jti: string;
   role: 'packing_operator';
-  line: string;
+  line: (typeof PACKING_OPERATOR_LINES)[number];
   scope: 'planta_empaque';
-  exp: number; // Unix timestamp in seconds
+  exp: number;
 }
 
-/**
- * Generates an HMAC-SHA256 signed token scoped for the mobile packing operator screen.
- * Does not expose administrative credentials or permissions.
- */
+function packingTokenSecret(): string {
+  const secret = process.env.PACKING_TOKEN_SECRET;
+  if (!secret || Buffer.byteLength(secret, 'utf8') < 32) {
+    throw new Error('PACKING_TOKEN_SECRET_REQUIRED');
+  }
+  return secret;
+}
+
+export function isAllowedPackingLine(line: string): line is PackingTokenPayload['line'] {
+  return (PACKING_OPERATOR_LINES as readonly string[]).includes(line);
+}
+
+/** Signs an operator capability; the matching jti must also exist in Supabase. */
 export function generatePackingToken(
   orgId: string,
   line: string = 'Polipapel',
-  validityDays: number = 7
+  validityDays: number = 7,
+  jti: string = crypto.randomUUID()
 ): string {
-  const exp = Math.floor(Date.now() / 1000) + validityDays * 86400;
+  if (!orgId || !isAllowedPackingLine(line)) throw new Error('INVALID_PACKING_TOKEN_SCOPE');
+  if (!Number.isFinite(validityDays) || validityDays <= 0 || validityDays > 30) {
+    throw new Error('INVALID_PACKING_TOKEN_EXPIRY');
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jti)) {
+    throw new Error('INVALID_PACKING_TOKEN_ID');
+  }
+
   const payload: PackingTokenPayload = {
     org: orgId,
+    jti,
     role: 'packing_operator',
     line,
     scope: 'planta_empaque',
-    exp,
+    exp: Math.floor(Date.now() / 1000) + Math.floor(validityDays * 86400),
   };
   const payloadStr = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const hmac = crypto.createHmac('sha256', PACKING_SECRET).update(payloadStr).digest('hex');
+  const hmac = crypto.createHmac('sha256', packingTokenSecret()).update(payloadStr).digest('hex');
   return `${payloadStr}.${hmac}`;
 }
 
-/**
- * Verifies and decodes an HMAC-SHA256 signed packing token.
- * Returns null if the token is invalid, expired, or has an unauthorized scope.
- */
+/** Cryptographically validates an operator token. Registry status is checked separately in Supabase. */
 export function verifyPackingToken(token: string): PackingTokenPayload | null {
   try {
     if (!token || typeof token !== 'string') return null;
     const parts = token.trim().split('.');
     if (parts.length !== 2) return null;
     const [payloadStr, hmac] = parts;
-    if (typeof hmac !== 'string' || hmac.length !== 64 || !/^[0-9a-f]{64}$/i.test(hmac)) {
-      return null;
-    }
-    const expectedHmac = crypto.createHmac('sha256', PACKING_SECRET).update(payloadStr).digest('hex');
-    
-    // Constant time comparison to prevent timing attacks
+    if (typeof hmac !== 'string' || hmac.length !== 64 || !/^[0-9a-f]{64}$/i.test(hmac)) return null;
+
+    const expectedHmac = crypto.createHmac('sha256', packingTokenSecret()).update(payloadStr).digest('hex');
     const hmacBuf = Buffer.from(hmac, 'hex');
     const expectedBuf = Buffer.from(expectedHmac, 'hex');
-    if (hmacBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(hmacBuf, expectedBuf)) {
-      return null;
-    }
+    if (hmacBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(hmacBuf, expectedBuf)) return null;
 
-    const payload: PackingTokenPayload = JSON.parse(Buffer.from(payloadStr, 'base64url').toString('utf8'));
-    if (typeof payload.exp !== 'number' || payload.exp < Math.floor(Date.now() / 1000)) {
-      return null; // Expired
-    }
-    if (payload.scope !== 'planta_empaque' || payload.role !== 'packing_operator' || !payload.org) {
-      return null;
-    }
-    return payload;
+    const payload = JSON.parse(Buffer.from(payloadStr, 'base64url').toString('utf8')) as Partial<PackingTokenPayload>;
+    if (
+      typeof payload.org !== 'string' || !payload.org ||
+      typeof payload.jti !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.jti) ||
+      typeof payload.exp !== 'number' || !Number.isSafeInteger(payload.exp) || payload.exp <= Math.floor(Date.now() / 1000) ||
+      payload.scope !== 'planta_empaque' || payload.role !== 'packing_operator' ||
+      typeof payload.line !== 'string' || !isAllowedPackingLine(payload.line)
+    ) return null;
+    return payload as PackingTokenPayload;
   } catch {
     return null;
   }
+}
+
+export function buildPackingOperatorLink(origin: string, token: string): string {
+  return `${origin.replace(/\/$/, '')}/planta/empaque#token=${encodeURIComponent(token)}`;
 }

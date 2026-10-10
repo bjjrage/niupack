@@ -46,6 +46,7 @@ export default function ProcessesPage() {
   const [savingParams, setSavingParams] = useState(false);
   const [calculatingOfficial, setCalculatingOfficial] = useState(false);
   const [applyingCostSheet, setApplyingCostSheet] = useState(false);
+  const [savingProduction, setSavingProduction] = useState(false);
   const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
 
   // FX state
@@ -77,6 +78,18 @@ export default function ProcessesPage() {
   const paramsDirtyRef = useRef(false);
   const paramsEditVersionRef = useRef(0);
 
+  const officialRequestId = (actionKey: string) => {
+    const storageKey = `niu:industrial-processes:${actionKey}`;
+    const existing = window.sessionStorage.getItem(storageKey);
+    if (existing) return existing;
+    const requestId = window.crypto.randomUUID();
+    window.sessionStorage.setItem(storageKey, requestId);
+    return requestId;
+  };
+  const clearOfficialRequestId = (actionKey: string) => {
+    window.sessionStorage.removeItem(`niu:industrial-processes:${actionKey}`);
+  };
+
   // Packing sessions
   const [sessions, setSessions] = useState<PackingSession[]>([]);
   const [salaryBands, setSalaryBands] = useState<PlantSalaryBand[]>([]);
@@ -95,8 +108,11 @@ export default function ProcessesPage() {
   const [skus, setSkus] = useState<ProductAttribute[]>([]);
   const [selectedSku, setSelectedSku] = useState('CUP-12OZ-SW');
   const [selectedPeriod, setSelectedPeriod] = useState('2026-10');
-  const [goodUnits, setGoodUnits] = useState(300000);
-  const [totalPeriodUnits, setTotalPeriodUnits] = useState(300000);
+  const [goodUnits, setGoodUnits] = useState(0);
+  const [totalPeriodUnits, setTotalPeriodUnits] = useState(0);
+  const [productionPeriodLoaded, setProductionPeriodLoaded] = useState(false);
+  const [productionRecordExists, setProductionRecordExists] = useState(false);
+  const [productionDirty, setProductionDirty] = useState(false);
 
   // Official calculation result
   const [officialCalculation, setOfficialCalculation] = useState<IndustrialProcessCalculationDetail | null>(null);
@@ -174,6 +190,38 @@ export default function ProcessesPage() {
   }, []);
 
   useEffect(() => {
+    if (!selectedSku || !/^\d{4}-(0[1-9]|1[0-2])$/.test(selectedPeriod)) return;
+    let current = true;
+    setProductionPeriodLoaded(false);
+    fetch('/api/cost/processes/periods')
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok || !data.success || !Array.isArray(data.periods)) {
+          throw new Error(data.error || 'No se pudo recuperar la producción persistida.');
+        }
+        if (!current) return;
+        const periodRows = data.periods.filter((item: { period: string }) => item.period === selectedPeriod);
+        const record = periodRows.find((item: { sku: string }) => item.sku === selectedSku);
+        setGoodUnits(Number(record?.good_units_produced || 0));
+        setTotalPeriodUnits(periodRows.reduce(
+          (sum: number, item: { good_units_produced?: number }) => sum + Number(item.good_units_produced || 0), 0
+        ));
+        setProductionRecordExists(Boolean(record && Number(record.good_units_produced) > 0));
+        setProductionDirty(false);
+      })
+      .catch((error) => {
+        if (current) {
+          setProductionRecordExists(false);
+          setFeedback({ message: `No se pudo cargar la producción persistida: ${error.message}`, type: 'error' });
+        }
+      })
+      .finally(() => {
+        if (current) setProductionPeriodLoaded(true);
+      });
+    return () => { current = false; };
+  }, [selectedSku, selectedPeriod]);
+
+  useEffect(() => {
     if (!/^\d{4}-\d{2}$/.test(selectedPeriod)) return;
     let current = true;
     fetch(`/api/cost/processes/parameters?target_date=${selectedPeriod}-01`)
@@ -188,9 +236,10 @@ export default function ProcessesPage() {
   // Fetch read-only calculation
   const runProvisionalCalculation = async (sku: string, period: string, units: number, totalUnits: number) => {
     try {
-      const res = await fetch(
-        `/api/cost/processes/calculate?sku=${encodeURIComponent(sku)}&period=${encodeURIComponent(period)}&good_units_produced=${units}&total_period_units=${totalUnits}`
-      );
+      const query = new URLSearchParams({ sku, period });
+      if (units > 0) query.set('good_units_produced', String(units));
+      if (totalUnits > 0) query.set('total_period_units', String(totalUnits));
+      const res = await fetch(`/api/cost/processes/calculate?${query.toString()}`);
       const data = await res.json();
       if (data.success && data.calculation) {
         setOfficialCalculation(data.calculation);
@@ -248,31 +297,87 @@ export default function ProcessesPage() {
     }
   };
 
+  const persistProductionPeriod = async () => {
+    if (!productionPeriodLoaded) throw new Error('La producción del período todavía se está cargando.');
+    if (!selectedSku || !/^\d{4}-(0[1-9]|1[0-2])$/.test(selectedPeriod)) {
+      throw new Error('Selecciona un SKU y período válidos antes de guardar la producción.');
+    }
+    if (!Number.isInteger(goodUnits) || goodUnits <= 0) {
+      throw new Error('Registra unidades buenas mayores a cero para este SKU.');
+    }
+
+    const response = await fetch('/api/cost/processes/periods', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sku: selectedSku, period: selectedPeriod, good_units_produced: goodUnits }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success || !data.period) {
+      throw new Error(data.message || data.error || 'No se pudo guardar la producción del período.');
+    }
+
+    const previousUnits = productionRecordExists ? goodUnits : 0;
+    setTotalPeriodUnits((current) => Math.max(0, current + Number(data.period.good_units_produced || 0) - previousUnits));
+    setGoodUnits(Number(data.period.good_units_produced || 0));
+    setProductionRecordExists(Number(data.period.good_units_produced || 0) > 0);
+    setProductionDirty(false);
+  };
+
+  const ensureProductionPeriodPersisted = async () => {
+    if (!productionPeriodLoaded) throw new Error('La producción del período todavía se está cargando.');
+    if (productionDirty) {
+      await persistProductionPeriod();
+      return true;
+    }
+    if (!productionRecordExists) {
+      throw new Error('Guarda primero las unidades reales de este SKU y período.');
+    }
+    return false;
+  };
+
+  const handleSaveProductionPeriod = async () => {
+    setSavingProduction(true);
+    setFeedback(null);
+    try {
+      await persistProductionPeriod();
+      setFeedback({ message: `Producción de ${selectedSku} (${selectedPeriod}) guardada.`, type: 'success' });
+    } catch (error: any) {
+      setFeedback({ message: `Error al guardar la producción: ${error.message}`, type: 'error' });
+    } finally {
+      setSavingProduction(false);
+    }
+  };
+
   // Official calculate & persist snapshot
   const handleOfficialCalculate = async () => {
     setCalculatingOfficial(true);
     setFeedback(null);
+    let productionWasSaved = false;
+    const requestKey = `snapshot:${selectedSku}:${selectedPeriod}`;
     try {
+      setSavingProduction(productionDirty);
+      productionWasSaved = await ensureProductionPeriodPersisted();
       const res = await fetch('/api/cost/processes/calculate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sku: selectedSku,
           period: selectedPeriod,
-          good_units_produced: goodUnits,
-          total_period_units: totalPeriodUnits,
           persist_snapshot: true,
           apply_to_cost_sheet: false,
+          request_id: officialRequestId(requestKey),
         }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Error en cálculo oficial');
       setOfficialCalculation(data.calculation);
       setOfficialSnapshotDate(new Date().toISOString());
+      clearOfficialRequestId(requestKey);
       setFeedback({ message: `Cálculo oficial guardado para ${selectedSku} (${selectedPeriod}).`, type: 'success' });
     } catch (err: any) {
-      setFeedback({ message: `Error al calcular: ${err.message}`, type: 'error' });
+      setFeedback({ message: `${productionWasSaved ? 'La producción quedó guardada; ' : ''}error al calcular: ${err.message}`, type: 'error' });
     } finally {
+      setSavingProduction(false);
       setCalculatingOfficial(false);
     }
   };
@@ -281,31 +386,36 @@ export default function ProcessesPage() {
   const handleApplyToCostSheet = async () => {
     setApplyingCostSheet(true);
     setFeedback(null);
+    let productionWasSaved = false;
+    const requestKey = `apply:${selectedSku}:${selectedPeriod}:${applyOperationalSwitch ? '1' : '0'}:${applyPackagingSwitch ? '1' : '0'}`;
     try {
+      setSavingProduction(productionDirty);
+      productionWasSaved = await ensureProductionPeriodPersisted();
       const res = await fetch('/api/cost/processes/calculate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sku: selectedSku,
           period: selectedPeriod,
-          good_units_produced: goodUnits,
-          total_period_units: totalPeriodUnits,
           persist_snapshot: true,
           apply_to_cost_sheet: true,
           enable_operational: applyOperationalSwitch,
           enable_packaging: applyPackagingSwitch,
+          request_id: officialRequestId(requestKey),
         }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Error al sincronizar');
       setShowApplyModal(false);
+      clearOfficialRequestId(requestKey);
       setFeedback({
         message: `Sincronizado con Hoja de Costos de ${selectedSku}: Operativos ${applyOperationalSwitch ? 'ON' : 'OFF'}, Embalaje ${applyPackagingSwitch ? 'ON' : 'OFF'}.`,
         type: 'success',
       });
     } catch (err: any) {
-      setFeedback({ message: `Error al aplicar a Hoja de Costos: ${err.message}`, type: 'error' });
+      setFeedback({ message: `${productionWasSaved ? 'La producción quedó guardada; ' : ''}error al aplicar a Hoja de Costos: ${err.message}`, type: 'error' });
     } finally {
+      setSavingProduction(false);
       setApplyingCostSheet(false);
     }
   };
@@ -315,7 +425,7 @@ export default function ProcessesPage() {
     setShowQrModal(true);
     setQrLoading(true);
     try {
-      const res = await fetch('/api/cost/processes/packing/qr-token?line=Polipapel');
+      const res = await fetch('/api/cost/processes/packing/qr-token?line=Polipapel', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         const fullUrl = `${window.location.origin}${data.relative_url}`;
@@ -932,7 +1042,7 @@ export default function ProcessesPage() {
                 onClick={handleGenerateQr}
                 className="text-xs border-brand-800 text-brand-300 hover:bg-brand-950/40"
               >
-                <QrCode className="h-3.5 w-3.5 mr-1.5" /> Generar QR Celular
+                <QrCode className="h-3.5 w-3.5 mr-1.5" /> Generar enlace móvil
               </Button>
             </div>
           </div>
@@ -1015,6 +1125,7 @@ export default function ProcessesPage() {
             <label className="text-slate-300 font-medium block mb-1.5">SKU a costear</label>
             <select
               value={selectedSku}
+              disabled={productionDirty || !productionPeriodLoaded}
               onChange={(e) => {
                 setSelectedSku(e.target.value);
                 runProvisionalCalculation(e.target.value, selectedPeriod, goodUnits, totalPeriodUnits);
@@ -1035,6 +1146,7 @@ export default function ProcessesPage() {
             <input
               type="text"
               value={selectedPeriod}
+              disabled={productionDirty || !productionPeriodLoaded}
               onChange={(e) => setSelectedPeriod(e.target.value)}
               className="w-full min-h-10 rounded-md border border-slate-700 bg-[#0c0f14] px-3 font-mono text-white outline-none"
             />
@@ -1045,7 +1157,11 @@ export default function ProcessesPage() {
             <input
               type="number"
               value={goodUnits || ''}
-              onChange={(e) => setGoodUnits(Math.max(0, Number(e.target.value)))}
+              disabled={!productionPeriodLoaded || savingProduction}
+              onChange={(e) => {
+                setGoodUnits(Math.max(0, Number(e.target.value)));
+                setProductionDirty(true);
+              }}
               className="w-full min-h-10 rounded-md border border-slate-700 bg-[#0c0f14] px-3 font-mono text-white outline-none"
             />
           </div>
@@ -1057,10 +1173,33 @@ export default function ProcessesPage() {
             <input
               type="number"
               value={totalPeriodUnits || ''}
-              onChange={(e) => setTotalPeriodUnits(Math.max(0, Number(e.target.value)))}
+              readOnly
+              disabled={!productionPeriodLoaded}
               className="w-full min-h-10 rounded-md border border-slate-700 bg-[#0c0f14] px-3 font-mono text-white outline-none"
             />
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-[#0c0f14] px-3 py-2">
+          <div className="text-xs text-slate-400">
+            {!productionPeriodLoaded
+              ? 'Cargando producción persistida…'
+              : productionDirty
+                ? 'Hay unidades sin guardar; el cálculo oficial las guardará antes de continuar.'
+                : productionRecordExists
+                  ? 'Unidades del SKU guardadas. El total del período se suma desde los SKU persistidos.'
+                  : 'Sin producción configurada para este SKU y período.'}
+          </div>
+          {productionDirty && (
+            <button
+              type="button"
+              onClick={handleSaveProductionPeriod}
+              disabled={!productionPeriodLoaded || savingProduction || !Number.isInteger(goodUnits) || goodUnits <= 0}
+              className="min-h-9 rounded-md border border-brand-700 bg-brand-950/50 px-3 text-xs font-semibold text-brand-200 hover:bg-brand-900/70 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {savingProduction ? 'Guardando…' : 'Guardar producción del SKU'}
+            </button>
+          )}
         </div>
 
         {/* Missing fields alert */}
@@ -1439,10 +1578,10 @@ export default function ProcessesPage() {
             <div className="flex items-start justify-between">
               <div className="text-left">
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <QrCode className="h-4 w-4 text-brand-400" /> Acceso Encargada de Empaque
+                  <QrCode className="h-4 w-4 text-brand-400" /> Acceso móvil de Empaque
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Token seguro firmado con alcance exclusivo para registrar horas de empaque.
+                  Enlace firmado, revocable y limitado a registrar horas de empaque. El token no se envía a un generador QR externo.
                 </p>
               </div>
               <button
@@ -1461,15 +1600,6 @@ export default function ProcessesPage() {
               </div>
             ) : qrTokenData ? (
               <div className="space-y-4">
-                <div className="p-4 bg-white rounded-2xl inline-block mx-auto shadow-inner">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(qrTokenData.url)}`}
-                    alt="Código QR de Empaque"
-                    className="w-44 h-44"
-                  />
-                </div>
-
                 <div className="text-xs text-slate-300 font-mono break-all bg-[#0a0d12] p-3 rounded-lg border border-slate-800 text-left">
                   <span className="text-slate-500 block text-[10px] mb-1 font-sans">Enlace directo:</span>
                   {qrTokenData.url}

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash } from 'node:crypto';
 import { repository } from '@/lib/db/repository';
-import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
+import { authErrorResponse } from '@/lib/auth/identity';
+import { requirePersonnelAdminIdentity } from '@/lib/auth/personnel-guard';
 import { FxEngine } from '@/lib/fx/fx-provider';
 import { IndustrialProcessCostEngine } from '@/lib/engines/industrial-process-cost-engine';
 import { IndustrialCostEngine } from '@/lib/engines/industrial-cost-engine';
@@ -12,7 +14,9 @@ import { IndustrialSector, SectorPersonnelSummary } from '@/types';
  */
 export async function GET(req: NextRequest) {
   try {
-    const identity = await requireNiuIdentity();
+    // The response includes individual payroll summaries; restrict it to the same
+    // authorized audience as salary management, even when it is a read-only preview.
+    const identity = await requirePersonnelAdminIdentity(req);
     const { searchParams } = new URL(req.url);
     const sku = searchParams.get('sku')?.trim() || '';
     const period = searchParams.get('period')?.trim() || new Date().toISOString().slice(0, 7);
@@ -46,7 +50,7 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    const identity = await requireNiuIdentity();
+    const identity = await requirePersonnelAdminIdentity(req);
     const body = await req.json();
     const sku = body.sku?.trim() || '';
     const period = body.period?.trim() || new Date().toISOString().slice(0, 7);
@@ -56,6 +60,11 @@ export async function POST(req: NextRequest) {
     const totalPeriodUnits = body.total_period_units !== undefined ? Number(body.total_period_units) : undefined;
     const enableOperational = body.enable_operational !== undefined ? Boolean(body.enable_operational) : undefined;
     const enablePackaging = body.enable_packaging !== undefined ? Boolean(body.enable_packaging) : undefined;
+    const requestId = body.request_id;
+    if ((persistSnapshot || applyToCostSheet) &&
+      (typeof requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId))) {
+      return NextResponse.json({ success: false, error: 'IDEMPOTENCY_REQUEST_ID_REQUIRED' }, { status: 400 });
+    }
 
     return handleCalculation({
       identity,
@@ -67,6 +76,7 @@ export async function POST(req: NextRequest) {
       totalPeriodUnits,
       enableOperational,
       enablePackaging,
+      requestId,
     });
   } catch (error) {
     return authErrorResponse(error);
@@ -83,6 +93,7 @@ async function handleCalculation({
   totalPeriodUnits,
   enableOperational,
   enablePackaging,
+  requestId,
 }: {
   identity: { organizationId: string; profileId?: string };
   sku: string;
@@ -93,39 +104,61 @@ async function handleCalculation({
   totalPeriodUnits?: number;
   enableOperational?: boolean;
   enablePackaging?: boolean;
+  requestId?: string;
 }) {
+  const isOfficialOperation = persistSnapshot || applyToCostSheet;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) {
+    return NextResponse.json({ success: false, error: 'INVALID_PRODUCTION_PERIOD' }, { status: 400 });
+  }
   const parameters = await repository.getPlantParameters(identity.organizationId);
   const fxQuote = await FxEngine.getEffectiveQuote();
 
   const periodRecord = sku && period ? await repository.getProductionPeriod(sku, period, identity.organizationId) : undefined;
-  let goodUnits = overrideGoodUnits !== undefined && overrideGoodUnits > 0
-    ? overrideGoodUnits
-    : (periodRecord?.good_units_produced ?? 0);
+  if (overrideGoodUnits !== undefined && (!Number.isFinite(overrideGoodUnits) || overrideGoodUnits <= 0)) {
+    return NextResponse.json({ success: false, error: 'INVALID_GOOD_UNITS' }, { status: 400 });
+  }
+  if (totalPeriodUnits !== undefined && (!Number.isFinite(totalPeriodUnits) || totalPeriodUnits <= 0)) {
+    return NextResponse.json({ success: false, error: 'INVALID_TOTAL_PERIOD_UNITS' }, { status: 400 });
+  }
+  const persistedGoodUnits = Number(periodRecord?.good_units_produced || 0);
+  const goodUnits = isOfficialOperation ? persistedGoodUnits : (overrideGoodUnits ?? persistedGoodUnits);
+  const hasConfirmedProductionBase = Number.isFinite(persistedGoodUnits) && persistedGoodUnits > 0;
 
-  // If period record does not exist or has 0 units, fallback to SKU batch_size or default standard batch (100,000)
-  if (!goodUnits || goodUnits <= 0) {
-    if (sku) {
-      const currentConfig = await repository.getCostV1Configuration(sku, identity.organizationId);
-      if (currentConfig?.input?.batch_size && currentConfig.input.batch_size > 0) {
-        goodUnits = currentConfig.input.batch_size;
-      }
-    }
-    if (!goodUnits || goodUnits <= 0) {
-      goodUnits = 100000;
-    }
+  if (persistSnapshot && (!sku || !period)) {
+    return NextResponse.json({ success: false, error: 'SNAPSHOT_REQUIRES_SKU_AND_PERIOD' }, { status: 400 });
+  }
+  if (applyToCostSheet && !sku) {
+    return NextResponse.json({ success: false, error: 'COST_APPLY_REQUIRES_SKU' }, { status: 400 });
+  }
+  if ((persistSnapshot || applyToCostSheet) && !hasConfirmedProductionBase) {
+    return NextResponse.json({
+      success: false,
+      error: 'PRODUCTION_BASE_NOT_CONFIGURED',
+      message: 'Registre la producción del SKU y período antes de guardar o aplicar un cálculo oficial.',
+    }, { status: 409 });
+  }
+  if (isOfficialOperation && overrideGoodUnits !== undefined && overrideGoodUnits !== persistedGoodUnits) {
+    return NextResponse.json({
+      success: false,
+      error: 'PRODUCTION_INPUT_NOT_SAVED',
+      message: 'Guarda las unidades del SKU antes de confirmar un cálculo oficial.',
+    }, { status: 409 });
   }
 
   // Multi-SKU period basis resolution:
   let effectiveTotalUnits = totalPeriodUnits;
-  if (!effectiveTotalUnits || effectiveTotalUnits <= 0) {
+  if (effectiveTotalUnits === undefined || isOfficialOperation) {
     const allPeriods = await repository.getProductionPeriods(identity.organizationId);
     const periodUnitsSum = allPeriods
       .filter((p) => p.period === period)
       .reduce((sum, p) => sum + (p.good_units_produced || 0), 0);
-    effectiveTotalUnits = periodUnitsSum > 0 ? periodUnitsSum : goodUnits;
+    if (isOfficialOperation && totalPeriodUnits !== undefined && totalPeriodUnits !== periodUnitsSum) {
+      return NextResponse.json({ success: false, error: 'PERIOD_TOTAL_NOT_MATCHING_PERSISTED_PRODUCTION' }, { status: 409 });
+    }
+    effectiveTotalUnits = periodUnitsSum > 0 ? periodUnitsSum : (hasConfirmedProductionBase ? goodUnits : 0);
   }
-  if (effectiveTotalUnits < goodUnits) {
-    effectiveTotalUnits = goodUnits;
+  if (hasConfirmedProductionBase && effectiveTotalUnits < goodUnits) {
+    return NextResponse.json({ success: false, error: 'TOTAL_PERIOD_UNITS_BELOW_SKU_UNITS' }, { status: 400 });
   }
 
   // Fetch approved packing sessions for period/sku
@@ -165,87 +198,90 @@ async function handleCalculation({
     packingLaborAllocations,
   });
 
-  // Only persist snapshot if explicitly requested (e.g. POST), NEVER on read-only GET!
-  let savedSnapshot = null;
-  if (persistSnapshot && sku && period) {
-    savedSnapshot = await repository.saveIndustrialProcessSnapshot(
-      {
-        organization_id: identity.organizationId,
-        sku,
-        period,
-        parameters_snapshot: parameters,
-        calculation_detail: calculation,
-        detail_json: calculation,
-        created_by: identity.profileId,
-      },
-      identity.organizationId
-    );
+  if ((persistSnapshot || applyToCostSheet) && calculation.status !== 'COMPLETE') {
+    return NextResponse.json({
+      success: false,
+      error: 'INDUSTRIAL_CALCULATION_INCOMPLETE',
+      calculation,
+    }, { status: 422 });
   }
 
+  // Idempotency fingerprints contain only stable user intent, never calculation
+  // timestamps or generated component IDs, so an uncertain retry is safe.
+  const requestFingerprint = createHash('sha256').update(JSON.stringify({
+    operation: applyToCostSheet ? 'APPLY_COST' : 'SAVE_SNAPSHOT',
+    sku,
+    period,
+    persistSnapshot,
+    applyToCostSheet,
+    enableOperational: enableOperational ?? null,
+    enablePackaging: enablePackaging ?? null,
+  })).digest('hex');
+  const persistedSnapshotInput = {
+    organization_id: identity.organizationId,
+    sku,
+    period,
+    parameters_snapshot: parameters,
+    calculation_detail: calculation,
+    detail_json: calculation,
+    created_by: identity.profileId,
+  };
+  let savedSnapshot = null;
   let updatedCostInput = null;
   let updatedSheet = null;
 
-  // Apply to Cost Intelligence ONLY if explicitly requested and calculation is valid
-  if (applyToCostSheet && calculation.status === 'COMPLETE' && sku) {
+  if (applyToCostSheet) {
     const currentConfig = await repository.getCostV1Configuration(sku, identity.organizationId);
-    if (currentConfig?.input) {
-      const input = { ...currentConfig.input };
-
-      // Update calculated rates
-      input.process_operational_cost_per_thousand_usd = calculation.operational_total_usd_per_thousand;
-      input.process_packaging_cost_per_thousand_usd = calculation.packaging_total_usd_per_thousand;
-      input.process_calculation_detail = calculation;
-
-      // Update switch states independently — DO NOT force both ON!
-      if (enableOperational !== undefined) {
-        input.operational_process_enabled = enableOperational;
-      }
-      if (enablePackaging !== undefined) {
-        input.packaging_process_enabled = enablePackaging;
-      }
-
-      const savedConfig = await repository.saveCostV1Configuration(
-        {
-          ...currentConfig,
-          input,
-          version: (currentConfig.version || 1) + 1,
-        },
-        identity.organizationId,
-        identity.profileId
-      );
-      updatedCostInput = savedConfig.input;
-
-      // Recalculate true cost and synchronize CostSheetVersion
-      const breakdown = IndustrialCostEngine.calculateCost(input);
-      if (breakdown.configured) {
-        let sheet = await repository.getActiveCostSheetForSKU(sku, identity.organizationId);
-        const skuMaster = (await repository.getSKUs(identity.organizationId)).find((c) => c.sku === sku);
-        if (skuMaster) {
-          if (!sheet) {
-            sheet = {
-              id: crypto.randomUUID(),
-              organization_id: identity.organizationId,
-              product_id: skuMaster.product_id,
-              sku,
-              version: 1,
-              name: `Hoja de costo V1 · ${sku}`,
-              batch_size: input.batch_size,
-              effective_date: new Date().toISOString().split('T')[0],
-              status: 'ACTIVE',
-              true_unit_cost_usd: breakdown.true_unit_cost_usd,
-              minimum_sustainable_price_usd: breakdown.true_unit_cost_usd,
-              break_even_units: 0,
-              components: [],
-            };
-          }
-          sheet.true_unit_cost_usd = breakdown.true_unit_cost_usd;
-          sheet.minimum_sustainable_price_usd = breakdown.true_unit_cost_usd;
-          sheet.components = IndustrialCostEngine.toV1CostComponents(breakdown, sheet.id);
-          sheet.notes = 'Cost Intelligence V1: sincronizado desde Procesos Industriales V2.';
-          updatedSheet = await repository.saveCostSheet(sheet, identity.organizationId);
-        }
-      }
+    if (!currentConfig?.input) {
+      return NextResponse.json({ success: false, error: 'COST_V1_CONFIGURATION_NOT_FOUND' }, { status: 409 });
     }
+    const input = { ...currentConfig.input };
+    input.process_operational_cost_per_thousand_usd = calculation.operational_total_usd_per_thousand;
+    input.process_packaging_cost_per_thousand_usd = calculation.packaging_total_usd_per_thousand;
+    input.process_calculation_detail = calculation;
+    if (enableOperational !== undefined) input.operational_process_enabled = enableOperational;
+    if (enablePackaging !== undefined) input.packaging_process_enabled = enablePackaging;
+
+    const breakdown = IndustrialCostEngine.calculateCost(input);
+    if (!breakdown.configured) {
+      return NextResponse.json({
+        success: false,
+        error: 'COST_V1_CONFIGURATION_INCOMPLETE',
+        missing_configuration: breakdown.missing_configuration,
+      }, { status: 422 });
+    }
+    const components = IndustrialCostEngine.toV1CostComponents(breakdown, 'atomic-version-pending');
+    const result = await repository.applyIndustrialProcessCostAtomic({
+      organizationId: identity.organizationId,
+      requestId: requestId!,
+      requestFingerprint,
+      sku,
+      period,
+      calculation,
+      parametersSnapshot: parameters,
+      input,
+      expectedConfigurationVersion: currentConfig.version || 1,
+      trueUnitCostUsd: breakdown.true_unit_cost_usd,
+      minimumSustainablePriceUsd: breakdown.true_unit_cost_usd,
+      breakEvenUnits: 0,
+      batchSize: input.batch_size,
+      fxRate: fxQuote.costingRate,
+      sheetName: `Hoja de costo V1 · ${sku}`,
+      notes: 'Cost Intelligence V1: sincronizado desde Procesos Industriales V2.',
+      components,
+      actorProfileId: identity.profileId || '',
+      persistSnapshot,
+    });
+    savedSnapshot = result.snapshot || null;
+    updatedCostInput = result.configuration?.input || null;
+    updatedSheet = result.cost_sheet || null;
+  } else if (persistSnapshot) {
+    savedSnapshot = await repository.saveIndustrialProcessSnapshotAtomic(
+      persistedSnapshotInput,
+      identity.organizationId,
+      requestId!,
+      requestFingerprint
+    );
   }
 
   return NextResponse.json({
@@ -254,7 +290,7 @@ async function handleCalculation({
     period,
     calculation,
     snapshot: savedSnapshot,
-    applied: applyToCostSheet,
+    applied: applyToCostSheet && Boolean(updatedSheet),
     updated_cost_input: updatedCostInput,
     updated_sheet: updatedSheet,
   });

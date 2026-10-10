@@ -7,6 +7,7 @@ export interface NiuIdentity {
   organizationId: string;
   email?: string;
   profileId: string;
+  role: 'admin' | 'analyst' | 'operator' | 'executive';
 }
 
 export class NiuAuthError extends Error {
@@ -28,7 +29,7 @@ const testOrganizationId = '00000000-0000-0000-0000-000000000001';
  */
 export async function requireNiuIdentity(): Promise<NiuIdentity> {
   if (process.env.NODE_ENV === 'test' && !isSupabasePublicConfigured) {
-    return { userId: 'test-user', organizationId: testOrganizationId, profileId: 'test-profile', email: 'test@niupack.local' };
+    return { userId: 'test-user', organizationId: testOrganizationId, profileId: 'test-profile', email: 'test@niupack.local', role: 'admin' };
   }
 
   if (!isSupabasePublicConfigured || !isSupabaseAdminConfigured || !supabaseAdmin) {
@@ -41,19 +42,24 @@ export async function requireNiuIdentity(): Promise<NiuIdentity> {
 
   let profileQuery = await supabaseAdmin
     .from('profiles')
-    .select('id, organization_id, auth_user_id, email')
+    .select('id, organization_id, auth_user_id, email, role')
     .eq('auth_user_id', user.id)
     .maybeSingle();
 
   if (!profileQuery.data && !profileQuery.error) {
     profileQuery = await supabaseAdmin
       .from('profiles')
-      .select('id, organization_id, auth_user_id, email')
+      .select('id, organization_id, auth_user_id, email, role')
       .eq('email', user.email ?? '')
       .maybeSingle();
   }
 
   if (profileQuery.error || !profileQuery.data) throw new NiuAuthError('AUTH_PROFILE_NOT_LINKED', 403);
+
+  const role = profileQuery.data.role;
+  if (!['admin', 'analyst', 'operator', 'executive'].includes(role)) {
+    throw new NiuAuthError('AUTH_PROFILE_ROLE_INVALID', 403);
+  }
 
   if (!profileQuery.data.auth_user_id) {
     const { error: linkError } = await supabaseAdmin
@@ -69,6 +75,7 @@ export async function requireNiuIdentity(): Promise<NiuIdentity> {
     organizationId: profileQuery.data.organization_id,
     profileId: profileQuery.data.id,
     email: user.email,
+    role,
   };
 }
 

@@ -192,6 +192,45 @@ function shiftIsoDate(value: string, days: number): string {
 
 const allowCostFixtures = process.env.NODE_ENV !== 'production' || process.env.NIU_ENABLE_COST_SEED_FIXTURES === 'true';
 
+type PackingOperatorTokenRecord = {
+  token_id: string;
+  organization_id: string;
+  line_name: string;
+  issued_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+  revoked_by_profile_id: string | null;
+  revocation_reason: string | null;
+  created_at: string;
+};
+
+type PackingMutationContext = {
+  requestId?: string;
+  actorProfileId?: string;
+  tokenId?: string;
+  lineName?: string;
+  shiftCode?: string;
+  shiftDate?: string;
+};
+
+function requirePackingRequestId(context?: PackingMutationContext): string {
+  const requestId = context?.requestId;
+  if (!requestId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)) {
+    throw new Error('PACKING_REQUEST_ID_REQUIRED');
+  }
+  return requestId;
+}
+
+function mapPackingSessionRow(row: any): PackingSession {
+  const segments = row?.segments || row?.packing_session_segments || [];
+  return {
+    ...row,
+    total_person_hours: Number(row?.total_person_hours || 0),
+    total_duration_minutes: Number(row?.total_duration_minutes || 0),
+    segments: [...segments].sort((a: any, b: any) => a.segment_order - b.segment_order),
+  } as PackingSession;
+}
+
 // Persistent in-process store for zero-friction local dev, tests, and CI
 class Store {
   organizations: Organization[] = [{ ...INITIAL_ORG }];
@@ -228,6 +267,7 @@ class Store {
   plantParameters: PlantGeneralParameters = { ...INITIAL_PLANT_PARAMETERS };
   productionPeriods: PlantProductionPeriod[] = [...INITIAL_PRODUCTION_PERIODS];
   packingSessions: PackingSession[] = [...INITIAL_PACKING_SESSIONS];
+  packingOperatorTokens: PackingOperatorTokenRecord[] = [];
   industrialSnapshots: IndustrialProcessSnapshot[] = [];
   salaryBands: PlantSalaryBand[] = [...INITIAL_SALARY_BANDS];
   salaryBandRates: PlantSalaryBandRate[] = [...INITIAL_SALARY_BAND_RATES];
@@ -926,7 +966,8 @@ export const repository = {
     return [...store.industrialCostInputs];
   },
   async getCostV1Configuration(sku: string, organizationId?: string): Promise<CostV1Configuration | undefined> {
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
       const { data, error } = await supabaseAdmin
         .from('cost_v1_configurations')
         .select('*')
@@ -950,6 +991,7 @@ export const repository = {
           updated_at: data.updated_at,
         };
       }
+      return undefined;
     }
 
     const input = store.industrialCostInputs.find((candidate) => candidate.sku === sku);
@@ -966,15 +1008,8 @@ export const repository = {
     organizationId?: string,
     actorId?: string
   ): Promise<CostV1Configuration> {
-    // Keep in-memory store synchronized as fallback/cache
-    const memIndex = store.industrialCostInputs.findIndex((i) => i.sku === configuration.sku);
-    if (memIndex >= 0) {
-      store.industrialCostInputs[memIndex] = configuration.input;
-    } else {
-      store.industrialCostInputs.push(configuration.input);
-    }
-
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
       const skuRecord = (await this.getSKUs(organizationId)).find((candidate) => candidate.sku === configuration.sku);
       if (!skuRecord?.product_id) throw new Error(`SKU ${configuration.sku} is not present in the product master`);
 
@@ -1018,6 +1053,11 @@ export const repository = {
       };
     }
 
+    // Keep fixtures only in non-production/local mode after the persistent path
+    // has been ruled out; never mutate memory before a database write succeeds.
+    const memIndex = store.industrialCostInputs.findIndex((i) => i.sku === configuration.sku);
+    if (memIndex >= 0) store.industrialCostInputs[memIndex] = configuration.input;
+    else store.industrialCostInputs.push(configuration.input);
     await this.saveIndustrialCostInput(configuration.input);
     return configuration;
   },
@@ -1321,7 +1361,8 @@ export const repository = {
   async updatePlantParameters(
     params: Partial<PlantGeneralParameters>,
     organizationId?: string,
-    actorId?: string
+    actorId?: string,
+    expectedUpdatedAt?: string
   ): Promise<PlantGeneralParameters> {
     const orgId = organizationId || store.organizations[0].id;
     const useDatabase = persistentOrganizationStore(organizationId);
@@ -1337,13 +1378,18 @@ export const repository = {
         updated_at: new Date().toISOString(),
         updated_by: actorId || null,
       };
+      if (!expectedUpdatedAt || !Number.isFinite(Date.parse(expectedUpdatedAt))) {
+        throw new Error('PLANT_PARAMETERS_VERSION_REQUIRED');
+      }
       const { data, error } = await supabaseAdmin
         .from('plant_process_parameters')
-        .upsert(record, { onConflict: 'organization_id' })
+        .update(record)
+        .eq('organization_id', orgId)
+        .eq('updated_at', expectedUpdatedAt)
         .select('*')
-        .single();
+        .maybeSingle();
       if (error) throwPersistenceError(error, 'plant_process_parameters');
-      if (!data) throw new Error('PLANT_PARAMETERS_PERSISTENCE_FAILED');
+      if (!data) throw new Error('PLANT_PARAMETERS_VERSION_CONFLICT');
       return mapPlantParametersRecord(data);
     }
     store.plantParameters = {
@@ -1355,45 +1401,107 @@ export const repository = {
   },
 
   // Industrial Processes V2 — Packing Stopwatch Sessions
+  async createPackingOperatorToken(
+    token: Omit<PackingOperatorTokenRecord, 'created_at' | 'revoked_at' | 'revoked_by_profile_id' | 'revocation_reason'>,
+    organizationId: string
+  ): Promise<PackingOperatorTokenRecord> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    const record: PackingOperatorTokenRecord = {
+      ...token,
+      revoked_at: null,
+      revoked_by_profile_id: null,
+      revocation_reason: null,
+      created_at: new Date().toISOString(),
+    };
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('packing_operator_tokens')
+        .insert({
+          token_id: record.token_id,
+          organization_id: record.organization_id,
+          line_name: record.line_name,
+          issued_at: record.issued_at,
+          expires_at: record.expires_at,
+        })
+        .select('*')
+        .single();
+      if (error) throwPersistenceError(error, 'packing_operator_tokens');
+      return data as PackingOperatorTokenRecord;
+    }
+
+    store.packingOperatorTokens.push(record);
+    return record;
+  },
+
+  async getPackingOperatorToken(tokenId: string, organizationId: string): Promise<PackingOperatorTokenRecord | undefined> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('packing_operator_tokens')
+        .select('*')
+        .eq('token_id', tokenId)
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+      if (error) throwPersistenceError(error, 'packing_operator_tokens');
+      return data ? data as PackingOperatorTokenRecord : undefined;
+    }
+    return store.packingOperatorTokens.find((entry) => entry.token_id === tokenId && entry.organization_id === organizationId);
+  },
+
+  async revokePackingOperatorToken(
+    tokenId: string,
+    organizationId: string,
+    revokedByProfileId: string,
+    reason?: string
+  ): Promise<boolean> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('packing_operator_tokens')
+        .update({
+          revoked_at: new Date().toISOString(),
+          revoked_by_profile_id: revokedByProfileId,
+          revocation_reason: reason || null,
+        })
+        .eq('token_id', tokenId)
+        .eq('organization_id', organizationId)
+        .is('revoked_at', null)
+        .select('token_id')
+        .maybeSingle();
+      if (error) throwPersistenceError(error, 'packing_operator_tokens');
+      if (data) return true;
+      return Boolean(await this.getPackingOperatorToken(tokenId, organizationId));
+    }
+    const record = store.packingOperatorTokens.find((entry) => entry.token_id === tokenId && entry.organization_id === organizationId);
+    if (!record) return false;
+    record.revoked_at ||= new Date().toISOString();
+    record.revoked_by_profile_id ||= revokedByProfileId;
+    record.revocation_reason ||= reason || null;
+    return true;
+  },
+
   async getPackingSessions(
     filters?: { status?: PackingSessionStatus; line_name?: string; period?: string; sku?: string },
     organizationId?: string
   ): Promise<PackingSession[]> {
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        let query = supabaseAdmin
-          .from('packing_sessions')
-          .select('*, packing_session_segments(*)')
-          .eq('organization_id', organizationId);
-        if (filters?.status) query = query.eq('status', filters.status);
-        if (filters?.line_name) query = query.eq('line_name', filters.line_name);
-        if (filters?.sku) query = query.eq('sku', filters.sku);
-        query = query.order('started_at', { ascending: false });
-
-        const { data, error } = await query;
-        if (error) {
-          if (isSchemaMissingError(error)) {
-            console.warn('[Industrial Processes V2] Tabla packing_sessions pendiente en Supabase. Usando store en memoria.');
-          } else {
-            throw new Error(`packing_sessions: ${error.message}`);
-          }
-        } else if (data) {
-          return (data || []).map((row: any) => ({
-            ...row,
-            total_person_hours: Number(row.total_person_hours),
-            total_duration_minutes: Number(row.total_duration_minutes),
-            segments: (row.packing_session_segments || []).sort(
-              (a: any, b: any) => a.segment_order - b.segment_order
-            ),
-          }));
-        }
-      } catch (err: any) {
-        if (isSchemaMissingError(err)) {
-          console.warn('[Industrial Processes V2] Error de esquema en packing_sessions. Usando store en memoria.', err.message);
-        } else {
-          throw err;
-        }
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      let query = supabaseAdmin
+        .from('packing_sessions')
+        .select('*, packing_session_segments(*)')
+        .eq('organization_id', organizationId!);
+      if (filters?.status) query = query.eq('status', filters.status);
+      if (filters?.line_name) query = query.eq('line_name', filters.line_name);
+      if (filters?.sku) query = query.eq('sku', filters.sku);
+      if (filters?.period && /^\d{4}-\d{2}$/.test(filters.period)) {
+        const [year, month] = filters.period.split('-').map(Number);
+        const periodStart = new Date(Date.UTC(year, month - 1, 1)).toISOString();
+        const periodEnd = new Date(Date.UTC(year, month, 1)).toISOString();
+        query = query.gte('started_at', periodStart).lt('started_at', periodEnd);
       }
+      const { data, error } = await query.order('started_at', { ascending: false });
+      if (error) throwPersistenceError(error, 'packing_sessions');
+      return (data || []).map(mapPackingSessionRow);
     }
 
     let sessions = [...store.packingSessions];
@@ -1407,37 +1515,16 @@ export const repository = {
   },
 
   async getPackingSession(id: string, organizationId?: string): Promise<PackingSession | undefined> {
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        const { data, error } = await supabaseAdmin
-          .from('packing_sessions')
-          .select('*, packing_session_segments(*)')
-          .eq('id', id)
-          .eq('organization_id', organizationId)
-          .maybeSingle();
-        if (error) {
-          if (isSchemaMissingError(error)) {
-            console.warn('[Industrial Processes V2] Tabla packing_sessions pendiente. Usando store en memoria.');
-          } else {
-            throw new Error(`packing_sessions: ${error.message}`);
-          }
-        } else if (data) {
-          return {
-            ...data,
-            total_person_hours: Number(data.total_person_hours),
-            total_duration_minutes: Number(data.total_duration_minutes),
-            segments: (data.packing_session_segments || []).sort(
-              (a: any, b: any) => a.segment_order - b.segment_order
-            ),
-          };
-        }
-      } catch (err: any) {
-        if (isSchemaMissingError(err)) {
-          console.warn('[Industrial Processes V2] Error de esquema al leer sesión. Usando memoria.', err.message);
-        } else {
-          throw err;
-        }
-      }
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('packing_sessions')
+        .select('*, packing_session_segments(*)')
+        .eq('id', id)
+        .eq('organization_id', organizationId!)
+        .maybeSingle();
+      if (error) throwPersistenceError(error, 'packing_sessions');
+      return data ? mapPackingSessionRow(data) : undefined;
     }
     return store.packingSessions.find((s) => s.id === id && (!organizationId || s.organization_id === organizationId));
   },
@@ -1473,8 +1560,30 @@ export const repository = {
       reason?: string;
       operator_user_id?: string;
     },
-    organizationId?: string
+    organizationId?: string,
+    context?: PackingMutationContext
   ): Promise<PackingSession> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data: result, error } = await supabaseAdmin.rpc('start_packing_session_atomic', {
+        p_organization_id: organizationId,
+        p_idempotency_key: requirePackingRequestId(context),
+        p_line_name: data.line_name,
+        p_sku: data.sku ?? null,
+        p_production_order: data.production_order ?? null,
+        p_initial_headcount: data.initial_headcount,
+        p_reason: data.reason ?? null,
+        p_operator_user_id: data.operator_user_id ?? null,
+        p_shift_code: context?.shiftCode ?? null,
+        p_shift_date: context?.shiftDate ?? null,
+        p_actor_profile_id: context?.actorProfileId ?? null,
+        p_token_id: context?.tokenId ?? null,
+      });
+      if (error) throwPersistenceError(error, 'start_packing_session_atomic');
+      if (!result) throw new Error('PACKING_SESSION_START_EMPTY_RESULT');
+      return mapPackingSessionRow(result);
+    }
+
     const orgId = organizationId || store.organizations[0].id;
     const now = new Date().toISOString();
     const sessionId = crypto.randomUUID();
@@ -1511,61 +1620,6 @@ export const repository = {
       updated_at: now,
     };
 
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        const { data: created, error } = await supabaseAdmin
-          .from('packing_sessions')
-          .insert({
-            id: newSession.id,
-            organization_id: newSession.organization_id,
-            session_code: newSession.session_code,
-            line_name: newSession.line_name,
-            sku: newSession.sku,
-            production_order: newSession.production_order,
-            operator_user_id: newSession.operator_user_id,
-            started_at: newSession.started_at,
-            status: newSession.status,
-            total_person_hours: 0,
-            total_duration_minutes: 0,
-            created_at: now,
-            updated_at: now,
-          })
-          .select('*')
-          .single();
-
-        if (error) {
-          if (isSchemaMissingError(error)) {
-            console.warn('[Industrial Processes V2] Tabla packing_sessions pendiente en Supabase. Guardando en memoria local.');
-          } else {
-            throw new Error(`create packing session: ${error.message}`);
-          }
-        } else {
-          const { error: segError } = await supabaseAdmin
-            .from('packing_session_segments')
-            .insert({
-              id: initialSegment.id,
-              session_id: sessionId,
-              segment_order: 1,
-              headcount,
-              started_at: now,
-              reason: initialSegment.reason,
-            });
-          if (segError && !isSchemaMissingError(segError)) {
-            throw new Error(`create initial segment: ${segError.message}`);
-          }
-          if (created) {
-            return { ...created, segments: [initialSegment] } as PackingSession;
-          }
-        }
-      } catch (err: any) {
-        if (isSchemaMissingError(err)) {
-          console.warn('[Industrial Processes V2] Error de esquema al iniciar sesión. Guardando en memoria.', err.message);
-        } else {
-          throw err;
-        }
-      }
-    }
-
     store.packingSessions.unshift(newSession);
     return newSession;
   },
@@ -1573,17 +1627,37 @@ export const repository = {
   async addPackingSessionSegment(
     sessionId: string,
     data: { headcount: number; reason?: string },
-    organizationId?: string
+    organizationId?: string,
+    context?: PackingMutationContext
   ): Promise<PackingSession> {
-    return this.changePackingHeadcount(sessionId, data.headcount, data.reason, organizationId);
+    return this.changePackingHeadcount(sessionId, data.headcount, data.reason, organizationId, context);
   },
 
   async changePackingHeadcount(
     sessionId: string,
     newHeadcount: number,
     reason?: string,
-    organizationId?: string
+    organizationId?: string,
+    context?: PackingMutationContext
   ): Promise<PackingSession> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      if (!Number.isSafeInteger(newHeadcount) || newHeadcount <= 0) throw new Error('INVALID_HEADCOUNT');
+      const { data, error } = await supabaseAdmin.rpc('change_packing_headcount_atomic', {
+        p_organization_id: organizationId,
+        p_session_id: sessionId,
+        p_idempotency_key: requirePackingRequestId(context),
+        p_new_headcount: newHeadcount,
+        p_reason: reason ?? null,
+        p_line_name: context?.lineName ?? null,
+        p_actor_profile_id: context?.actorProfileId ?? null,
+        p_token_id: context?.tokenId ?? null,
+      });
+      if (error) throwPersistenceError(error, 'change_packing_headcount_atomic');
+      if (!data) throw new Error('PACKING_SESSION_CHANGE_EMPTY_RESULT');
+      return mapPackingSessionRow(data);
+    }
+
     const session = await this.getPackingSession(sessionId, organizationId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
     if (session.status !== 'RUNNING') throw new Error(`Cannot change headcount on session with status ${session.status}`);
@@ -1621,50 +1695,29 @@ export const repository = {
     session.total_person_hours = Number(totalPersonHours.toFixed(3));
     session.updated_at = now;
 
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        if (openSegment) {
-          await supabaseAdmin
-            .from('packing_session_segments')
-            .update({
-              ended_at: openSegment.ended_at,
-              duration_minutes: openSegment.duration_minutes,
-              person_hours: openSegment.person_hours,
-            })
-            .eq('id', openSegment.id);
-        }
-        await supabaseAdmin
-          .from('packing_session_segments')
-          .insert({
-            id: newSegment.id,
-            session_id: sessionId,
-            segment_order: nextOrder,
-            headcount,
-            started_at: now,
-            reason: newSegment.reason,
-          });
-
-        await supabaseAdmin
-          .from('packing_sessions')
-          .update({
-            total_duration_minutes: session.total_duration_minutes,
-            total_person_hours: session.total_person_hours,
-            updated_at: now,
-          })
-          .eq('id', sessionId);
-      } catch (err: any) {
-        if (isSchemaMissingError(err)) {
-          console.warn('[Industrial Processes V2] Supabase schema pendiente al actualizar segmentos. Guardando en memoria.');
-        } else {
-          throw err;
-        }
-      }
-    }
-
     return session;
   },
 
-  async stopPackingSession(sessionId: string, organizationId?: string): Promise<PackingSession> {
+  async stopPackingSession(
+    sessionId: string,
+    organizationId?: string,
+    context?: PackingMutationContext
+  ): Promise<PackingSession> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('stop_packing_session_atomic', {
+        p_organization_id: organizationId,
+        p_session_id: sessionId,
+        p_idempotency_key: requirePackingRequestId(context),
+        p_line_name: context?.lineName ?? null,
+        p_actor_profile_id: context?.actorProfileId ?? null,
+        p_token_id: context?.tokenId ?? null,
+      });
+      if (error) throwPersistenceError(error, 'stop_packing_session_atomic');
+      if (!data) throw new Error('PACKING_SESSION_STOP_EMPTY_RESULT');
+      return mapPackingSessionRow(data);
+    }
+
     const session = await this.getPackingSession(sessionId, organizationId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
     if (session.status !== 'RUNNING') return session;
@@ -1689,41 +1742,13 @@ export const repository = {
     session.total_person_hours = Number(totalPersonHours.toFixed(3));
     session.updated_at = now;
 
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        if (openSegment) {
-          await supabaseAdmin
-            .from('packing_session_segments')
-            .update({
-              ended_at: openSegment.ended_at,
-              duration_minutes: openSegment.duration_minutes,
-              person_hours: openSegment.person_hours,
-            })
-            .eq('id', openSegment.id);
-        }
-        await supabaseAdmin
-          .from('packing_sessions')
-          .update({
-            status: 'STOPPED',
-            stopped_at: now,
-            total_duration_minutes: session.total_duration_minutes,
-            total_person_hours: session.total_person_hours,
-            updated_at: now,
-          })
-          .eq('id', sessionId);
-      } catch (err: any) {
-        if (isSchemaMissingError(err)) {
-          console.warn('[Industrial Processes V2] Supabase schema pendiente al detener sesión. Guardando en memoria.');
-        } else {
-          throw err;
-        }
-      }
-    }
-
     return session;
   },
 
   async approvePackingSession(sessionId: string, approverId?: string, organizationId?: string): Promise<PackingSession> {
+    if (persistentOrganizationStore(organizationId)) {
+      throw new Error('PACKING_APPROVAL_REQUIRES_LABOR_ALLOCATIONS');
+    }
     let session = await this.getPackingSession(sessionId, organizationId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
 
@@ -1737,34 +1762,32 @@ export const repository = {
     session.approved_by = approverId;
     session.updated_at = now;
 
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        await supabaseAdmin
-          .from('packing_sessions')
-          .update({
-            status: 'APPROVED',
-            approved_at: now,
-            approved_by: approverId,
-            updated_at: now,
-          })
-          .eq('id', sessionId);
-      } catch (err: any) {
-        if (isSchemaMissingError(err)) {
-          console.warn('[Industrial Processes V2] Supabase schema pendiente al aprobar sesión. Guardando en memoria.');
-        } else {
-          throw err;
-        }
-      }
-    }
-
     return session;
   },
 
   async correctPackingSession(
     sessionId: string,
     updates: { total_person_hours?: number; notes?: string },
-    organizationId?: string
+    organizationId?: string,
+    context?: PackingMutationContext
   ): Promise<PackingSession> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('correct_packing_session_atomic', {
+        p_organization_id: organizationId,
+        p_session_id: sessionId,
+        p_idempotency_key: requirePackingRequestId(context),
+        p_total_person_hours: updates.total_person_hours ?? null,
+        p_notes: updates.notes ?? null,
+        p_actor_profile_id: context?.actorProfileId ?? null,
+        p_line_name: context?.lineName ?? null,
+        p_token_id: context?.tokenId ?? null,
+      });
+      if (error) throwPersistenceError(error, 'correct_packing_session_atomic');
+      if (!data) throw new Error('PACKING_SESSION_CORRECT_EMPTY_RESULT');
+      return mapPackingSessionRow(data);
+    }
+
     const session = await this.getPackingSession(sessionId, organizationId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
 
@@ -1778,30 +1801,31 @@ export const repository = {
     }
     session.updated_at = now;
 
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        await supabaseAdmin
-          .from('packing_sessions')
-          .update({
-            status: 'CORRECTED',
-            total_person_hours: session.total_person_hours,
-            notes: session.notes,
-            updated_at: now,
-          })
-          .eq('id', sessionId);
-      } catch (err: any) {
-        if (isSchemaMissingError(err)) {
-          console.warn('[Industrial Processes V2] Supabase schema pendiente al corregir sesión.');
-        } else {
-          throw err;
-        }
-      }
-    }
-
     return session;
   },
 
-  async voidPackingSession(sessionId: string, reason?: string, organizationId?: string): Promise<PackingSession> {
+  async voidPackingSession(
+    sessionId: string,
+    reason?: string,
+    organizationId?: string,
+    context?: PackingMutationContext
+  ): Promise<PackingSession> {
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.rpc('void_packing_session_atomic', {
+        p_organization_id: organizationId,
+        p_session_id: sessionId,
+        p_idempotency_key: requirePackingRequestId(context),
+        p_reason: reason ?? null,
+        p_actor_profile_id: context?.actorProfileId ?? null,
+        p_line_name: context?.lineName ?? null,
+        p_token_id: context?.tokenId ?? null,
+      });
+      if (error) throwPersistenceError(error, 'void_packing_session_atomic');
+      if (!data) throw new Error('PACKING_SESSION_VOID_EMPTY_RESULT');
+      return mapPackingSessionRow(data);
+    }
+
     const session = await this.getPackingSession(sessionId, organizationId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
 
@@ -1812,31 +1836,12 @@ export const repository = {
     }
     session.updated_at = now;
 
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        await supabaseAdmin
-          .from('packing_sessions')
-          .update({
-            status: 'VOIDED',
-            notes: session.notes,
-            updated_at: now,
-          })
-          .eq('id', sessionId);
-      } catch (err: any) {
-        if (isSchemaMissingError(err)) {
-          console.warn('[Industrial Processes V2] Supabase schema pendiente al anular sesión.');
-        } else {
-          throw err;
-        }
-      }
-    }
-
     return session;
   },
 
   // Industrial Processes V2 — Production Periods
   async getProductionPeriods(organizationId?: string): Promise<PlantProductionPeriod[]> {
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+    if (persistentOrganizationStore(organizationId) && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
           .from('plant_production_periods')
@@ -1845,7 +1850,7 @@ export const repository = {
           .order('period', { ascending: false });
         if (error) {
           if (isSchemaMissingError(error)) {
-            console.warn('[Industrial Processes V2] Tabla plant_production_periods pendiente en Supabase.');
+            throwPersistenceError(error, 'plant_production_periods');
           } else {
             throw new Error(`plant_production_periods: ${error.message}`);
           }
@@ -1857,7 +1862,7 @@ export const repository = {
         }
       } catch (err: any) {
         if (isSchemaMissingError(err)) {
-          console.warn('[Industrial Processes V2] Error de esquema al leer períodos.');
+          throwPersistenceError(err, 'plant_production_periods');
         } else {
           throw err;
         }
@@ -1867,7 +1872,7 @@ export const repository = {
   },
 
   async getProductionPeriod(sku: string, period: string, organizationId?: string): Promise<PlantProductionPeriod | undefined> {
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+    if (persistentOrganizationStore(organizationId) && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
           .from('plant_production_periods')
@@ -1878,7 +1883,7 @@ export const repository = {
           .maybeSingle();
         if (error) {
           if (isSchemaMissingError(error)) {
-            console.warn('[Industrial Processes V2] Tabla plant_production_periods pendiente en Supabase.');
+            throwPersistenceError(error, 'plant_production_periods');
           } else {
             throw new Error(`plant_production_periods: ${error.message}`);
           }
@@ -1890,7 +1895,7 @@ export const repository = {
         }
       } catch (err: any) {
         if (isSchemaMissingError(err)) {
-          console.warn('[Industrial Processes V2] Error de esquema al leer período.');
+          throwPersistenceError(err, 'plant_production_periods');
         } else {
           throw err;
         }
@@ -1903,10 +1908,11 @@ export const repository = {
     periodData: Partial<PlantProductionPeriod> & { sku: string; period: string },
     organizationId?: string
   ): Promise<PlantProductionPeriod> {
+    const useDatabase = persistentOrganizationStore(organizationId);
     const orgId = organizationId || store.organizations[0].id;
     const now = new Date().toISOString();
 
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
+    if (useDatabase && supabaseAdmin) {
       try {
         const record = {
           organization_id: orgId,
@@ -1922,7 +1928,7 @@ export const repository = {
           .single();
         if (error) {
           if (isSchemaMissingError(error)) {
-            console.warn('[Industrial Processes V2] Tabla plant_production_periods pendiente en Supabase. Guardando en memoria local.');
+            throwPersistenceError(error, 'plant_production_periods');
           } else {
             throw new Error(`save production period: ${error.message}`);
           }
@@ -1934,7 +1940,7 @@ export const repository = {
         }
       } catch (err: any) {
         if (isSchemaMissingError(err)) {
-          console.warn('[Industrial Processes V2] Error de esquema al guardar período. Guardando en memoria.');
+          throwPersistenceError(err, 'plant_production_periods');
         } else {
           throw err;
         }
@@ -1963,34 +1969,17 @@ export const repository = {
 
   // Industrial Processes V2 — Process Snapshots
   async getIndustrialProcessSnapshot(sku: string, period: string, organizationId?: string): Promise<IndustrialProcessSnapshot | undefined> {
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        const { data, error } = await supabaseAdmin
-          .from('industrial_process_snapshots')
-          .select('*')
-          .eq('organization_id', organizationId)
-          .eq('sku', sku)
-          .eq('period', period)
-          .maybeSingle();
-        if (error) {
-          if (isSchemaMissingError(error)) {
-            console.warn('[Industrial Processes V2] Tabla industrial_process_snapshots pendiente en Supabase.');
-          } else {
-            throw new Error(`industrial_process_snapshots: ${error.message}`);
-          }
-        } else if (data) {
-          return {
-            ...data,
-            calculation_detail: data.detail_json,
-          } as IndustrialProcessSnapshot;
-        }
-      } catch (err: any) {
-        if (isSchemaMissingError(err)) {
-          console.warn('[Industrial Processes V2] Error de esquema al leer snapshot.');
-        } else {
-          throw err;
-        }
-      }
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from('industrial_process_snapshots')
+        .select('*')
+        .eq('organization_id', organizationId!)
+        .eq('sku', sku)
+        .eq('period', period)
+        .maybeSingle();
+      if (error) throwPersistenceError(error, 'industrial_process_snapshots');
+      if (data) return { ...data, calculation_detail: data.detail_json } as IndustrialProcessSnapshot;
     }
     return store.industrialSnapshots.find((s) => s.sku === sku && s.period === period);
   },
@@ -2003,41 +1992,24 @@ export const repository = {
     const now = new Date().toISOString();
     const detailJson = snapshot.detail_json || snapshot.calculation_detail || {};
 
-    if (organizationId && isSupabaseAdminConfigured && supabaseAdmin) {
-      try {
-        // Table schema has EXACTLY: organization_id, sku, period, detail_json, calculated_at, created_by
-        const record = {
-          organization_id: orgId,
-          sku: snapshot.sku,
-          period: snapshot.period,
-          detail_json: detailJson,
-          calculated_at: now,
-          created_by: snapshot.created_by || null,
-        };
-        const { data, error } = await supabaseAdmin
-          .from('industrial_process_snapshots')
-          .upsert(record, { onConflict: 'organization_id,period,sku' })
-          .select('*')
-          .single();
-        if (error) {
-          if (isSchemaMissingError(error)) {
-            console.warn('[Industrial Processes V2] Tabla industrial_process_snapshots pendiente en Supabase. Guardando en memoria local.');
-          } else {
-            throw new Error(`save process snapshot: ${error.message}`);
-          }
-        } else if (data) {
-          return {
-            ...data,
-            calculation_detail: data.detail_json,
-          } as IndustrialProcessSnapshot;
-        }
-      } catch (err: any) {
-        if (isSchemaMissingError(err)) {
-          console.warn('[Industrial Processes V2] Error de esquema al guardar snapshot. Guardando en memoria local.', err.message);
-        } else {
-          throw err;
-        }
-      }
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const record = {
+        organization_id: orgId,
+        sku: snapshot.sku,
+        period: snapshot.period,
+        detail_json: detailJson,
+        calculated_at: now,
+        created_by: snapshot.created_by || null,
+      };
+      const { data, error } = await supabaseAdmin
+        .from('industrial_process_snapshots')
+        .upsert(record, { onConflict: 'organization_id,period,sku' })
+        .select('*')
+        .single();
+      if (error) throwPersistenceError(error, 'industrial_process_snapshots');
+      if (!data) throw new Error('INDUSTRIAL_SNAPSHOT_EMPTY_RESULT');
+      return { ...data, calculation_detail: data.detail_json } as IndustrialProcessSnapshot;
     }
 
     const idx = store.industrialSnapshots.findIndex(
@@ -2061,6 +2033,114 @@ export const repository = {
       store.industrialSnapshots.push(item);
     }
     return item;
+  },
+
+  /** Persist an official process snapshot through its transaction/idempotency RPC. */
+  async saveIndustrialProcessSnapshotAtomic(
+    snapshot: Omit<IndustrialProcessSnapshot, 'id'>,
+    organizationId: string,
+    requestId: string,
+    requestFingerprint: string
+  ): Promise<IndustrialProcessSnapshot> {
+    if (!organizationId) throw new Error('ORGANIZATION_REQUIRED');
+    if (!isSupabaseAdminConfigured || !supabaseAdmin) throw new Error('SUPABASE_PERSISTENCE_UNAVAILABLE');
+    const detail = snapshot.detail_json || snapshot.calculation_detail;
+    if (!detail || !snapshot.parameters_snapshot) throw new Error('INDUSTRIAL_SNAPSHOT_DATA_REQUIRED');
+    const { data, error } = await supabaseAdmin.rpc('save_industrial_process_snapshot_atomic', {
+      p_organization_id: organizationId,
+      p_idempotency_key: requestId,
+      p_sku: snapshot.sku,
+      p_period: snapshot.period,
+      p_calculation: detail,
+      p_parameters_snapshot: snapshot.parameters_snapshot,
+      p_request_fingerprint: requestFingerprint,
+      p_actor_profile_id: snapshot.created_by || null,
+    });
+    if (error) throwPersistenceError(error, 'save_industrial_process_snapshot_atomic');
+    if (!data || typeof data !== 'object') throw new Error('INDUSTRIAL_SNAPSHOT_EMPTY_RESULT');
+    return {
+      ...data,
+      organization_id: organizationId,
+      sku: snapshot.sku,
+      period: snapshot.period,
+      calculation_detail: data.detail_json || detail,
+      detail_json: data.detail_json || detail,
+      parameters_snapshot: data.parameters_snapshot || snapshot.parameters_snapshot,
+    } as IndustrialProcessSnapshot;
+  },
+
+  /** Atomically CAS-update configuration, version Cost Sheet/components, snapshot and audit event. */
+  async applyIndustrialProcessCostAtomic(args: {
+    organizationId: string;
+    requestId: string;
+    requestFingerprint: string;
+    sku: string;
+    period: string;
+    calculation: unknown;
+    parametersSnapshot: PlantGeneralParameters;
+    input: IndustrialProductCostInput;
+    expectedConfigurationVersion: number;
+    trueUnitCostUsd: number;
+    minimumSustainablePriceUsd: number;
+    breakEvenUnits: number;
+    batchSize: number;
+    fxRate: number;
+    sheetName: string;
+    notes: string;
+    components: Array<{
+      category: string;
+      name: string;
+      component_type: 'FIXED' | 'VARIABLE';
+      basis: 'PER_UNIT' | 'PER_BATCH';
+      rate_usd: number;
+      quantity?: number;
+      unit_of_measure?: string;
+      effective_date?: string;
+      notes?: string;
+    }>;
+    actorProfileId: string;
+    persistSnapshot: boolean;
+  }): Promise<Record<string, any>> {
+    if (!args.organizationId) throw new Error('ORGANIZATION_REQUIRED');
+    if (!isSupabaseAdminConfigured || !supabaseAdmin) throw new Error('SUPABASE_PERSISTENCE_UNAVAILABLE');
+    const { data, error } = await supabaseAdmin.rpc('apply_industrial_cost_to_cost_intelligence_atomic', {
+      p_organization_id: args.organizationId,
+      p_idempotency_key: args.requestId,
+      p_sku: args.sku,
+      p_period: args.period,
+      p_calculation: args.calculation,
+      p_parameters_snapshot: args.parametersSnapshot,
+      p_input_json: args.input,
+      p_expected_configuration_version: args.expectedConfigurationVersion,
+      p_true_unit_cost_usd: args.trueUnitCostUsd,
+      p_minimum_sustainable_price_usd: args.minimumSustainablePriceUsd,
+      p_break_even_units: args.breakEvenUnits,
+      p_batch_size: args.batchSize,
+      p_fx_rate: args.fxRate,
+      p_sheet_name: args.sheetName,
+      p_notes: args.notes,
+      p_components: args.components,
+      p_actor_profile_id: args.actorProfileId,
+      p_request_fingerprint: args.requestFingerprint,
+      p_persist_snapshot: args.persistSnapshot,
+    });
+    if (error) throwPersistenceError(error, 'apply_industrial_cost_to_cost_intelligence_atomic');
+    if (!data || typeof data !== 'object' || data.applied !== true || !data.cost_sheet) {
+      throw new Error('INDUSTRIAL_COST_APPLY_EMPTY_RESULT');
+    }
+    const configuration = data.configuration;
+    const costSheet = {
+      ...data.cost_sheet,
+      components: Array.isArray(data.components) ? data.components : [],
+    };
+    return {
+      ...data,
+      configuration: configuration ? {
+        ...configuration,
+        input: configuration.input_json,
+      } : null,
+      cost_sheet: costSheet,
+    };
   },
 
   // ==============================================================
@@ -3039,9 +3119,34 @@ export const repository = {
       duration_hours?: number;
     }>,
     supervisorId?: string,
-    organizationId?: string
+    organizationId?: string,
+    context?: PackingMutationContext
   ): Promise<PackingSession> {
     const orgId = organizationId || store.organizations[0].id;
+    const useDatabase = persistentOrganizationStore(organizationId);
+    if (useDatabase && supabaseAdmin) {
+      const requestId = requirePackingRequestId(context);
+      if (!supervisorId) throw new Error('PACKING_SUPERVISOR_REQUIRED');
+      const normalizedAllocations = allocations.map((allocation) => ({
+        ...(allocation.segment_id ? { segment_id: allocation.segment_id } : {}),
+        salary_band_id: allocation.salary_band_id,
+        headcount: Number(allocation.headcount),
+        ...(allocation.duration_hours === undefined ? {} : { duration_hours: Number(allocation.duration_hours) }),
+      }));
+      const { data, error } = await supabaseAdmin.rpc('approve_packing_session_with_labor_atomic', {
+        p_organization_id: orgId,
+        p_session_id: sessionId,
+        p_idempotency_key: requestId,
+        p_allocations: normalizedAllocations,
+        p_supervisor_id: supervisorId,
+        p_line_name: context?.lineName ?? null,
+        p_token_id: context?.tokenId ?? null,
+      });
+      if (error) throwPersistenceError(error, 'approve_packing_session_with_labor_atomic');
+      if (!data) throw new Error('PACKING_SESSION_APPROVAL_EMPTY_RESULT');
+      return mapPackingSessionRow(data);
+    }
+
     const now = new Date().toISOString();
     let session = await this.getPackingSession(sessionId, orgId);
     if (!session) throw new Error(`Sesión ${sessionId} no encontrada.`);

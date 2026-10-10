@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireNiuIdentity, NiuIdentity } from './identity';
+import { NiuAuthError, requireNiuIdentity, NiuIdentity } from './identity';
 import { verifyPackingToken } from './packing-token';
 
 /**
@@ -22,7 +22,11 @@ export async function requirePersonnelAdminIdentity(req: NextRequest): Promise<N
     }
   }
 
-  return await requireNiuIdentity();
+  const identity = await requireNiuIdentity();
+  if (identity.role !== 'admin') {
+    throw new NiuAuthError('PERSONNEL_ADMIN_REQUIRED', 403);
+  }
+  return identity;
 }
 
 export function personnelAuthErrorResponse(error: unknown) {

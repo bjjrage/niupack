@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { repository } from '@/lib/db/repository';
-import { authErrorResponse, requireNiuIdentity } from '@/lib/auth/identity';
+import { authErrorResponse } from '@/lib/auth/identity';
+import { requirePersonnelAdminIdentity } from '@/lib/auth/personnel-guard';
 import { FxEngine } from '@/lib/fx/fx-provider';
 import { PlantGeneralParameters } from '@/types';
 
 export async function GET(req: NextRequest) {
   try {
-    const identity = await requireNiuIdentity();
+    const identity = await requirePersonnelAdminIdentity(req);
     const targetDate = new URL(req.url).searchParams.get('target_date') || undefined;
     if (targetDate) {
       const date = /^\d{4}-\d{2}-\d{2}$/.test(targetDate) ? new Date(`${targetDate}T00:00:00.000Z`) : null;
@@ -42,13 +43,18 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const identity = await requireNiuIdentity();
-    const body = (await req.json()) as Partial<PlantGeneralParameters>;
+    const identity = await requirePersonnelAdminIdentity(req);
+    const body = (await req.json()) as Partial<PlantGeneralParameters> & { expected_updated_at?: string };
+    const expectedUpdatedAt = body.expected_updated_at || body.updated_at;
+    if (typeof expectedUpdatedAt !== 'string' || !Number.isFinite(Date.parse(expectedUpdatedAt))) {
+      return NextResponse.json({ success: false, error: 'PARAMETER_VERSION_REQUIRED' }, { status: 400 });
+    }
 
     const updated = await repository.updatePlantParameters(
       body,
       identity.organizationId,
-      identity.profileId
+      identity.profileId,
+      expectedUpdatedAt
     );
 
     return NextResponse.json({
@@ -56,6 +62,13 @@ export async function POST(req: NextRequest) {
       parameters: updated,
     });
   } catch (error) {
+    if (error instanceof Error && error.message === 'PLANT_PARAMETERS_VERSION_CONFLICT') {
+      return NextResponse.json({
+        success: false,
+        error: error.message,
+        message: 'Los parámetros cambiaron en otra sesión. Recarga los datos antes de volver a guardar.',
+      }, { status: 409 });
+    }
     return authErrorResponse(error);
   }
 }
