@@ -55,17 +55,17 @@ export default function ProcessesPage() {
 
   // Plant parameters
   const [params, setParams] = useState<PlantGeneralParameters>({
-    electricity_rate_pyg_kwh: 450,
+    electricity_rate_pyg_kwh: 0,
     monthly_salary_hours: 200,
     labor_charges_percent: 16.5,
     operator_monthly_salary_pyg: 0,
     packer_monthly_salary_pyg: 0,
     gen1_machines_count: 4,
-    gen1_power_kw: 4.5,
+    gen1_power_kw: 6,
     gen1_operators_count: 0,
     gen1_operating_hours: 160,
     gen2_machines_count: 2,
-    gen2_power_kw: 6.0,
+    gen2_power_kw: 15,
     gen2_operators_count: 0,
     gen2_operating_hours: 160,
     quality_inspectors_count: 0,
@@ -671,7 +671,7 @@ export default function ProcessesPage() {
               <span className="text-[11px] text-slate-500 ml-2 whitespace-nowrap">Gs./kWh</span>
             </div>
             <span className="text-[11px] text-amber-300/80">
-              Tarifa plana por kWh: no incluye cargos de potencia/demanda de ANDE (referencia 50 kW). Estimación, no cálculo tarifario completo.
+              Tarifa por kWh ingresada por el usuario, sin validar contra el pliego de ANDE. No incluye cargos de potencia/demanda (referencia 50 kW): estimación, no un costo eléctrico definitivo.
             </span>
           </div>
 

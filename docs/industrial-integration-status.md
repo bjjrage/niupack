@@ -24,7 +24,11 @@ construida con el repo (solo difiere `cost_sheet_versions` por las 2 columnas nu
 4. Cronómetro perdía el primer toque; errores de negocio devolvían 500; operario recibía 500 en `/parameters`.
 5. **Materiales de empaque**: el valor USD 3,50/1.000 era un default inventado (migración, seed y UI). Ahora el default es 0
    y el cálculo oficial queda `CONFIGURACION_INCOMPLETA` hasta que se configure el costo real.
-6. **Electricidad**: la UI aclara que es tarifa plana por kWh y no incluye cargos de potencia/demanda de ANDE.
+6. **Electricidad**: la tarifa de Gs. 450/kWh era un default sin validar (migración, seed y UI). Ahora nace **sin configurar**
+   (0) y el cálculo oficial queda incompleto hasta que el usuario cargue una tarifa. La UI aclara que es tarifa plana por kWh,
+   sin validar contra el pliego de ANDE y sin cargos de potencia/demanda (referencia 50 kW): estimación, no costo definitivo.
+   Potencias de referencia corregidas: Gen 1 = 6 kW (era 4,5) y Gen 2 = 15 kW (era 6,0). Cantidad de máquinas y horas
+   (4 / 2 / 160 h) siguen como valores iniciales editables.
 7. La reversión (`supabase/rollback`) falló en su primera prueba por orden de borrado; corregido y probado.
 
 ## Estado de producción (leído el 2026-10-10, solo lectura)
@@ -38,11 +42,19 @@ construida con el repo (solo difiere `cost_sheet_versions` por las 2 columnas nu
 
 ## Respaldo y recuperación
 
-- Huellas de contenido y export de `cost_v1_configurations` en `../niupack-backups/prod-pre-industrial-2026-10-10.json` (fuera del repo).
-  Después de migrar, recalcular las huellas: deben ser idénticas.
-- Las migraciones son aditivas, así que la recuperación es `supabase/rollback/industrial_v2_rollback.sql` (probado).
-  Advertencia: borra las tablas industriales, incluidos datos cargados después del release.
-- Punto de restauración de Supabase (PITR/backups diarios): no verificable desde el conector; confirmar en el dashboard.
+- **El proyecto no tiene backups de plataforma** (`supabase backups list`: `backups: []`, PITR desactivado). Por eso se hizo
+  una copia lógica propia.
+- Copia completa de todos los datos de `public` (65 tablas, 505 filas) más el historial de migraciones, tomada en una sola
+  sentencia SQL (snapshot consistente), en `../niupack-backups/prod-full-2026-10-10/snapshot.json` (fuera del repo).
+  El recuento coincide con el independiente (505). **Restauración verificada**: `node scripts/qa-local/restore-check.mjs <dir>`
+  reconstruye el esquema en PostgreSQL local, restaura todo y compara contenido tabla por tabla: 63 idénticas, 505/505 filas,
+  0 diferencias (2 tablas vacías, `crm_import_jobs`/`crm_import_rows`, existen en producción pero no en las migraciones del repo:
+  deriva de esquema preexistente). Números comparados por valor (el conector serializa 3100.0000 como 3100). No incluye el
+  esquema `auth` (usuarios): ninguna migración lo toca.
+- Huellas por tabla previas a migrar en `../niupack-backups/prod-pre-industrial-2026-10-10.json`; recalcular después: idénticas.
+- Recuperación del esquema: `supabase/rollback/industrial_v2_rollback.sql` (probado). Válido solo mientras no existan datos
+  industriales reales: borra las tablas industriales. Si ya hay datos, revertir únicamente el código (Vercel rollback; el esquema
+  es aditivo y el código anterior funciona con él) y conservar las tablas.
 
 ## Vercel
 

@@ -74,7 +74,9 @@ try {
   check('RPCs executable by service_role only', fn.every((f) => f.s && !f.a && !f.u));
   check('unique-active-sheet index exists', (await q(`select 1 from pg_indexes where indexname='idx_cost_sheet_versions_one_active_per_org_sku'`)).length === 1);
   check('salary tables are admin-only under RLS', (await q(`select count(*)::int n from pg_policies where policyname like '%\\_admin\\_only' and tablename in ('plant_salary_bands','plant_salary_band_rates','plant_personnel','plant_personnel_assignments','plant_personnel_salary_assignments','packing_labor_allocations')`))[0].n === 6);
-  check('packaging materials default is 0 (not an assumed cost)', (await q(`select column_default d from information_schema.columns where table_name='plant_process_parameters' and column_name='packaging_materials_cost_per_thousand_usd'`))[0].d === '0');
+  const defaults = Object.fromEntries((await q(`select column_name c, column_default d from information_schema.columns where table_name='plant_process_parameters' and column_name in ('packaging_materials_cost_per_thousand_usd','electricity_rate_pyg_kwh','gen1_power_kw','gen2_power_kw')`)).map((r) => [r.c, r.d]));
+  check('no assumed costs: materials and electricity tariff default to 0 (unconfigured)', defaults.packaging_materials_cost_per_thousand_usd === '0' && defaults.electricity_rate_pyg_kwh === '0', JSON.stringify(defaults));
+  check('reference power defaults: Gen 1 = 6 kW, Gen 2 = 15 kW', defaults.gen1_power_kw === '6' && defaults.gen2_power_kw === '15');
 
   // --- rollback procedure ---
   await client.query(`create schema if not exists supabase_migrations;
