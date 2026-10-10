@@ -5,6 +5,7 @@ import { authErrorResponse } from '@/lib/auth/identity';
 import { requirePersonnelAdminIdentity } from '@/lib/auth/personnel-guard';
 import { FxEngine } from '@/lib/fx/fx-provider';
 import { IndustrialProcessCostEngine } from '@/lib/engines/industrial-process-cost-engine';
+import { personnelReferenceDate } from '@/lib/cost/period';
 import { IndustrialCostEngine } from '@/lib/engines/industrial-cost-engine';
 import { IndustrialSector, SectorPersonnelSummary } from '@/types';
 
@@ -170,7 +171,7 @@ async function handleCalculation({
     (s) => (!period || s.started_at.startsWith(period)) && (!sku || !s.sku || s.sku === sku)
   );
 
-  const targetDate = period ? `${period}-01` : undefined;
+  const targetDate = period ? personnelReferenceDate(period) : undefined;
   const sectorPersonnelSummaries = await repository.getSectorPersonnelSummary(
     identity.organizationId,
     targetDate,

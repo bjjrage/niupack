@@ -35,6 +35,7 @@ import {
   SectorPersonnelSummary,
 } from '@/types';
 import { IndustrialProcessCostEngine } from '@/lib/engines/industrial-process-cost-engine';
+import { personnelReferenceDate } from '@/lib/cost/period';
 
 const personnelHref = (process: IndustrialSector) => {
   const returnTo = encodeURIComponent(`/cost/processes#${process.toLowerCase()}`);
@@ -92,6 +93,7 @@ export default function ProcessesPage() {
 
   // Packing sessions
   const [sessions, setSessions] = useState<PackingSession[]>([]);
+  const pendingSessions = sessions.filter((session) => session.status === 'STOPPED' || session.status === 'RUNNING').length;
   const [salaryBands, setSalaryBands] = useState<PlantSalaryBand[]>([]);
   const [sessionSalaryBands, setSessionSalaryBands] = useState<PlantSalaryBand[]>([]);
   const [packingLaborAllocations, setPackingLaborAllocations] = useState<PackingLaborAllocation[]>([]);
@@ -129,7 +131,7 @@ export default function ProcessesPage() {
     setFeedback(null);
     try {
       // 1. Parameters & FX
-      const targetDate = /^\d{4}-\d{2}$/.test(selectedPeriod) ? `${selectedPeriod}-01` : undefined;
+      const targetDate = /^\d{4}-\d{2}$/.test(selectedPeriod) ? personnelReferenceDate(selectedPeriod) : undefined;
       const paramRes = await fetch(`/api/cost/processes/parameters${targetDate ? `?target_date=${targetDate}` : ''}`);
       const paramData = await paramRes.json();
       if (!paramRes.ok || !paramData.success) {
@@ -224,7 +226,7 @@ export default function ProcessesPage() {
   useEffect(() => {
     if (!/^\d{4}-\d{2}$/.test(selectedPeriod)) return;
     let current = true;
-    fetch(`/api/cost/processes/parameters?target_date=${selectedPeriod}-01`)
+    fetch(`/api/cost/processes/parameters?target_date=${personnelReferenceDate(selectedPeriod)}`)
       .then((response) => response.json())
       .then((data) => {
         if (current && data.success) setSectorPersonnelSummaries(data.sectorPersonnelSummaries || {});
@@ -1010,7 +1012,7 @@ export default function ProcessesPage() {
                 <span className="text-slate-300 font-medium block mb-1">Horas-persona aprobadas</span>
                 <div className="min-h-10 flex items-center justify-between rounded-md border border-slate-700 bg-[#0c0f14] px-3 font-mono text-sm text-white">
                   <span>{liveCalc.packing_labor.approved_person_hours.toLocaleString('es-PY')} h</span>
-                  <span className="text-[10px] text-slate-500 font-sans">({liveCalc.packing_labor.sessions_count} sesiones)</span>
+                  <span className="text-[10px] text-slate-500 font-sans">({liveCalc.packing_labor.sessions_count} {liveCalc.packing_labor.sessions_count === 1 ? 'sesión aprobada' : 'sesiones aprobadas'}{pendingSessions > 0 ? ` · ${pendingSessions} por aprobar` : ''})</span>
                 </div>
               </div>
             </div>
