@@ -3,3 +3,6 @@ node_modules/
 bin/
 qa.env
 postgrest.conf
+.data-db.log
+.rest.log
+qa-user.json

@@ -1,90 +1,32 @@
 import { NextResponse } from 'next/server';
-import { repository } from '@/lib/db/repository';
-import { SMTPService } from '@/lib/email/smtp-service';
-import { GmailClient } from '@/lib/gmail/gmail-client';
+import { z } from 'zod';
+import { domainErrorResponse, requireIdentityWithRole, WRITE_ROLES } from '@/lib/auth/role-guard';
+import { publicBaseUrl, smtpMailer } from '@/lib/rfq/mailer';
+import { prepareInvitations, prepareInvitationsSchema, sendInvitations } from '@/lib/rfq/service';
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+const bodySchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('prepare') }).merge(prepareInvitationsSchema),
+  z.object({ mode: z.literal('send'), dispatch_ids: z.array(z.string().uuid()).min(1).max(30), confirm: z.boolean() }),
+]);
+
+/**
+ * Invitaciones por proveedor en dos pasos:
+ *  - prepare: genera el enlace seguro y el correo; no envía nada.
+ *  - send: requiere confirm=true; solo marca ENVIADO lo que el servidor de correo aceptó de verdad.
+ */
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = await params;
-    const body = await req.json().catch(() => ({}));
-    const supplierIds: string[] = body.supplierIds || [];
-
-    const rfq = await repository.getRFQ(id);
-    if (!rfq) return NextResponse.json({ error: 'RFQ not found' }, { status: 404 });
-
-    const allSuppliers = await repository.getSuppliers();
-    const targetedSuppliers = allSuppliers.filter((s) => supplierIds.includes(s.id));
-
-    const isSmtpReady = await SMTPService.isConfigured();
-    const results: Array<{ supplierId: string; email?: string; status: string; messageId?: string }> = [];
-
-    for (const supplier of targetedSuppliers) {
-      if (supplier.email && isSmtpReady) {
-        const emailContent = `Estimado equipo comercial de ${supplier.name},
-
-Nos dirigimos a ustedes con el propósito de solicitar una cotización formal para el suministro de las siguientes especificaciones técnicas:
-
-- Código RFQ: ${rfq.code}
-- Término de Entrega Requerido: ${rfq.incoterm || 'FOB / CIF'}
-- Fecha límite para cotizar: ${rfq.validity_date || '15 días corridos'}
-
-Por favor detallar en su cotización:
-1. Precio unitario en USD según escalones de volumen.
-2. Pedido Mínimo (MOQ).
-3. Costo de clichés, matrices o herramental de impresión (si aplica).
-4. Plazo estimado de entrega y condiciones de pago.
-
-Quedamos a la espera de su propuesta formal.
-
-Atentamente,
-Departamento de Compras y Abastecimiento
-NIUPACK / Gardiner S.A.
-contacto@niupack.com.py`;
-
-        const sendResult = await SMTPService.sendMail({
-          to: supplier.email,
-          subject: `[RFQ ${rfq.code}] Solicitud de Cotización Formal - Suministro de Packaging`,
-          text: emailContent,
-        });
-
-        results.push({
-          supplierId: supplier.id,
-          email: supplier.email,
-          status: sendResult.success ? 'REAL_EMAIL_SENT' : 'FAILED',
-          messageId: sendResult.messageId,
-        });
-      } else {
-        results.push({
-          supplierId: supplier.id,
-          email: supplier.email,
-          status: 'SIMULATED_DISPATCH_NO_SMTP',
-        });
-      }
+    const identity = await requireIdentityWithRole(WRITE_ROLES);
+    const rfqId = z.string().uuid().parse((await context.params).id);
+    const body = bodySchema.parse(await request.json());
+    if (body.mode === 'prepare') {
+      const results = await prepareInvitations(identity.organizationId, identity.profileId, rfqId, body, publicBaseUrl(request));
+      return NextResponse.json({ invitations: results });
     }
-
-    // Update status to SENT
-    await repository.updateRFQ(id, {
-      status: 'SENT',
-    });
-
-    // Record audit event
-    await repository.logAuditEvent({
-      event_type: 'email_sent',
-      target_entity: 'rfqs',
-      entity_id: id,
-      metadata: {
-        action: 'DISPATCH_BROADCAST',
-        supplierCount: targetedSuppliers.length,
-        dispatches: results,
-      },
-    });
-
-    return NextResponse.json({
-      success: true,
-      status: 'SENT',
-      dispatches: results,
-    });
-  } catch {
-    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
+    const outcomes = await sendInvitations(identity.organizationId, identity.profileId, rfqId, body.dispatch_ids, body.confirm, smtpMailer);
+    const failed = outcomes.filter((o) => o.status === 'FAILED').length;
+    return NextResponse.json({ outcomes, sent: outcomes.filter((o) => o.status === 'SENT').length, failed }, { status: failed > 0 ? 207 : 200 });
+  } catch (error) {
+    return domainErrorResponse(error);
   }
 }

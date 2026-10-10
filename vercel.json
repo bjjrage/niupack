@@ -3,8 +3,9 @@
   "regions": ["gru1"],
   "git": {
     "deploymentEnabled": {
-      "integration/cost-intelligence-industrial-v2": false
+      "integration/cost-intelligence-industrial-v2": false,
+      "feature/licitaciones-rfq-intelligence": false
     }
   },
-  "ignoreCommand": "[ \"$VERCEL_GIT_COMMIT_REF\" = \"integration/cost-intelligence-industrial-v2\" ]"
+  "ignoreCommand": "case \"$VERCEL_GIT_COMMIT_REF\" in feature/*|integration/*) exit 0;; *) exit 1;; esac"
 }

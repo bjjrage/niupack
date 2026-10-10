@@ -1,50 +1,15 @@
 import { NextResponse } from 'next/server';
-import { GmailClient } from '@/lib/gmail/gmail-client';
-import { repository } from '@/lib/db/repository';
-import { OpenAIService } from '@/lib/openai/openai-service';
+import { domainErrorResponse, requireIdentityWithRole, WRITE_ROLES } from '@/lib/auth/role-guard';
 
+/** La lectura automática de Gmail no está implementada: se informa tal cual, sin respuestas simuladas. */
 export async function POST() {
   try {
-    const syncResult = await GmailClient.syncMailbox();
-    const org = await repository.getOrganization();
-
-    // Parse each reply and create quote records
-    const extractedQuotes = [];
-    for (const reply of syncResult.replies) {
-      const quote = await OpenAIService.extractQuote({
-        supplierId: reply.supplierId,
-        supplierName: reply.supplierName,
-        emailText: reply.rawText,
-      });
-
-      const saved = await repository.addQuote({
-        organization_id: org.id,
-        supplier_id: reply.supplierId,
-        supplier_name: reply.supplierName,
-        currency: quote.currency,
-        incoterm: quote.incoterm,
-        freight_included: quote.freight_included,
-        printing_included: quote.printing_included,
-        tooling_cost: quote.tooling_cost,
-        payment_terms: quote.payment_terms,
-        lead_time_days: quote.lead_time_days,
-        validity_date: quote.validity_date,
-        status: 'EXTRACTED',
-        confidence_score: quote.confidence_score,
-        operator_notes: quote.operator_notes,
-        raw_quote_text: quote.raw_quote_text,
-        items: quote.items,
-      });
-
-      extractedQuotes.push(saved);
-    }
-
+    await requireIdentityWithRole(WRITE_ROLES);
     return NextResponse.json({
-      success: true,
-      newRepliesCount: syncResult.newRepliesCount,
-      extractedQuotes,
-    });
-  } catch {
-    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
+      error: 'GMAIL_SYNC_NOT_AVAILABLE',
+      message: 'La sincronización automática de Gmail no está disponible. Registrá la oferta desde la RFQ (enlace del proveedor, PDF o carga manual).',
+    }, { status: 501 });
+  } catch (error) {
+    return domainErrorResponse(error);
   }
 }

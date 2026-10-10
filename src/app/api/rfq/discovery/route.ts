@@ -1,36 +1,19 @@
 import { NextResponse } from 'next/server';
-import { repository } from '@/lib/db/repository';
-import { OpenAIService } from '@/lib/openai/openai-service';
-import { MarketCode } from '@/types';
+import { domainErrorResponse, requireIdentityWithRole, WRITE_ROLES } from '@/lib/auth/role-guard';
 
-export async function POST(req: Request) {
+/**
+ * El descubrimiento automático de proveedores por web no está disponible.
+ * Antes devolvía una lista fija presentada como "búsqueda con OpenAI" y la guardaba en memoria; eso era un resultado inventado.
+ * Los proveedores se cargan y aprueban en el Maestro de proveedores, y las RFQ se dirigen a esos proveedores.
+ */
+export async function POST() {
   try {
-    const { country_code = 'BR', category = 'cups' } = await req.json();
-    const org = await repository.getOrganization();
-
-    const discovered = await OpenAIService.discoverSuppliers({
-      country_code: country_code as MarketCode,
-      product_category: category,
-    });
-
-    const savedSuppliers = [];
-    for (const s of discovered) {
-      const created = await repository.addSupplier({
-        organization_id: org.id,
-        name: s.name,
-        country_code: s.country_code,
-        city: s.city,
-        website: s.website,
-        email: s.email,
-        status: 'DISCOVERED',
-        discovery_source: 'OPENAI_SEARCH',
-        discovery_evidence: s.evidence,
-      });
-      savedSuppliers.push(created);
-    }
-
-    return NextResponse.json({ suppliers: savedSuppliers });
-  } catch {
-    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR' }, { status: 500 });
+    await requireIdentityWithRole(WRITE_ROLES);
+    return NextResponse.json({
+      error: 'DISCOVERY_NOT_AVAILABLE',
+      message: 'El descubrimiento automático de proveedores no está disponible. Cargá proveedores en el Maestro de proveedores y seleccionalos al crear la RFQ.',
+    }, { status: 501 });
+  } catch (error) {
+    return domainErrorResponse(error);
   }
 }
