@@ -24,6 +24,7 @@ import {
   readRawMaterial,
   type RawMaterialPatch,
 } from '@/lib/cost/raw-material';
+import { cmToMm, mmToCm, sheetMeasuresLookWrong } from '@/lib/cost/paper-sheet';
 import type {
   CostInputSource,
   CostSheetVersion,
@@ -1399,7 +1400,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                             <strong>Papel cuerpo:</strong>{' '}
                             {input.paper_formula.printing_method === 'OFFSET' ? (
                               <span>
-                                Pliego {input.paper_formula.sheet_width_mm}x{input.paper_formula.sheet_height_mm}mm, GSM total{' '}
+                                Pliego {mmToCm(input.paper_formula.sheet_width_mm || 0)}x{mmToCm(input.paper_formula.sheet_height_mm || 0)}cm, GSM total{' '}
                                 {(input.paper_formula.gsm || 0) + (input.paper_formula.coating_gsm || 0)} →{' '}
                                 {breakdown.price_per_sheet_usd ? `$${breakdown.price_per_sheet_usd.toFixed(4)}/pliego` : '—'} ÷{' '}
                                 {input.paper_formula.units_per_sheet} u/pliego ={' '}
@@ -1488,23 +1489,23 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                             <>
                               <NumberField
                                 label="Ancho pliego"
-                                suffix="mm"
-                                value={input.paper_formula.sheet_width_mm || 0}
+                                suffix="cm"
+                                value={mmToCm(input.paper_formula.sheet_width_mm || 0)}
                                 emptyWhenZero={emptyValues}
                                 onChange={(value) =>
                                   updateInput({
-                                    paper_formula: { ...input.paper_formula, sheet_width_mm: value },
+                                    paper_formula: { ...input.paper_formula, sheet_width_mm: cmToMm(value) },
                                   })
                                 }
                               />
                               <NumberField
                                 label="Largo pliego"
-                                suffix="mm"
-                                value={input.paper_formula.sheet_height_mm || 0}
+                                suffix="cm"
+                                value={mmToCm(input.paper_formula.sheet_height_mm || 0)}
                                 emptyWhenZero={emptyValues}
                                 onChange={(value) =>
                                   updateInput({
-                                    paper_formula: { ...input.paper_formula, sheet_height_mm: value },
+                                    paper_formula: { ...input.paper_formula, sheet_height_mm: cmToMm(value) },
                                   })
                                 }
                               />
@@ -1519,6 +1520,18 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                                   })
                                 }
                               />
+                              {(() => {
+                                const warning = sheetMeasuresLookWrong(
+                                  input.paper_formula.sheet_width_mm || 0,
+                                  input.paper_formula.sheet_height_mm || 0,
+                                  input.paper_formula.units_per_sheet || 0
+                                );
+                                return warning ? (
+                                  <p role="alert" className="sm:col-span-2 rounded-md border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-[11px] text-amber-200">
+                                    {warning}
+                                  </p>
+                                ) : null;
+                              })()}
                             </>
                           ) : (
                             <>
@@ -1687,10 +1700,8 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-[#10141b] p-3.5">
                         <div>
                           <div className="text-xs font-semibold text-slate-200">Usar cálculo de Procesos</div>
-                          <div className="text-[11px] text-slate-400">
-                            {input.operational_process_enabled
-                              ? 'Cálculo activo desde Procesos Industriales (Formado, Electricidad, Operadores y Calidad)'
-                              : `Cálculo manual ingresado en ${inputCurrency === 'PYG' ? 'Gs. / 1.000' : 'USD / 1.000'}`}
+                          <div className="truncate text-[11px] text-slate-400">
+                            {input.operational_process_enabled ? 'Desde Procesos Industriales' : 'Valor manual'}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1722,6 +1733,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                         </div>
                       </div>
 
+                      <div className="min-h-[9.5rem]">
                       {!input.operational_process_enabled ? (
                         <NumberField
                           label="Costo operativo manual"
@@ -1748,13 +1760,12 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                         />
                       ) : (
                         <div className="rounded-lg border border-brand-900/40 bg-brand-950/20 p-4 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-brand-300">Formado + Operadores + Energía + Calidad</span>
-                            <span className="rounded bg-brand-500/20 border border-brand-500/40 px-2 py-0.5 text-[10px] font-bold text-brand-300">PROCESOS</span>
-                          </div>
                           <div className="grid gap-2 sm:grid-cols-2 text-xs">
-                            <div className="rounded bg-black/30 p-2.5">
-                              <div className="text-[11px] text-slate-400">Costo operativo calculado</div>
+                            <div className="rounded bg-[#0c0f14] p-2.5">
+                              <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400" title="Formado + Operadores + Energía + Calidad">
+                                <span>Costo operativo calculado</span>
+                                <span className="shrink-0 rounded border border-brand-500/40 bg-brand-500/20 px-1.5 py-0.5 text-[9px] font-bold text-brand-300">PROCESOS</span>
+                              </div>
                               <div className="mt-1 font-mono text-base font-bold text-white">
                                 {summaryCurrency === 'PYG' && fxRate !== null ? (
                                   <span>Gs. {Math.round((input.process_operational_cost_per_thousand_usd || 0) * fxRate).toLocaleString('es-PY')} <span className="text-xs font-normal text-slate-400">/1.000</span></span>
@@ -1775,7 +1786,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                                 </div>
                               )}
                             </div>
-                            <div className="rounded bg-black/30 p-2.5">
+                            <div className="rounded bg-[#0c0f14] p-2.5">
                               <div className="text-[11px] text-slate-400">Origen &amp; Prorrateo</div>
                               <div className="mt-1 text-xs text-slate-300 font-mono">
                                 {input.process_calculation_detail?.status === 'COMPLETE'
@@ -1792,6 +1803,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                           </div>
                         </div>
                       )}
+                      </div>
                     </div>
                   </RubricCard>
 
@@ -1879,10 +1891,8 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-[#10141b] p-3.5">
                         <div>
                           <div className="text-xs font-semibold text-slate-200">Usar cálculo de Procesos</div>
-                          <div className="text-[11px] text-slate-400">
-                            {input.packaging_process_enabled
-                              ? 'Cálculo activo desde Procesos Industriales (Mano de obra aprobada + Materiales)'
-                              : `Cálculo manual ingresado en ${inputCurrency === 'PYG' ? 'Gs. / 1.000' : 'USD / 1.000'}`}
+                          <div className="truncate text-[11px] text-slate-400">
+                            {input.packaging_process_enabled ? 'Desde Procesos Industriales' : 'Valor manual'}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1914,6 +1924,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                         </div>
                       </div>
 
+                      <div className="min-h-[9.5rem]">
                       {!input.packaging_process_enabled ? (
                         <NumberField
                           label="Costo de embalaje manual"
@@ -1940,13 +1951,12 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                         />
                       ) : (
                         <div className="rounded-lg border border-brand-900/40 bg-brand-950/20 p-4 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-brand-300">MO Empaque (cronómetro aprobado) + Materiales</span>
-                            <span className="rounded bg-brand-500/20 border border-brand-500/40 px-2 py-0.5 text-[10px] font-bold text-brand-300">PROCESOS</span>
-                          </div>
                           <div className="grid gap-2 sm:grid-cols-2 text-xs">
-                            <div className="rounded bg-black/30 p-2.5">
-                              <div className="text-[11px] text-slate-400">Costo embalaje calculado</div>
+                            <div className="rounded bg-[#0c0f14] p-2.5">
+                              <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400" title="MO Empaque (cronómetro aprobado) + Materiales">
+                                <span>Costo embalaje calculado</span>
+                                <span className="shrink-0 rounded border border-brand-500/40 bg-brand-500/20 px-1.5 py-0.5 text-[9px] font-bold text-brand-300">PROCESOS</span>
+                              </div>
                               <div className="mt-1 font-mono text-base font-bold text-white">
                                 {summaryCurrency === 'PYG' && fxRate !== null ? (
                                   <span>Gs. {Math.round((input.process_packaging_cost_per_thousand_usd || 0) * fxRate).toLocaleString('es-PY')} <span className="text-xs font-normal text-slate-400">/1.000</span></span>
@@ -1967,7 +1977,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                                 </div>
                               )}
                             </div>
-                            <div className="rounded bg-black/30 p-2.5">
+                            <div className="rounded bg-[#0c0f14] p-2.5">
                               <div className="text-[11px] text-slate-400">Origen &amp; Prorrateo</div>
                               <div className="mt-1 text-xs text-slate-300 font-mono">
                                 {input.process_calculation_detail?.status === 'COMPLETE'
@@ -1984,6 +1994,7 @@ export function IndustrialCostCalculator({ initialSku, marketBenchmarkUSD, onCos
                           </div>
                         </div>
                       )}
+                      </div>
                     </div>
                   </RubricCard>
                 </div>
