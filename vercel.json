@@ -5,7 +5,8 @@
     "deploymentEnabled": {
       "integration/cost-intelligence-industrial-v2": false,
       "feature/licitaciones-rfq-intelligence": false,
-      "feature/licitaciones-radar": false
+      "feature/licitaciones-radar": false,
+      "feature/licitaciones-escaner-diario": false
     }
   },
   "crons": [
