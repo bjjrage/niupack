@@ -7,7 +7,8 @@
       "feature/licitaciones-rfq-intelligence": false,
       "feature/licitaciones-radar": false,
       "feature/licitaciones-escaner-diario": false,
-      "feature/dashboard-alertas-licitaciones": false
+      "feature/dashboard-alertas-licitaciones": false,
+      "feature/demo-sitio-flexibles": false
     }
   },
   "crons": [

@@ -2,6 +2,10 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // El demo del sitio de flexibles vive en /private (no en /public): se incluye en el paquete de la ruta que lo sirve.
+  outputFileTracingIncludes: {
+    '/demo/flexibles/[[...path]]': ['./private/efp/**/*'],
+  },
   // Ensure server actions and images work smoothly
   experimental: {
     serverActions: {
