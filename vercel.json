@@ -5,8 +5,12 @@
     "deploymentEnabled": {
       "integration/cost-intelligence-industrial-v2": false,
       "feature/licitaciones-rfq-intelligence": false,
-      "feature/licitaciones-radar": false
+      "feature/licitaciones-radar": false,
+      "feature/licitaciones-escaner-diario": false
     }
   },
+  "crons": [
+    { "path": "/api/licitaciones/cron", "schedule": "0 9 * * *" }
+  ],
   "ignoreCommand": "case \"$VERCEL_GIT_COMMIT_REF\" in feature/*|integration/*) exit 0;; *) exit 1;; esac"
 }

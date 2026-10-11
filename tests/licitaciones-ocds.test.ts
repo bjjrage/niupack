@@ -124,3 +124,39 @@ describe('cliente DNCP sin red', () => {
     await expect(fetchDncpTender('???', notFound as never)).rejects.toMatchObject({ code: 'DNCP_INVALID_IDENTIFIER' });
   });
 });
+
+describe('fase y adjudicaciones por producto', () => {
+  const now = new Date('2026-10-10T12:00:00Z');
+  it('deriva la etapa del estado que publica DNCP, sin inventar', async () => {
+    const { derivePhase } = await import('@/lib/licitaciones/ocds');
+    expect(derivePhase('En Convocatoria (Abierta)', false, '2026-10-19T08:00:00Z', now)).toBe('ABIERTA');
+    expect(derivePhase('En Convocatoria (Abierta)', false, '2026-10-01T08:00:00Z', now)).toBe('EN_EVALUACION');
+    expect(derivePhase('Adjudicada', true, undefined, now)).toBe('ADJUDICADA');
+    expect(derivePhase('Cancelada', false, undefined, now)).toBe('CERRADA');
+    expect(derivePhase('Desierta', false, undefined, now)).toBe('CERRADA');
+    expect(derivePhase('Algo raro', false, undefined, now)).toBe('DESCONOCIDA');
+    expect(derivePhase(undefined, false, undefined, now)).toBe('DESCONOCIDA');
+  });
+
+  it('extrae el ganador, la fecha, el monto y los productos adjudicados de una release real', () => {
+    const tender = parseOcdsRelease(load('ocds-03ad3f-341163-1'));
+    expect(tender.phase).toBe('ADJUDICADA');
+    expect(tender.awards).toHaveLength(1);
+    expect(tender.awards[0]).toMatchObject({ supplier_name: 'SCAVONE HERMANOS SA', ruc: '80001916-4', amount: 675000000, currency: 'PYG' });
+    expect(tender.awards[0].awarded_at).toMatch(/^2018-03-16/);
+    expect(tender.awards[0].items[0]).toMatchObject({ line_no: 1, quantity: 125000, unit_amount: 5400 });
+    expect(tender.awards[0].items[0].description).toMatch(/morfina/i);
+    // El producto adjudicado queda asociado a su proveedor, ítem por ítem.
+    expect(tender.parties.some((p) => p.role === 'ADJUDICATARIO' && p.name === 'SCAVONE HERMANOS SA' && p.item_line_no === 1)).toBe(true);
+  });
+
+  it('una licitación sin adjudicación no tiene ganadores', () => {
+    const release = JSON.parse(JSON.stringify(load('ocds-03ad3f-341163-1')));
+    release.awards = [];
+    release.tender.statusDetails = 'En Convocatoria (Abierta)';
+    release.tender.tenderPeriod = { startDate: '2026-10-01T08:00:00-04:00', endDate: '2099-01-01T08:00:00-04:00' };
+    const tender = parseOcdsRelease(release, { now: new Date('2026-10-10T00:00:00Z') });
+    expect(tender.phase).toBe('ABIERTA');
+    expect(tender.awards).toHaveLength(0);
+  });
+});
