@@ -22,7 +22,7 @@ export async function getTenderAlerts(organizationId: string, now: Date = new Da
   const client = db();
   const nowIso = now.toISOString();
   const count = async (build: (q: any) => any) => {
-    const { count: n, error } = await build(client.from('licitaciones_tenders').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId).eq('is_test_data', false));
+    const { count: n, error } = await build(client.from('licitaciones_tenders').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId).eq('is_test_data', false).is('dismissed_at', null));
     if (error) rethrow(error, 'licitaciones_tenders');
     return n ?? 0;
   };

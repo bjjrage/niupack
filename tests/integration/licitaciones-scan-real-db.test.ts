@@ -196,6 +196,34 @@ describe.skipIf(!enabled)('escáner diario de licitaciones sobre PostgreSQL real
     expect((await scanner.listTenderBoard(orgA, 'todas', 'zzzz-no-existe')).length).toBe(0);
   });
 
+  it('descartar una licitación la saca del tablero y de las alertas, el escaneo no la revive, y se puede restaurar', async () => {
+    const all = await scanner.listTenderBoard(orgA, 'todas');
+    const target = all.find((t: any) => t.external_id === 'ocds-03ad3f-341163-1')! as any;
+    expect(await scanner.setTendersDismissed(orgA, [target.id], true)).toBe(1);
+    expect((await scanner.listTenderBoard(orgA, 'todas')).map((t: any) => t.id)).not.toContain(target.id);
+    expect((await scanner.listTenderBoard(orgA, 'todas', { dismissed: true })).map((t: any) => t.id)).toEqual([target.id]);
+    // Otra organización no puede descartar la de esta.
+    expect(await scanner.setTendersDismissed(orgB, [target.id], true)).toBe(0);
+    // Un escaneo posterior actualiza los datos pero no la devuelve al tablero.
+    await scanner.scanOrganization(orgA, 'MANUAL', { fetchImpl: dncp.fetchImpl, sleep, minIntervalMs: 0 });
+    expect((await scanner.listTenderBoard(orgA, 'todas')).map((t: any) => t.id)).not.toContain(target.id);
+    const entities = await scanner.listTenderEntities(orgA);
+    expect(entities.length).toBeGreaterThan(0);
+    expect(await scanner.setTendersDismissed(orgA, [target.id], false)).toBe(1);
+    expect((await scanner.listTenderBoard(orgA, 'todas')).map((t: any) => t.id)).toContain(target.id);
+  });
+
+  it('filtra por entidad convocante y por fecha de publicación', async () => {
+    const all = (await scanner.listTenderBoard(orgA, 'todas')) as any[];
+    const withEntity = all.find((t) => t.convening_entity)!;
+    const byEntity = (await scanner.listTenderBoard(orgA, 'todas', { entity: withEntity.convening_entity })) as any[];
+    expect(byEntity.length).toBeGreaterThan(0);
+    expect(byEntity.every((t) => t.convening_entity === withEntity.convening_entity)).toBe(true);
+    expect(await scanner.listTenderBoard(orgA, 'todas', { entity: 'Entidad inexistente' })).toHaveLength(0);
+    expect(await scanner.listTenderBoard(orgA, 'todas', { from: '2999-01-01' })).toHaveLength(0);
+    expect((await scanner.listTenderBoard(orgA, 'todas', { from: '2000-01-01', to: '2999-12-31' })).length).toBe(all.filter((t) => t.published_at).length);
+  });
+
   describe('ruta del cron', () => {
     it('falla cerrado sin secreto, rechaza uno incorrecto y con el correcto escanea solo lo activado', async () => {
       const cron = await import('@/app/api/licitaciones/cron/route');
