@@ -21,10 +21,23 @@ import { VisibilityEngine } from '@/lib/engines/visibility-engine';
 import { MarketBenchmarkEngine } from '@/lib/engines/market-benchmark';
 import { TrueCostEngine } from '@/lib/engines/true-cost-engine';
 import { ScenarioEngine } from '@/lib/engines/scenario-engine';
+import { requireNiuIdentity } from '@/lib/auth/identity';
+import { describeAlerts, getTenderAlerts } from '@/lib/licitaciones/alerts';
 
 export const revalidate = 0;
 
+/** Tarjeta de alertas de Licitaciones; si no se puede consultar, lo dice en lugar de mostrar un número inventado. */
+async function licitacionesAlertCard(): Promise<{ value: string; subtitle: string; alert: boolean }> {
+  try {
+    const identity = await requireNiuIdentity();
+    return describeAlerts(await getTenderAlerts(identity.organizationId));
+  } catch {
+    return { value: 'No disponible', subtitle: 'No se pudo consultar las licitaciones', alert: false };
+  }
+}
+
 export default async function DashboardPage() {
+  const licitaciones = await licitacionesAlertCard();
   const [
     markets,
     skus,
@@ -148,13 +161,16 @@ export default async function DashboardPage() {
           value={batteries.filter((b) => b.is_frozen).length > 0 ? "V1 (Congelada)" : "En Borrador"}
           subtitle={`${queries.length} consultas en 15 categorías`}
         />
-        <KPICard
-          title="Tasa de Respuesta RFQ"
-          value="50.0%"
-          unit="de cotizaciones"
-          delta={{ value: "2 / 4", isPositive: true, label: "proveedores respondieron" }}
-          subtitle="Cotizaciones válidas extraídas"
-        />
+        <Link href="/licitaciones" className="block" aria-label="Ver alertas de licitaciones">
+          <KPICard
+            title="Alertas de Licitaciones"
+            value={licitaciones.value}
+            unit={licitaciones.value === '—' || licitaciones.value === 'No disponible' ? undefined : 'alertas'}
+            alert={licitaciones.alert}
+            subtitle={licitaciones.subtitle}
+            className="h-full"
+          />
+        </Link>
         <KPICard
           title="Costo Unitario Real (12 oz)"
           value={`$${costBreakdown.trueUnitCostUSD.toFixed(4)}`}
