@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { WORK_ORDER_STATUS, formatAmount, formatQuantity } from '@/lib/sales-quotes/domain';
 import { api, formatDate, formatDateTime, ghostButtonClass, postJson } from '@/components/print-rfq/format';
 
-type Row = any; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Row = any;
 const NEXT: Record<string, Array<[string, string]>> = { PENDIENTE: [['EN_CURSO', 'Iniciar'], ['CANCELADA', 'Cancelar']], EN_CURSO: [['COMPLETADA', 'Completar'], ['CANCELADA', 'Cancelar']] };
 
 export default function OrdenTrabajoPage() {

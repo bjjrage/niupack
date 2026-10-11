@@ -11,7 +11,8 @@
       "feature/demo-sitio-flexibles": false,
       "feature/rfq-imprentas": false,
       "feature/licitaciones-filtros-ocultar": false,
-      "feature/presupuestos-clientes": false
+      "feature/presupuestos-clientes": false,
+      "fix/quitar-eslint-disable": false
     }
   },
   "crons": [

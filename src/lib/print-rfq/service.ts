@@ -160,7 +160,7 @@ export async function createRfq(org: string, actor: string, input: unknown) {
 }
 
 // Filas de PostgREST sin esquema generado: se tratan como dinámicas y se validan en cada uso.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type Row = any;
 
 /** Todo lo que necesita la pantalla de una solicitud, con cada consulta acotada a la organización. */

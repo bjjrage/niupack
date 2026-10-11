@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { QuoteDocument, type DocLine, type DocQuote } from '@/components/sales-quotes/QuoteDocument';
 import { api } from '@/components/print-rfq/format';
 
-type Row = any; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Row = any;
 
 /** Vista limpia del presupuesto (A4, sin menús) para imprimir o guardar como PDF desde el navegador. Requiere sesión. */
 export default function PresupuestoImpresoPage() {
