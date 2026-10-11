@@ -35,16 +35,16 @@ export function RfqList() {
             {Object.entries(STATUS).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
           </select>
         </div>
-        <Link href="/imprentas/nueva" className={buttonClass}><Plus className="h-3.5 w-3.5" />Nueva solicitud</Link>
+        <Link href="/compras/nueva" className={buttonClass}><Plus className="h-3.5 w-3.5" />Nueva solicitud</Link>
       </div>
       {error && <p role="alert" className="rounded border border-red-800/60 bg-red-950/40 p-3 text-xs text-red-300">{error}</p>}
       {loading ? <p className="text-xs text-slate-400">Cargando…</p> : rfqs.length === 0 && !error ? (
-        <p className="py-10 text-center text-xs text-slate-400">{q || status ? 'Ninguna solicitud coincide con los filtros.' : 'Todavía no hay solicitudes a imprentas. Creá la primera con su SKU y su arte.'}</p>
+        <p className="py-10 text-center text-xs text-slate-400">{q || status ? 'Ninguna solicitud coincide con los filtros.' : 'Todavía no hay solicitudes a proveedores. Creá la primera.'}</p>
       ) : (
         <ul className="space-y-2" data-testid="rfq-list">
           {rfqs.map((r) => (
             <li key={r.id}>
-              <Link href={`/imprentas/${r.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 bg-[#141820] p-3 hover:border-slate-600">
+              <Link href={`/compras/${r.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 bg-[#141820] p-3 hover:border-slate-600">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-white">{r.code} · {r.title}</p>
                   <p className="text-[11px] text-slate-400">{PURPOSE_LABEL[r.purpose]} · {r.items} producto(s) · {r.responded} de {r.invited} imprenta(s) respondieron · creada {formatDate(r.created_at)} · vence {formatDate(r.expires_at)}</p>

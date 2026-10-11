@@ -75,8 +75,8 @@ export function AllocationPanel({ rfqId, items, offers, allocations, isAdmin, on
           const item = items.find((i) => i.id === o.rfq_item_id);
           return (
             <label key={o.id} className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
-              <span className="min-w-72 flex-1">{item?.sku} · {item?.description} — {o.provider_name} ({o.currency} {o.unit_price ?? 'sin precio'})</span>
-              <input type="number" min="0" step="0.0001" aria-label={`Asignar ${o.provider_name} ${item?.sku}`} value={quantities[o.id] ?? ''} disabled={!!latest?.confirmed_at}
+              <span className="min-w-72 flex-1">{item?.sku ? `${item.sku} · ` : ''}{item?.description} — {o.provider_name} ({o.currency} {o.unit_price ?? 'sin precio'})</span>
+              <input type="number" min="0" step="0.0001" aria-label={`Asignar ${o.provider_name} ${item?.sku ?? item?.description}`} value={quantities[o.id] ?? ''} disabled={!!latest?.confirmed_at}
                 onChange={(e) => { setQuantities((q) => ({ ...q, [o.id]: e.target.value })); resetDecisions(); }} className={`${inputClass} w-32`} />
               <span className="text-[11px] text-slate-500">máx. {o.available_quantity.toLocaleString('es-PY')}</span>
             </label>
@@ -122,7 +122,7 @@ export function AllocationPanel({ rfqId, items, offers, allocations, isAdmin, on
               <table className="mt-2 w-full text-[11px] text-slate-300">
                 <thead><tr className="text-left text-slate-500"><th>SKU / producto</th><th>Cantidad</th><th>Precio</th><th>Impuesto</th><th>Total</th><th>Entrega</th></tr></thead>
                 <tbody>{o.items.map((i) => (
-                  <tr key={i.quote_version_item_id} className="border-t border-slate-800"><td>{i.sku} · {i.product}</td><td>{i.quantity.toLocaleString('es-PY')} {i.unit}</td><td>{money(i.unit_price, o.currency)}</td><td>{i.tax_rate}%</td><td>{money(i.total, o.currency)}</td><td>{i.lead_time_days} d · {i.expected_delivery_date}</td></tr>
+                  <tr key={i.quote_version_item_id} className="border-t border-slate-800"><td>{i.sku ? `${i.sku} · ` : ''}{i.product}</td><td>{i.quantity.toLocaleString('es-PY')} {i.unit}</td><td>{money(i.unit_price, o.currency)}</td><td>{i.tax_rate}%</td><td>{money(i.total, o.currency)}</td><td>{i.lead_time_days} d · {i.expected_delivery_date}</td></tr>
                 ))}</tbody>
               </table>
               <p className="mt-2 text-[11px] text-slate-400">Flete {money(o.freight, o.currency)} · Impuesto {money(o.tax_total, o.currency)} · <strong className="text-white">Total {money(o.total, o.currency)}</strong> · Pago: {o.payment_terms}</p>
@@ -133,7 +133,7 @@ export function AllocationPanel({ rfqId, items, offers, allocations, isAdmin, on
         </div>
       )}
 
-      {latest?.confirmed_at && <p className="text-xs text-emerald-400">Órdenes emitidas el {formatDateTime(latest.confirmed_at)}. <Link href="/imprentas/ordenes" className="underline">Ver órdenes de compra</Link></p>}
+      {latest?.confirmed_at && <p className="text-xs text-emerald-400">Órdenes emitidas el {formatDateTime(latest.confirmed_at)}. <Link href="/compras/ordenes" className="underline">Ver órdenes de compra</Link></p>}
       {message && <p role={message.ok ? 'status' : 'alert'} className={`text-xs ${message.ok ? 'text-emerald-400' : 'text-red-400'}`}>{message.text}</p>}
     </section>
   );

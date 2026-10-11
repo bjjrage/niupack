@@ -22,7 +22,7 @@ export default function OrdenImprentaPage() {
     <div className="mx-auto max-w-4xl space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 pb-4">
         <div>
-          <Link href="/imprentas/ordenes" className="text-[11px] text-slate-400 hover:text-white print:hidden">← Órdenes de compra</Link>
+          <Link href="/compras/ordenes" className="text-[11px] text-slate-400 hover:text-white print:hidden">← Órdenes de compra</Link>
           <h1 className="mt-1 text-xl font-semibold text-white">Orden de compra {order.code}</h1>
           <p className="text-xs text-slate-400">Emitida {formatDateTime(order.created_at)} · Solicitud {order.print_rfqs?.code} · {order.print_rfqs?.title}</p>
         </div>

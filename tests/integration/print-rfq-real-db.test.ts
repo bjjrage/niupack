@@ -30,7 +30,7 @@ describe.skipIf(!enabled)('RFQ a imprentas sobre PostgreSQL real', () => {
   /** Solicitud lista para invitar: dos ítems, cada uno con su arte. */
   async function openRfq(purpose: 'PROCUREMENT' | 'COST_DISCOVERY' = 'PROCUREMENT') {
     const created = await svc.createRfq(orgA, analyst, {
-      header: { purpose, title: 'Vaso 12oz — impresión 4 colores', specifications: 'Imprimir según arte adjunto' },
+      header: { purpose, requires_art: true, title: 'Vaso 12oz — impresión 4 colores', specifications: 'Imprimir según arte adjunto' },
       items: [
         { sku: 'CUP-12OZ-DW', description: 'Vaso 12oz doble pared, 4 colores', quantity: 1000, unit: 'un', product_attribute_id: attrId, print_spec: { process: 'Flexografía', colors: '4 + barniz' } },
         { sku: 'LID-12OZ', description: 'Tapa 12oz 1 color', quantity: 500, unit: 'un', print_spec: { process: 'Offset' } },
@@ -68,8 +68,8 @@ describe.skipIf(!enabled)('RFQ a imprentas sobre PostgreSQL real', () => {
     const attr = await admin.from('product_attributes').insert({ product_id: product.data.id, sku: 'CUP-12OZ-DW', material: 'paper', coating: 'PE', wall_type: 'double' }).select('id').single();
     if (attr.error) throw attr.error;
     attrId = attr.data.id;
-    provA = (await svc.saveProvider(orgA, { name: 'Gráfica Asunción', processes: ['Flexografía', 'Offset'], city: 'Asunción' })).id;
-    provB = (await svc.saveProvider(orgA, { name: 'Impresos del Este', processes: ['Flexografía'] })).id;
+    provA = (await svc.saveProvider(orgA, { name: 'Gráfica Asunción', provider_type: 'IMPRENTA', processes: ['Flexografía', 'Offset'], city: 'Asunción' })).id;
+    provB = (await svc.saveProvider(orgA, { name: 'Impresos del Este', provider_type: 'IMPRENTA', processes: ['Flexografía'] })).id;
     provC = (await svc.saveProvider(orgA, { name: 'Imprenta Inactiva', active: false })).id;
   });
 
@@ -98,7 +98,7 @@ describe.skipIf(!enabled)('RFQ a imprentas sobre PostgreSQL real', () => {
   });
 
   it('el arte es obligatorio antes de invitar; queda registrado con huella, sin duplicados, y solo con formatos permitidos', async () => {
-    const created = await svc.createRfq(orgA, analyst, { header: { purpose: 'PROCUREMENT', title: 'Sin arte' }, items: [{ sku: 'ET-1', description: 'Etiqueta', quantity: 100, unit: 'un' }] });
+    const created = await svc.createRfq(orgA, analyst, { header: { purpose: 'PROCUREMENT', requires_art: true, title: 'Sin arte' }, items: [{ sku: 'ET-1', description: 'Etiqueta', quantity: 100, unit: 'un' }] });
     await expect(svc.inviteProviders(orgA, analyst, created.id, [provA])).rejects.toMatchObject({ code: 'PRINT_ART_REQUIRED', status: 409 });
     const [item] = (await svc.loadRfqWorkspace(orgA, created.id)).items;
     const art = png(7);
@@ -124,6 +124,22 @@ describe.skipIf(!enabled)('RFQ a imprentas sobre PostgreSQL real', () => {
     expect(error?.message).toMatch(/PRINT_IMMUTABLE_RECORD/);
     // Ahora sí se puede invitar
     expect((await svc.inviteProviders(orgA, analyst, created.id, [provA])).invited).toBe(1);
+  });
+
+  it('tipo de proveedor y solicitud sin arte ni SKU: se invita directo y se cotiza igual', async () => {
+    const supplier = await svc.saveProvider(orgA, { name: 'Distribuidora de Resinas', provider_type: 'MATERIA_PRIMA' });
+    expect(supplier.provider_type).toBe('MATERIA_PRIMA');
+    expect((await svc.listProviders(orgA)).find((p: any) => p.id === provA)!.provider_type).toBe('IMPRENTA');
+    const created = await svc.createRfq(orgA, analyst, { header: { purpose: 'PROCUREMENT', title: 'Resina PE', requires_art: false }, items: [{ description: 'Resina PE 25 kg', quantity: 200, unit: 'bolsa' }] });
+    const ws = await svc.loadRfqWorkspace(orgA, created.id);
+    expect(ws.rfq.requires_art).toBe(false);
+    expect(ws.items[0].sku).toBeNull();
+    expect((await svc.inviteProviders(orgA, analyst, created.id, [supplier.id])).invited).toBe(1);
+    const [inv] = await invitationsOf(created.id);
+    const view = await svc.getPortalView(inv.token);
+    expect(view.items[0]).toMatchObject({ sku: null, description: 'Resina PE 25 kg', art: [] });
+    const done = await respond(created.id, inv.token, inv.id, ws.items, [4500]);
+    expect(done.version_number).toBe(1);
   });
 
   it('invita con enlace propio por imprenta; rechaza inactivas; el portal muestra solo lo de esa imprenta', async () => {

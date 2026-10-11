@@ -7,6 +7,8 @@ import { z } from 'zod';
 export const purposeSchema = z.enum(['COST_DISCOVERY', 'PROCUREMENT']);
 export type PrintRfqPurpose = z.infer<typeof purposeSchema>;
 export const CURRENCIES = ['PYG', 'USD', 'EUR', 'BRL', 'ARS'] as const;
+export const PROVIDER_TYPES = { IMPRENTA: 'Imprenta', MATERIA_PRIMA: 'Materia prima', SERVICIO: 'Servicio', OTRO: 'Otro' } as const;
+export type ProviderType = keyof typeof PROVIDER_TYPES;
 export const PRINT_PROCESSES = ['Flexografía', 'Offset', 'Huecograbado', 'Digital', 'Serigrafía', 'Hot stamping', 'Otro'] as const;
 
 const positive = z.number().finite().positive().max(9_999_999_999);
@@ -23,7 +25,7 @@ export const printSpecSchema = z.object({
 export type PrintSpec = z.infer<typeof printSpecSchema>;
 
 export const rfqItemSchema = z.object({
-  sku: z.string().trim().min(1).max(100),
+  sku: z.string().trim().max(100).optional().or(z.literal('')),
   description: z.string().trim().min(1).max(1000),
   quantity: positive,
   unit: z.string().trim().min(1).max(50),
@@ -33,6 +35,8 @@ export const rfqItemSchema = z.object({
 export const rfqHeaderSchema = z.object({
   purpose: purposeSchema,
   title: z.string().trim().min(1).max(200),
+  /** Pedir el arte de impresión de cada ítem antes de invitar proveedores. */
+  requires_art: z.boolean().default(false),
   specifications: z.string().trim().max(5000).optional(),
   required_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   expires_at: z.string().datetime({ offset: true }).optional(),
@@ -41,6 +45,7 @@ export const createRfqSchema = z.object({ header: rfqHeaderSchema, items: z.arra
 
 export const providerSchema = z.object({
   name: z.string().trim().min(1).max(200),
+  provider_type: z.enum(['IMPRENTA', 'MATERIA_PRIMA', 'SERVICIO', 'OTRO']).default('OTRO'),
   ruc: z.string().trim().max(30).optional().or(z.literal('')),
   contact_name: z.string().trim().max(200).optional().or(z.literal('')),
   email: z.string().trim().email().max(200).optional().or(z.literal('')),
@@ -80,7 +85,7 @@ export type Offer = z.infer<typeof offerSchema>;
 export type OfferLine = z.infer<typeof offerLineSchema>;
 export type AllocationLine = z.infer<typeof allocationLineSchema>;
 
-export interface RfqItem { id: string; sku: string; description: string; quantity: number; unit: string; print_spec: PrintSpec; art_files: ArtFile[] }
+export interface RfqItem { id: string; sku: string | null; description: string; quantity: number; unit: string; print_spec: PrintSpec; art_files: ArtFile[] }
 export interface ArtFile { id: string; file_name: string; content_type: string; size_bytes: number; sha256: string; created_at: string }
 
 /** Una línea de presupuesto de una imprenta, con la evidencia necesaria para compararla. */

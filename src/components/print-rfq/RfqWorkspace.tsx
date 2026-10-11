@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
-import type { ComparativeLine, RfqAllocation, RfqItem } from '@/lib/print-rfq/domain';
+import { PROVIDER_TYPES, type ComparativeLine, type RfqAllocation, type RfqItem } from '@/lib/print-rfq/domain';
 import { AllocationPanel } from './AllocationPanel';
 import { QuoteForm } from './QuoteForm';
 import { ReviewPanel } from './ReviewPanel';
@@ -14,10 +14,10 @@ interface Workspace {
   rfq: Row; items: RfqItem[]; offers: ComparativeLine[]; history: Row[]; reviews: Row[];
   invitations: Array<Row & { link_open: boolean; budgets: Row[] }>; allocations: RfqAllocation[]; events: Row[]; orders: Row[]; viewer_role: string;
 }
-interface Provider { id: string; name: string; phone: string | null; processes: string[] }
+interface Provider { id: string; name: string; provider_type: string; phone: string | null; processes: string[] }
 
 const EVENT_LABEL: Record<string, string> = {
-  'rfq.created': 'Solicitud creada', 'rfq.art.registered': 'Arte registrado', 'rfq.invited': 'Imprentas invitadas', 'rfq.budget.uploaded': 'Presupuesto recibido',
+  'rfq.created': 'Solicitud creada', 'rfq.art.registered': 'Arte registrado', 'rfq.invited': 'Proveedores invitados', 'rfq.budget.uploaded': 'Presupuesto recibido',
   'rfq.quote.version_submitted': 'Versión de presupuesto', 'rfq.quote.reviewed': 'Revisión humana', 'rfq.allocation.saved': 'Asignación guardada',
   'rfq.allocation.authorized': 'Asignación autorizada', 'rfq.orders.previewed': 'Preview de órdenes', 'rfq.orders.confirmed': 'Órdenes emitidas',
   'rfq.link.revoked': 'Enlace revocado', 'rfq.link.renewed': 'Enlace renovado', 'rfq.cancel': 'Solicitud cancelada', 'rfq.reopen': 'Solicitud reabierta', 'rfq.close_discovery': 'Descubrimiento cerrado',
@@ -48,7 +48,7 @@ export function RfqWorkspace({ id }: { id: string }) {
   const { rfq, items, offers, invitations } = ws;
   const status = STATUS[rfq.status] ?? STATUS.BORRADOR;
   const open = ['BORRADOR', 'COTIZANDO', 'OFERTAS_RECIBIDAS'].includes(rfq.status) && Date.parse(rfq.expires_at) > Date.now();
-  const missingArt = items.filter((i) => i.art_files.length === 0);
+  const missingArt = rfq.requires_art ? items.filter((i) => i.art_files.length === 0) : [];
   const versions = [...new Set(offers.map((o) => o.quote_version_id))];
   const isAdmin = ws.viewer_role === 'admin';
   const canWrite = ws.viewer_role === 'admin' || ws.viewer_role === 'analyst';
@@ -61,7 +61,7 @@ export function RfqWorkspace({ id }: { id: string }) {
   return (
     <div className="space-y-6">
       <header className="space-y-2 border-b border-slate-800 pb-4">
-        <Link href="/imprentas" className="text-[11px] text-slate-400 hover:text-white">← Solicitudes</Link>
+        <Link href="/compras" className="text-[11px] text-slate-400 hover:text-white">← Solicitudes</Link>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-xl font-semibold text-white">{rfq.code} · {rfq.title}</h1>
           <Badge variant={status.variant}>{status.label}</Badge>
@@ -70,7 +70,7 @@ export function RfqWorkspace({ id }: { id: string }) {
         {rfq.specifications && <p className="text-xs text-slate-300">{rfq.specifications}</p>}
         {canWrite && (
           <div className="flex flex-wrap gap-2 pt-1">
-            {open && <button disabled={busy} className={ghostButtonClass} onClick={() => confirmAction('CANCEL', '¿Cancelar la solicitud? Los enlaces de las imprentas dejan de funcionar.', 'Solicitud cancelada')}>Cancelar solicitud</button>}
+            {open && <button disabled={busy} className={ghostButtonClass} onClick={() => confirmAction('CANCEL', '¿Cancelar la solicitud? Los enlaces de los proveedores dejan de funcionar.', 'Solicitud cancelada')}>Cancelar solicitud</button>}
             {!['AUTORIZADO', 'CERRADO'].includes(rfq.status) && !open && <button disabled={busy} className={ghostButtonClass} onClick={() => confirmAction('REOPEN', '¿Reabrir la solicitud por 14 días más?', 'Solicitud reabierta')}>Reabrir 14 días</button>}
             {rfq.purpose === 'COST_DISCOVERY' && !rfq.closed_at && rfq.status !== 'AUTORIZADO' && <button disabled={busy} className={ghostButtonClass} onClick={() => confirmAction('CLOSE_DISCOVERY', '¿Cerrar el descubrimiento de costos sin comprar?', 'Descubrimiento cerrado')}>Cerrar sin comprar</button>}
           </div>
@@ -78,7 +78,7 @@ export function RfqWorkspace({ id }: { id: string }) {
         {notice && <p role={notice.ok ? 'status' : 'alert'} className={`text-xs ${notice.ok ? 'text-emerald-400' : 'text-red-400'}`}>{notice.text}</p>}
       </header>
 
-      <ItemsSection id={id} items={items} open={open} canWrite={canWrite} onChange={load} />
+      <ItemsSection id={id} items={items} open={open} canWrite={canWrite} requiresArt={Boolean(rfq.requires_art)} onChange={load} />
 
       <InvitationsSection id={id} ws={ws} open={open} canWrite={canWrite} missingArt={missingArt.length} act={act} busy={busy} onChange={load} />
 
@@ -133,7 +133,7 @@ export function RfqWorkspace({ id }: { id: string }) {
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-white">Órdenes de compra emitidas</h2>
           <ul className="space-y-1">{ws.orders.map((o) => (
-            <li key={o.id}><Link href={`/imprentas/ordenes/${o.id}`} className="text-xs text-brand-400 hover:underline">{o.code}</Link> <span className="text-xs text-slate-400">· {o.provider_name} · {money(Number(o.total), o.currency)}</span></li>
+            <li key={o.id}><Link href={`/compras/ordenes/${o.id}`} className="text-xs text-brand-400 hover:underline">{o.code}</Link> <span className="text-xs text-slate-400">· {o.provider_name} · {money(Number(o.total), o.currency)}</span></li>
           ))}</ul>
         </section>
       )}
@@ -151,7 +151,7 @@ export function RfqWorkspace({ id }: { id: string }) {
   );
 }
 
-function ItemsSection({ id, items, open, canWrite, onChange }: { id: string; items: RfqItem[]; open: boolean; canWrite: boolean; onChange: () => Promise<void> }) {
+function ItemsSection({ id, items, open, canWrite, requiresArt, onChange }: { id: string; items: RfqItem[]; open: boolean; canWrite: boolean; requiresArt: boolean; onChange: () => Promise<void> }) {
   const [busyItem, setBusyItem] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -167,14 +167,14 @@ function ItemsSection({ id, items, open, canWrite, onChange }: { id: string; ite
 
   return (
     <section className="space-y-3" aria-label="Productos y arte">
-      <h2 className="text-sm font-semibold text-white">Productos a imprimir y arte</h2>
+      <h2 className="text-sm font-semibold text-white">{requiresArt ? 'Productos o servicios y arte' : 'Productos o servicios a cotizar'}</h2>
       {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
       <ul className="space-y-2">
         {items.map((item) => (
           <li key={item.id} className="space-y-1 rounded border border-slate-800 bg-[#141820] p-3" data-testid="workspace-item">
             <p className="text-sm text-white">{item.description}</p>
-            <p className="text-[11px] text-slate-400">SKU {item.sku} · {item.quantity.toLocaleString('es-PY')} {item.unit}{Object.keys(item.print_spec).length ? ` · ${Object.values(item.print_spec).join(' · ')}` : ''}</p>
-            <div className="flex flex-wrap items-center gap-3 text-[11px]">
+            <p className="text-[11px] text-slate-400">{item.sku ? `SKU ${item.sku} · ` : ''}{item.quantity.toLocaleString('es-PY')} {item.unit}{Object.keys(item.print_spec).length ? ` · ${Object.values(item.print_spec).join(' · ')}` : ''}</p>
+            {(requiresArt || item.art_files.length > 0) && <div className="flex flex-wrap items-center gap-3 text-[11px]">
               {item.art_files.length === 0 ? <Badge size="sm" variant="warning">Sin arte registrado</Badge> : item.art_files.map((f, index) => (
                 <a key={f.id} href={`/api/print-rfq/files/${f.id}`} target="_blank" rel="noreferrer" className="text-brand-400 hover:underline" title={`SHA-256 ${f.sha256}`}>
                   {index === 0 ? 'Arte vigente' : `Arte anterior ${item.art_files.length - index}`}: {f.file_name} ({formatDate(f.created_at)})
@@ -186,7 +186,7 @@ function ItemsSection({ id, items, open, canWrite, onChange }: { id: string; ite
                   <input type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.svg,.ai,.eps,.tif,.tiff,.zip" disabled={busyItem === item.id} onChange={(e) => { void upload(item.id, e.target.files?.[0]); e.target.value = ''; }} />
                 </label>
               )}
-            </div>
+            </div>}
             {item.art_files.length > 1 && <p className="text-[11px] text-amber-400">Si subís un arte nuevo, los presupuestos que cotizaron el anterior quedan desactualizados y hay que pedirlos de nuevo.</p>}
           </li>
         ))}
@@ -202,30 +202,34 @@ function InvitationsSection({ id, ws, open, canWrite, missingArt, act, busy, onC
   const [providers, setProviders] = useState<Provider[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState('');
   const invitedIds = new Set(ws.invitations.map((i) => i.provider_id));
-  const available = providers.filter((p) => !invitedIds.has(p.id));
+  const available = providers.filter((p) => !invitedIds.has(p.id) && (!typeFilter || p.provider_type === typeFilter));
 
   useEffect(() => { api<{ providers: Provider[] }>('/api/print-rfq/providers').then((r) => setProviders(r.providers)).catch(() => setProviders([])); }, []);
 
   const origin = typeof window === 'undefined' ? '' : window.location.origin;
-  const linkOf = (token: string) => `${origin}/cotizar-imprenta/${token}`;
+  const linkOf = (token: string) => `${origin}/cotizar-proveedor/${token}`;
   const copy = async (token: string) => { await navigator.clipboard.writeText(linkOf(token)); setCopied(token); setTimeout(() => setCopied(null), 2000); };
   const whatsapp = (name: string, phone: string | null, token: string) =>
     `https://wa.me/${(phone ?? '').replace(/\D/g, '')}?text=${encodeURIComponent(`Hola ${name}, te pedimos presupuesto de impresión (${ws.rfq.code}). Ahí vas a ver el arte y podés cargar tus precios y subir tu presupuesto: ${linkOf(token)}`)}`;
 
   return (
-    <section className="space-y-3" aria-label="Imprentas invitadas">
-      <h2 className="text-sm font-semibold text-white">Imprentas invitadas</h2>
+    <section className="space-y-3" aria-label="Proveedores invitados">
+      <h2 className="text-sm font-semibold text-white">Proveedores invitados</h2>
       {open && canWrite && (
         <div className="space-y-2 rounded border border-slate-800 bg-[#141820] p-3">
           {missingArt > 0 && <p className="text-xs text-amber-400">Falta el arte de {missingArt} producto(s). Subilo antes de invitar: la imprenta cotiza sobre ese arte.</p>}
-          {available.length === 0 ? <p className="text-xs text-slate-400">No quedan imprentas para invitar. <Link href="/imprentas/proveedores" className="text-brand-400 hover:underline">Cargar imprentas</Link></p> : (
+          {available.length === 0 ? <p className="text-xs text-slate-400">No quedan proveedores para invitar. <Link href="/compras/proveedores" className="text-brand-400 hover:underline">Cargar proveedores</Link></p> : (
             <>
+              <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} aria-label="Filtrar proveedores por tipo" className={`${inputClass} w-56`}>
+                <option value="">Todos los tipos</option>{Object.entries(PROVIDER_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
               <div className="flex flex-wrap gap-3">
                 {available.map((p) => (
                   <label key={p.id} className="flex items-center gap-1.5 text-xs text-slate-300">
                     <input type="checkbox" checked={selected.has(p.id)} onChange={() => setSelected((s) => { const n = new Set(s); if (n.has(p.id)) n.delete(p.id); else n.add(p.id); return n; })} />
-                    {p.name}{p.processes.length ? <span className="text-slate-500"> ({p.processes.join(', ')})</span> : null}
+                    {p.name} <span className="text-slate-500">· {PROVIDER_TYPES[p.provider_type as keyof typeof PROVIDER_TYPES] ?? p.provider_type}</span>{p.processes.length ? <span className="text-slate-500"> ({p.processes.join(', ')})</span> : null}
                   </label>
                 ))}
               </div>

@@ -12,7 +12,8 @@
       "feature/rfq-imprentas": false,
       "feature/licitaciones-filtros-ocultar": false,
       "feature/presupuestos-clientes": false,
-      "fix/quitar-eslint-disable": false
+      "fix/quitar-eslint-disable": false,
+      "feature/compras-proveedores": false
     }
   },
   "crons": [
