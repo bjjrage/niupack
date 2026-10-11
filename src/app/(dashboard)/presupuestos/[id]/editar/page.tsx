@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { QuoteEditor } from '@/components/sales-quotes/QuoteEditor';
 import { api } from '@/components/print-rfq/format';
 
-type Row = any; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Row = any;
 
 export default function EditarPresupuestoPage() {
   const { id } = useParams<{ id: string }>();

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { api, formatDate, formatDateTime, money } from '@/components/print-rfq/format';
 
-type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Row = Record<string, any>;
 
 export default function OrdenImprentaPage() {
   const { id } = useParams<{ id: string }>();

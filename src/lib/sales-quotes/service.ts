@@ -45,7 +45,7 @@ async function rpc<T>(name: string, args: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-type Row = any; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Row = any;
 
 export async function listQuotes(org: string, filter: { q?: string; status?: string } = {}) {
   let query = db().from('sales_quotes').select('id, code, client_name, subject, status, quote_date, valid_until, currency, version, created_at').eq('organization_id', org).order('created_at', { ascending: false }).limit(200);

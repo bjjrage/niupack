@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { WORK_ORDER_STATUS } from '@/lib/sales-quotes/domain';
 import { api, formatDate } from '@/components/print-rfq/format';
 
-type Row = any; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Row = any;
 
 export default function OrdenesTrabajoPage() {
   const [orders, setOrders] = useState<Row[] | null>(null);

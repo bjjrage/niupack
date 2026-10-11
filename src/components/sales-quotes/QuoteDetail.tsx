@@ -7,7 +7,7 @@ import { QUOTE_STATUS, formatAmount, formatQuantity, isQuoteExpired } from '@/li
 import { api, buttonClass, formatDateTime, ghostButtonClass, inputClass, postJson } from '@/components/print-rfq/format';
 import { QuoteDocument, type DocLine, type DocQuote } from './QuoteDocument';
 
-type Row = any; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Row = any;
 interface Data { quote: Row; lines: Row[]; events: Row[]; work_order: Row | null; viewer_role: string }
 const EVENT_LABEL: Record<string, string> = {
   'quote.created': 'Presupuesto creado', 'quote.updated': 'Presupuesto editado', 'quote.send': 'Marcado como enviado', 'quote.reopen': 'Reabierto como borrador (nueva versión)',

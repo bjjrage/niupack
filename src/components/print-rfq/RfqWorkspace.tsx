@@ -9,7 +9,7 @@ import { QuoteForm } from './QuoteForm';
 import { ReviewPanel } from './ReviewPanel';
 import { FIELD_LABEL, INVITATION_STATUS, PURPOSE_LABEL, STATUS, api, buttonClass, formatDate, formatDateTime, ghostButtonClass, inputClass, money, postJson } from './format';
 
-type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Row = Record<string, any>;
 interface Workspace {
   rfq: Row; items: RfqItem[]; offers: ComparativeLine[]; history: Row[]; reviews: Row[];
   invitations: Array<Row & { link_open: boolean; budgets: Row[] }>; allocations: RfqAllocation[]; events: Row[]; orders: Row[]; viewer_role: string;
