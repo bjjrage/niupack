@@ -10,7 +10,8 @@
       "feature/dashboard-alertas-licitaciones": false,
       "feature/demo-sitio-flexibles": false,
       "feature/rfq-imprentas": false,
-      "feature/licitaciones-filtros-ocultar": false
+      "feature/licitaciones-filtros-ocultar": false,
+      "feature/presupuestos-clientes": false
     }
   },
   "crons": [
