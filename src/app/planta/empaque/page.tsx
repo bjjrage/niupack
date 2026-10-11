@@ -307,8 +307,8 @@ export default function PlantaEmpaquePage() {
           />
           <InfoStat label="Línea" value={lineName} />
           <InfoStat
-            label="Personas ahora"
-            value={personsNow}
+            label="Trabajando ahora"
+            value={personsNow > 0 ? personsNow : '—'}
             icon={<Users className={`h-5 w-5 ${personsNow > 0 ? 'text-emerald-400' : 'text-slate-500'}`} />}
             accent
           />
@@ -316,7 +316,7 @@ export default function PlantaEmpaquePage() {
       </section>
 
       {/* Sync indicator */}
-      <div className="w-full flex items-center justify-between px-1 text-[11px] text-slate-500 font-mono">
+      <div className="w-full flex items-center justify-between px-1 text-[11px] text-slate-500 tabular-nums">
         <div className="flex items-center gap-1.5">
           <span className={`inline-block w-2 h-2 rounded-full ${activeSession ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
           <span>{syncError ? 'ERROR AL SINCRONIZAR' : !hasLoaded ? 'SIN SINCRONIZAR' : activeSession ? 'TRABAJO EN CURSO' : 'SIN TRABAJO EN CURSO'}</span>
@@ -368,7 +368,7 @@ export default function PlantaEmpaquePage() {
               >
                 −
               </button>
-              <div className="font-mono text-5xl font-black text-white min-w-[70px] text-center">
+              <div className="tabular-nums text-5xl font-black text-white min-w-[70px] text-center">
                 {headcount}
               </div>
               <button
@@ -403,7 +403,7 @@ export default function PlantaEmpaquePage() {
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-2">
               TIEMPO TRABAJADO
             </span>
-            <div className="font-mono text-5xl sm:text-6xl font-black text-emerald-400 tracking-tight tabular-nums py-2">
+            <div className="tabular-nums text-5xl sm:text-6xl font-black text-emerald-400 tracking-tight py-2">
               {formatTimer(elapsedSeconds)}
             </div>
             <div className="inline-flex items-center gap-1.5 text-xs text-slate-300 mt-1">
@@ -419,7 +419,7 @@ export default function PlantaEmpaquePage() {
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
               PERSONAS TRABAJANDO
             </span>
-            <div className="font-mono text-2xl font-black text-white flex items-center justify-center gap-2">
+            <div className="tabular-nums text-2xl font-black text-white flex items-center justify-center gap-2">
               <Users className="w-5 h-5 text-brand-400" />
               <span>{headcount} {headcount === 1 ? 'PERSONA' : 'PERSONAS'}</span>
             </div>
@@ -439,7 +439,7 @@ export default function PlantaEmpaquePage() {
                 >
                   −
                 </button>
-                <div className="font-mono text-3xl font-black text-white min-w-[50px] text-center">
+                <div className="tabular-nums text-3xl font-black text-white min-w-[50px] text-center">
                   {newHeadcountInput}
                 </div>
                 <button
@@ -500,7 +500,7 @@ export default function PlantaEmpaquePage() {
         <section aria-label="Resumen de hoy" className="w-full rounded-2xl border border-slate-600/50 bg-[#171d29] shadow-xl">
           <div className="flex items-center justify-between border-b border-slate-700/70 px-5 py-3">
             <h2 className="text-xs font-bold uppercase tracking-widest text-slate-300">Resumen de hoy</h2>
-            <span className="font-mono text-xs text-slate-300">
+            <span className="tabular-nums text-xs text-slate-300">
               {hoursFormat.format(totalPersonHoursToday)} h-persona
             </span>
           </div>
@@ -514,7 +514,7 @@ export default function PlantaEmpaquePage() {
                 return (
                   <li key={item.id} className="flex items-center justify-between gap-3 px-5 py-3">
                     <div className="min-w-0">
-                      <p className="font-mono text-sm font-bold text-white">
+                      <p className="tabular-nums text-sm font-bold text-white">
                         {clockLabel(item.started_at)} – {running || !item.stopped_at ? 'en curso' : clockLabel(item.stopped_at)}
                       </p>
                       <p className="text-xs text-slate-300">{describeHeadcount(item)}</p>
@@ -522,7 +522,7 @@ export default function PlantaEmpaquePage() {
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       <span className={`rounded border px-2 py-0.5 text-[10px] font-semibold ${status.tone}`}>{status.text}</span>
                       {!running && (
-                        <span className="font-mono text-xs text-slate-300">{hoursFormat.format(item.total_person_hours)} h-persona</span>
+                        <span className="tabular-nums text-xs text-slate-300">{hoursFormat.format(item.total_person_hours)} h-persona</span>
                       )}
                     </div>
                   </li>

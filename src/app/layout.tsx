@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Script from 'next/script';
 import { ThemeProvider } from '@/components/theme/ThemeProvider';
+import '@fontsource-variable/inter';
 import './globals.css';
 
 export const metadata: Metadata = {
