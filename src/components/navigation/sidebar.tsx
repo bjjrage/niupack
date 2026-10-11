@@ -28,6 +28,7 @@ import {
   Globe,
   Printer,
   ClipboardList,
+  Wrench,
 } from 'lucide-react';
 
 interface NavSection {
@@ -68,6 +69,8 @@ const HINTS: Record<string, [string, string]> = {
   '/rfq/inbox': ['Bandeja Gmail corporativa', 'Correos de cotización detectados en la casilla de la empresa.'],
   '/rfq/quotes': ['Extracción de cotizaciones', 'Lee cotizaciones de proveedores y las pasa a datos comparables.'],
   '/demo/flexibles': ['Sitio de Envases Flexibles (demo)', 'Abre el demo del sitio de flexibles en una pestaña nueva, sin publicarlo.'],
+  '/presupuestos': ['Presupuestos a clientes', 'Armá el presupuesto con los SKU del catálogo en el formato NIUPACK.'],
+  '/ordenes-trabajo': ['Órdenes de Trabajo', 'Se generan al aceptar un presupuesto. Documento interno para producción.'],
   '/imprentas': ['Solicitudes a imprentas', 'Pedí presupuesto de impresión a imprentas locales con el SKU y el arte a cotizar.'],
   '/imprentas/proveedores': ['Imprentas locales', 'Catálogo de imprentas y los procesos de impresión que ofrecen.'],
   '/imprentas/ordenes': ['Órdenes de compra', 'Órdenes emitidas a imprentas tras la autorización de un administrador.'],
@@ -138,6 +141,13 @@ export const Sidebar: React.FC = () => {
         { name: 'Especificaciones', href: '/rfq/rfqs', icon: FileText },
         { name: 'Bandeja Gmail', href: '/rfq/inbox', icon: Inbox },
         { name: 'Cotizaciones', href: '/rfq/quotes', icon: CheckSquare },
+      ],
+    },
+    {
+      title: 'Presupuestos',
+      items: [
+        { name: 'Presupuestos', href: '/presupuestos', icon: FileText },
+        { name: 'Órdenes de Trabajo', href: '/ordenes-trabajo', icon: Wrench },
       ],
     },
     {
@@ -323,6 +333,7 @@ const MODULE_ICON: Record<string, React.ComponentType<{ className?: string }>> =
   Pricing: DollarSign,
   RFQ: FileText,
   Imprentas: Printer,
+  Presupuestos: FileText,
   Logística: Truck,
   Comercial: Users,
   Licitaciones: Radar,
