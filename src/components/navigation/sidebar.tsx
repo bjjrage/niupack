@@ -25,6 +25,7 @@ import {
   Truck,
   Users,
   Radar,
+  Globe,
 } from 'lucide-react';
 
 interface NavSection {
@@ -34,6 +35,8 @@ interface NavSection {
     href: string;
     icon: React.ComponentType<{ className?: string }>;
     badge?: string;
+    /** Se abre en una pestaña nueva (fuera de la navegación interna del OS). */
+    external?: boolean;
   }>;
 }
 
@@ -62,6 +65,7 @@ const HINTS: Record<string, [string, string]> = {
   '/rfq/rfqs': ['Especificaciones RFQ', 'Pedidos de cotización recibidos, con sus especificaciones técnicas.'],
   '/rfq/inbox': ['Bandeja Gmail corporativa', 'Correos de cotización detectados en la casilla de la empresa.'],
   '/rfq/quotes': ['Extracción de cotizaciones', 'Lee cotizaciones de proveedores y las pasa a datos comparables.'],
+  '/demo/flexibles': ['Sitio de Envases Flexibles (demo)', 'Abre el demo del sitio de flexibles en una pestaña nueva, sin publicarlo.'],
   '/licitaciones': ['Licitaciones', 'Radar de compras públicas de inyectables: detecta empresas que podrían comprar cunas para ampollas.'],
   '/logistics': ['Logística · resumen', 'Estado general de fletes, rutas y transportistas.'],
   '/logistics/ocean': ['Flete marítimo', 'Cotizaciones y rutas de contenedores.'],
@@ -157,6 +161,7 @@ export const Sidebar: React.FC = () => {
       title: 'Sistema',
       items: [
         { name: 'Reportes', href: '/reports', icon: FileText },
+        { name: 'Sitio Flexibles', href: '/demo/flexibles', icon: Globe, badge: 'DEMO', external: true },
         { name: 'Ajustes', href: '/settings', icon: Settings, badge: 'BOTS' },
       ],
     },
@@ -188,10 +193,13 @@ export const Sidebar: React.FC = () => {
   const renderItem = (item: NavSection['items'][number], nested = false) => {
     const isActive = isItemActive(item.href);
     const Icon = item.icon;
+    const Wrapper = (item.external ? 'a' : Link) as React.ElementType;
+    const externalProps = item.external ? { target: '_blank', rel: 'noopener noreferrer' } : {};
     return (
-      <Link
+      <Wrapper
         key={item.href}
         href={item.href}
+        {...externalProps}
         {...hintHandlers(item.href)}
         className={`group flex items-center justify-between rounded-md text-xs font-medium transition-colors ${nested ? 'px-2 py-1.5' : 'px-2.5 py-2'} ${
           isActive ? 'bg-brand-500/10 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -214,7 +222,7 @@ export const Sidebar: React.FC = () => {
             {item.badge}
           </span>
         )}
-      </Link>
+      </Wrapper>
     );
   };
 
