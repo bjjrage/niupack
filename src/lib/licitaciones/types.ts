@@ -40,6 +40,17 @@ export interface ParsedDocument {
   type?: string;
 }
 
+export type TenderPhase = 'ABIERTA' | 'EN_EVALUACION' | 'ADJUDICADA' | 'CERRADA' | 'DESCONOCIDA';
+
+export interface ParsedAward {
+  supplier_name: string;
+  ruc?: string;
+  awarded_at?: string;
+  amount?: number;
+  currency?: string;
+  items: Array<{ line_no?: number; description: string; quantity?: number; unit?: string; unit_amount?: number }>;
+}
+
 export interface ParsedTender {
   source: TenderSource;
   external_id: string;
@@ -56,6 +67,9 @@ export interface ParsedTender {
   is_test_data: boolean;
   items: ParsedItem[];
   parties: ParsedParty[];
+  awards: ParsedAward[];
+  /** Etapa derivada del estado publicado por la fuente. */
+  phase: TenderPhase;
   documents: ParsedDocument[];
   /** Hechos que el documento no permite confirmar (se muestran como "no confirmado"). */
   unconfirmed: string[];

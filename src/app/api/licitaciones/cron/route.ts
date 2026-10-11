@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     const results = await scanEnabledOrganizations({ budgetMs: 50_000 });
     return NextResponse.json({
       organizations: results.length,
-      results: results.map((r) => ({ run_id: r.run_id, status: r.status, clients_scanned: r.clients_scanned, clients_total: r.clients_total, tenders_imported: r.tenders_imported, matches_created: r.matches_created, errors: r.errors.length })),
+      results: results.map((r) => ({ run_id: r.run_id, status: r.status, tenders_seen: r.tenders_seen, tenders_imported: r.tenders_imported, tenders_new: r.tenders_new, errors: r.errors.length })),
     });
   } catch (error) {
     return domainErrorResponse(error);

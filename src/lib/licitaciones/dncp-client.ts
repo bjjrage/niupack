@@ -115,37 +115,11 @@ export async function searchDncp(keyword: string, page = 1, options: DncpHttpOpt
 }
 
 /**
- * Licitaciones donde participa una empresa (cualquier rol: invitada, oferente, adjudicada), de la más nueva a la más vieja.
- * Con `itemKeyword` DNCP filtra del lado del servidor por la descripción de los ítems (por ejemplo "inyectable").
+ * Licitaciones cuyos ítems mencionan una palabra (por ejemplo "inyectable"), de la más nueva a la más vieja por última modificación.
+ * DNCP filtra del lado del servidor; después se confirma cada ficha completa.
  */
-export async function searchDncpByParty(partyId: string, page = 1, itemKeyword?: string, http: DncpHttpOptions = {}): Promise<DncpSearchResult> {
-  if (!/^PY-RUC-\d{5,9}-\d$/.test(partyId)) throw new DncpError('DNCP_INVALID_IDENTIFIER', 'Identificador de empresa inválido.', 400);
-  const keyword = itemKeyword ? `&tender.items.description=${encodeURIComponent(itemKeyword)}` : '';
-  return search(`parties.id=${encodeURIComponent(partyId)}${keyword}`, page, http);
-}
-
-export interface RucSuggestion { ruc: string; name: string }
-
-/** Sugerencias de RUC para un nombre de cliente, tomadas de proveedores reales en DNCP. Siempre las confirma una persona. */
-export async function suggestSuppliersByName(name: string, normalize: (value: string) => string, http: DncpHttpOptions = {}): Promise<RucSuggestion[]> {
-  const wanted = normalize(name);
-  const tokens = wanted.split(' ').filter((t) => t.length >= 4);
-  if (!wanted || tokens.length === 0) return [];
-  const found = new Map<string, string>();
-  for (const token of tokens.slice(0, 2)) {
-    const result = await search(`parties.name=${encodeURIComponent(token)}`, 1, http);
-    for (const hit of result.hits) for (const s of hit.suppliers) if (s.ruc && s.name) found.set(s.ruc, s.name);
-  }
-  const score = (candidate: string) => {
-    const n = normalize(candidate);
-    if (n === wanted) return 3;
-    if (n.includes(wanted) || wanted.includes(n)) return 2;
-    return tokens.every((t) => n.includes(t)) ? 1 : 0;
-  };
-  return [...found.entries()]
-    .map(([ruc, supplierName]) => ({ ruc, name: supplierName, score: score(supplierName) }))
-    .filter((c) => c.score > 0)
-    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
-    .slice(0, 6)
-    .map(({ ruc, name: supplierName }) => ({ ruc, name: supplierName }));
+export async function searchDncpByKeyword(itemKeyword: string, page = 1, http: DncpHttpOptions = {}): Promise<DncpSearchResult> {
+  const term = itemKeyword.trim();
+  if (term.length < 3) throw new DncpError('DNCP_INVALID_IDENTIFIER', 'La palabra clave necesita al menos 3 caracteres.', 400);
+  return search(`tender.items.description=${encodeURIComponent(term)}`, page, http);
 }

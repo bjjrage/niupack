@@ -58,7 +58,8 @@ export function buildManualTender(input: ManualTenderInput): ParsedTender {
     convening_entity: input.convening_entity,
     status: input.status,
     is_test_data: input.is_test_data,
-    items, parties, documents: input.source_url ? [{ title: 'Fuente indicada por el usuario', url: input.source_url }] : [],
+    items, parties, awards: [], phase: 'DESCONOCIDA',
+    documents: input.source_url ? [{ title: 'Fuente indicada por el usuario', url: input.source_url }] : [],
     unconfirmed,
   };
 }

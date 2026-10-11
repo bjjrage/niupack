@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { detectInjectable, isOpaqueValue } from './injectables';
-import type { ParsedDocument, ParsedItem, ParsedParty, ParsedTender, PartyRole, TenderSource } from './types';
+import type { ParsedAward, ParsedDocument, ParsedItem, ParsedParty, ParsedTender, PartyRole, TenderPhase, TenderSource } from './types';
 
 type Json = Record<string, any>;
 
@@ -45,11 +45,21 @@ const BID_ROLE_ATTRS: Array<{ name: string; role: PartyRole }> = [
   { name: 'Representante', role: 'REPRESENTANTE' },
 ];
 
+/** Etapa de la licitación a partir del estado que publica DNCP (nunca se inventa: sin señal clara queda DESCONOCIDA). */
+export function derivePhase(statusDetails: string | undefined, hasAwards: boolean, closingAt: string | undefined, now: Date): TenderPhase {
+  const text = (statusDetails ?? '').toLowerCase();
+  if (/cancel|desiert|anulad|suspendid|sins+adjudic|fracasad|rescindid/.test(text)) return 'CERRADA';
+  if (/adjudicad/.test(text) || hasAwards) return 'ADJUDICADA';
+  if (/convocatoria|abiert|publicad|consulta/.test(text)) return closingAt && new Date(closingAt).getTime() < now.getTime() ? 'EN_EVALUACION' : 'ABIERTA';
+  if (/evaluaci|apertura|estudio|recepci|ofertas/.test(text)) return 'EN_EVALUACION';
+  return 'DESCONOCIDA';
+}
+
 /**
  * Convierte una release OCDS de DNCP en una licitación normalizada.
  * Reglas: invitado ≠ oferente ≠ adjudicatario; el fabricante solo se confirma si el atributo del oferta es legible.
  */
-export function parseOcdsRelease(release: Json, opts: { source?: TenderSource; isTestData?: boolean } = {}): ParsedTender {
+export function parseOcdsRelease(release: Json, opts: { source?: TenderSource; isTestData?: boolean; now?: Date } = {}): ParsedTender {
   const tender: Json = release.tender ?? {};
   const ocid: string = release.ocid ?? '';
   if (!ocid || !tender.title) throw new Error('OCDS_RELEASE_INVALID');
@@ -149,6 +159,29 @@ export function parseOcdsRelease(release: Json, opts: { source?: TenderSource; i
   ];
 
   const awardDates = (release.awards ?? []).map((a: Json) => toIso(a.date)).filter(Boolean) as string[];
+  const awards: ParsedAward[] = [];
+  for (const award of release.awards ?? []) {
+    const awardItems = (award.items ?? []).map((raw: Json) => ({
+      line_no: lineByItemId.get(String(raw.id)),
+      description: String(raw.description ?? raw.classification?.description ?? '').trim() || '(sin descripción)',
+      quantity: typeof raw.quantity === 'number' ? raw.quantity : undefined,
+      unit: raw.unit?.name,
+      unit_amount: typeof raw.unit?.value?.amount === 'number' ? raw.unit.value.amount : undefined,
+    }));
+    for (const s of award.suppliers ?? []) {
+      const party = partiesById.get(String(s.id));
+      const name = String(s.name ?? party?.name ?? '').trim();
+      if (!name) continue;
+      awards.push({ supplier_name: name, ruc: rucOf(party) ?? rucOf(s), awarded_at: toIso(award.date), amount: typeof award.value?.amount === 'number' ? award.value.amount : undefined, currency: award.value?.currency, items: awardItems });
+      // Cada producto adjudicado queda asociado a su proveedor (no se asume nada fuera de lo publicado).
+      for (const item of awardItems) {
+        if (item.line_no) push({ role: 'ADJUDICATARIO', name, ruc: rucOf(party) ?? rucOf(s), role_confirmed: true, evidence: `OCDS awards[${award.id}].items`, evidence_url: sourceUrl, item_line_no: item.line_no });
+      }
+    }
+  }
+  const statusDetails: string | undefined = tender.statusDetails ?? tender.status;
+  const closingAt = toIso(tender.tenderPeriod?.endDate);
+  const phase = derivePhase(statusDetails, awards.length > 0, closingAt, opts.now ?? new Date());
   return {
     source,
     external_id: ocid,
@@ -158,12 +191,14 @@ export function parseOcdsRelease(release: Json, opts: { source?: TenderSource; i
     procurement_object: tender.mainProcurementCategoryDetails ?? tender.mainProcurementCategory,
     status: tender.statusDetails ?? tender.status,
     published_at: toIso(tender.datePublished) ?? toIso(tender.tenderPeriod?.startDate),
-    closing_at: toIso(tender.tenderPeriod?.endDate),
+    closing_at: closingAt,
     awarded_at: awardDates.sort()[0],
     source_updated_at: toIso(release.date),
     is_test_data: opts.isTestData ?? false,
     items,
     parties,
+    awards,
+    phase,
     documents,
     unconfirmed,
     raw_document: undefined,

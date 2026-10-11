@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { domainErrorResponse, READ_ROLES, requireIdentityWithRole, WRITE_ROLES } from '@/lib/auth/role-guard';
-import { getScanSettings, listClients, listScanRuns, scanOrganization, setScanEnabled } from '@/lib/licitaciones/scanner';
+import { getScanSettings, listScanRuns, scanOrganization, setScanEnabled } from '@/lib/licitaciones/scanner';
 
 export const maxDuration = 60;
 
-/** Estado del escaneo diario: activación, últimas corridas y qué clientes se están vigilando. */
+/** Estado del escaneo diario: activación y últimas corridas. */
 export async function GET() {
   try {
     const identity = await requireIdentityWithRole(READ_ROLES);
-    const [settings, runs, clients] = await Promise.all([getScanSettings(identity.organizationId), listScanRuns(identity.organizationId), listClients(identity.organizationId)]);
-    return NextResponse.json({ settings, runs, clients, role: identity.role });
+    const [settings, runs] = await Promise.all([getScanSettings(identity.organizationId), listScanRuns(identity.organizationId)]);
+    return NextResponse.json({ settings, runs, role: identity.role });
   } catch (error) {
     return domainErrorResponse(error);
   }

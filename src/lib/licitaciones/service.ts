@@ -48,12 +48,13 @@ export async function importTender(organizationId: string, actorProfileId: strin
     tender: {
       source: tender.source, external_id: tender.external_id, source_url: tender.source_url, title: tender.title,
       convening_entity: tender.convening_entity, procurement_object: tender.procurement_object, status: tender.status,
-      published_at: tender.published_at, closing_at: tender.closing_at, awarded_at: tender.awarded_at, source_updated_at: tender.source_updated_at,
+      published_at: tender.published_at, closing_at: tender.closing_at, awarded_at: tender.awarded_at, source_updated_at: tender.source_updated_at, phase: tender.phase,
       is_test_data: tender.is_test_data,
       raw_document: { release: rawDocument ?? null, documents: tender.documents, unconfirmed: tender.unconfirmed },
     },
     items: tender.items.map(({ source_item_id: _omit, ...item }) => item),
     parties: tender.parties.filter((p) => p.name.trim()),
+    awards: tender.awards,
   };
   const { data, error } = await client.rpc('import_licitacion_atomic', {
     p_organization_id: organizationId, p_actor_profile_id: actorProfileId, p_payload: payload,
