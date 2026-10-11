@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { ExternalLink } from 'lucide-react';
+import { EyeOff, ExternalLink, RotateCcw } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 
 export interface BoardTender {
@@ -12,6 +12,7 @@ export interface BoardTender {
   products_total: number;
   bidders: Array<{ name: string; ruc: string | null }>;
   invited: Array<{ name: string; ruc: string | null }>;
+  dismissed_at?: string | null;
   awards: Array<{ supplier_name: string; supplier_ruc: string | null; awarded_at: string | null; amount: number | null; currency: string | null;
     items: Array<{ description: string; quantity?: number; unit?: string; unit_amount?: number }> }>;
 }
@@ -37,17 +38,43 @@ export function TenderBoard({ refreshKey }: { refreshKey: number }) {
   const [tenders, setTenders] = useState<BoardTender[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [entities, setEntities] = useState<string[]>([]);
+  const [entity, setEntity] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [showDismissed, setShowDismissed] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const hasFilters = Boolean(query || entity || from || to);
 
   const load = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams({ filter });
     if (query.trim()) params.set('q', query.trim());
+    if (entity) params.set('entity', entity);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (showDismissed) params.set('dismissed', '1');
     const response = await fetch(`/api/licitaciones/board?${params}`, { cache: 'no-store' });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) setError(data.message || data.error || `Error ${response.status}`);
-    else { setError(null); setTenders(data.tenders); }
+    else { setError(null); setTenders(data.tenders); setEntities(data.entities ?? []); setSelected(new Set()); }
     setLoading(false);
-  }, [filter, query]);
+  }, [filter, query, entity, from, to, showDismissed]);
+
+  const dismiss = async (ids: string[], dismissed: boolean) => {
+    if (!ids.length) return;
+    if (dismissed && ids.length > 1 && !window.confirm(`¿Ocultar ${ids.length} licitaciones del tablero? Podés restaurarlas desde “Ocultas”.`)) return;
+    setBusy(true);
+    const response = await fetch('/api/licitaciones/tenders/dismiss', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, dismissed }) });
+    const data = await response.json().catch(() => ({}));
+    setBusy(false);
+    if (!response.ok) { setError(data.message || data.error || `Error ${response.status}`); return; }
+    await load();
+  };
+  const toggle = (id: string) => setSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const allSelected = tenders.length > 0 && selected.size === tenders.length;
+  const clearFilters = () => { setQuery(''); setEntity(''); setFrom(''); setTo(''); };
 
   useEffect(() => {
     const timer = setTimeout(() => { void load(); }, query ? 300 : 0);
@@ -67,11 +94,43 @@ export function TenderBoard({ refreshKey }: { refreshKey: number }) {
           className="mb-1 w-64 rounded border border-slate-700 bg-[#0c0f14] px-2 py-1.5 text-xs text-white" />
       </div>
 
+      <div className="flex flex-wrap items-end gap-3 text-[11px] text-slate-400">
+        <label className="flex flex-col gap-1">Entidad convocante
+          <select value={entity} onChange={(e) => setEntity(e.target.value)} aria-label="Filtrar por entidad" className="w-64 rounded border border-slate-700 bg-[#0c0f14] px-2 py-1.5 text-xs text-white">
+            <option value="">Todas</option>
+            {entities.map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">Publicada desde
+          <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className="rounded border border-slate-700 bg-[#0c0f14] px-2 py-1.5 text-xs text-white" />
+        </label>
+        <label className="flex flex-col gap-1">hasta
+          <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className="rounded border border-slate-700 bg-[#0c0f14] px-2 py-1.5 text-xs text-white" />
+        </label>
+        {hasFilters && <button onClick={clearFilters} className="pb-1.5 text-brand-400 hover:underline">Limpiar filtros</button>}
+        <label className="ml-auto flex items-center gap-1.5 pb-1.5">
+          <input type="checkbox" checked={showDismissed} onChange={(e) => setShowDismissed(e.target.checked)} /> Ver ocultas
+        </label>
+      </div>
+
+      {tenders.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
+          <label className="flex items-center gap-1.5"><input type="checkbox" checked={allSelected} onChange={() => setSelected(allSelected ? new Set() : new Set(tenders.map((t) => t.id)))} /> Seleccionar todas ({tenders.length})</label>
+          {selected.size > 0 && (
+            <button disabled={busy} onClick={() => void dismiss([...selected], !showDismissed)}
+              className="inline-flex items-center gap-1 rounded border border-slate-700 px-2 py-1 text-slate-200 hover:bg-slate-800 disabled:opacity-50">
+              {showDismissed ? <RotateCcw className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+              {showDismissed ? 'Restaurar' : 'Ocultar'} {selected.size} seleccionada(s)
+            </button>
+          )}
+        </div>
+      )}
+
       {error && <p role="alert" className="rounded border border-red-800/60 bg-red-950/40 p-3 text-xs text-red-300">No se pudieron cargar las licitaciones: {error}</p>}
       {loading && !tenders.length && <p className="text-xs text-slate-400">Cargando…</p>}
       {!loading && !error && tenders.length === 0 && (
         <p className="py-8 text-center text-xs text-slate-400">
-          {query ? 'Ninguna licitación coincide con la búsqueda.' : filter === 'en_curso' ? 'No hay licitaciones en curso con inyectables en lo ya escaneado.' : 'No hay licitaciones en esta categoría todavía.'}
+          {showDismissed ? 'No hay licitaciones ocultas.' : hasFilters ? 'Ninguna licitación coincide con los filtros.' : filter === 'en_curso' ? 'No hay licitaciones en curso con inyectables en lo ya escaneado.' : 'No hay licitaciones en esta categoría todavía.'}
         </p>
       )}
 
@@ -79,13 +138,18 @@ export function TenderBoard({ refreshKey }: { refreshKey: number }) {
         {tenders.map((t) => (
           <li key={t.id} className="rounded border border-slate-800 bg-[#141820] p-4 space-y-3" data-testid="tender-card">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
+              <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggle(t.id)} aria-label={`Seleccionar ${t.title}`} className="mt-1" />
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-white">{t.title}</p>
                 <p className="text-[11px] text-slate-400">{t.convening_entity ?? 'Entidad no informada'} · {t.external_id}</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {t.is_test_data && <Badge size="sm" variant="warning">Dato de prueba</Badge>}
                 <Badge variant={PHASE_VARIANT[t.phase]}>{PHASE_LABEL[t.phase]}</Badge>
+                <button disabled={busy} onClick={() => void dismiss([t.id], !showDismissed)} title={showDismissed ? 'Restaurar en el tablero' : 'Ocultar del tablero'}
+                  className="inline-flex items-center gap-1 rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800 disabled:opacity-50">
+                  {showDismissed ? <><RotateCcw className="h-3 w-3" />Restaurar</> : <><EyeOff className="h-3 w-3" />Ocultar</>}
+                </button>
               </div>
             </div>
 
