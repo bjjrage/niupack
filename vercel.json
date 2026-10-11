@@ -8,7 +8,8 @@
       "feature/licitaciones-radar": false,
       "feature/licitaciones-escaner-diario": false,
       "feature/dashboard-alertas-licitaciones": false,
-      "feature/demo-sitio-flexibles": false
+      "feature/demo-sitio-flexibles": false,
+      "feature/rfq-imprentas": false
     }
   },
   "crons": [
