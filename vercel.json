@@ -9,6 +9,7 @@
       "feature/licitaciones-escaner-diario": false,
       "feature/dashboard-alertas-licitaciones": false,
       "feature/demo-sitio-flexibles": false,
+      "feature/rfq-imprentas": false,
       "feature/licitaciones-filtros-ocultar": false
     }
   },

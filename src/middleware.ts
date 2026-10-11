@@ -8,6 +8,8 @@ export async function middleware(request: NextRequest) {
   const isPublicMagicLink =
     pathname.startsWith('/api/logistics/public/') ||
     pathname.startsWith('/logistics/quote/') ||
+    pathname.startsWith('/cotizar-imprenta/') ||
+    pathname.startsWith('/api/print-rfq/public/') ||
     pathname.startsWith('/planta/empaque') ||
     pathname.startsWith('/api/cost/processes/packing/sessions');
   // Callers sin sesión de usuario: Twilio (inbound + status callback), scheduler de campañas y operadoras de empaque (token QR HMAC).

@@ -26,6 +26,8 @@ import {
   Users,
   Radar,
   Globe,
+  Printer,
+  ClipboardList,
 } from 'lucide-react';
 
 interface NavSection {
@@ -66,6 +68,9 @@ const HINTS: Record<string, [string, string]> = {
   '/rfq/inbox': ['Bandeja Gmail corporativa', 'Correos de cotización detectados en la casilla de la empresa.'],
   '/rfq/quotes': ['Extracción de cotizaciones', 'Lee cotizaciones de proveedores y las pasa a datos comparables.'],
   '/demo/flexibles': ['Sitio de Envases Flexibles (demo)', 'Abre el demo del sitio de flexibles en una pestaña nueva, sin publicarlo.'],
+  '/imprentas': ['Solicitudes a imprentas', 'Pedí presupuesto de impresión a imprentas locales con el SKU y el arte a cotizar.'],
+  '/imprentas/proveedores': ['Imprentas locales', 'Catálogo de imprentas y los procesos de impresión que ofrecen.'],
+  '/imprentas/ordenes': ['Órdenes de compra', 'Órdenes emitidas a imprentas tras la autorización de un administrador.'],
   '/licitaciones': ['Licitaciones', 'Radar de compras públicas de inyectables: detecta empresas que podrían comprar cunas para ampollas.'],
   '/logistics': ['Logística · resumen', 'Estado general de fletes, rutas y transportistas.'],
   '/logistics/ocean': ['Flete marítimo', 'Cotizaciones y rutas de contenedores.'],
@@ -133,6 +138,14 @@ export const Sidebar: React.FC = () => {
         { name: 'Especificaciones', href: '/rfq/rfqs', icon: FileText },
         { name: 'Bandeja Gmail', href: '/rfq/inbox', icon: Inbox },
         { name: 'Cotizaciones', href: '/rfq/quotes', icon: CheckSquare },
+      ],
+    },
+    {
+      title: 'Imprentas',
+      items: [
+        { name: 'Solicitudes', href: '/imprentas', icon: Printer },
+        { name: 'Imprentas locales', href: '/imprentas/proveedores', icon: Factory },
+        { name: 'Órdenes de compra', href: '/imprentas/ordenes', icon: ClipboardList },
       ],
     },
     {
@@ -309,6 +322,7 @@ const MODULE_ICON: Record<string, React.ComponentType<{ className?: string }>> =
   Costos: Calculator,
   Pricing: DollarSign,
   RFQ: FileText,
+  Imprentas: Printer,
   Logística: Truck,
   Comercial: Users,
   Licitaciones: Radar,
