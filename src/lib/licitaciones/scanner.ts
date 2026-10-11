@@ -172,11 +172,29 @@ const PHASES: Record<BoardFilter, string[] | null> = {
   todas: null,
 };
 
-export async function listTenderBoard(organizationId: string, filter: BoardFilter = 'en_curso', search?: string) {
+export interface BoardOptions {
+  /** Texto libre: producto, entidad o empresa. */
+  search?: string;
+  /** Entidad convocante exacta. */
+  entity?: string;
+  /** Publicadas desde / hasta (YYYY-MM-DD, inclusive, hora de Paraguay). */
+  from?: string;
+  to?: string;
+  /** true: solo las descartadas (para poder restaurarlas). */
+  dismissed?: boolean;
+}
+
+export async function listTenderBoard(organizationId: string, filter: BoardFilter = 'en_curso', searchOrOptions: string | BoardOptions = {}) {
+  const options: BoardOptions = typeof searchOrOptions === 'string' ? { search: searchOrOptions } : searchOrOptions;
+  const search = options.search;
   const client = db();
   let query = client.from('licitaciones_tenders')
-    .select('id, external_id, title, convening_entity, status, phase, published_at, closing_at, awarded_at, source_url, source_updated_at, is_test_data, source')
+    .select('id, external_id, title, convening_entity, status, phase, published_at, closing_at, awarded_at, source_url, source_updated_at, is_test_data, source, dismissed_at')
     .eq('organization_id', organizationId).order('source_updated_at', { ascending: false, nullsFirst: false }).limit(300);
+  query = options.dismissed ? query.not('dismissed_at', 'is', null) : query.is('dismissed_at', null);
+  if (options.entity) query = query.eq('convening_entity', options.entity);
+  if (options.from) query = query.gte('published_at', `${options.from}T00:00:00-03:00`);
+  if (options.to) query = query.lte('published_at', `${options.to}T23:59:59-03:00`);
   const phases = PHASES[filter];
   if (phases) query = query.in('phase', phases);
   const { data: tenders, error } = await query;
@@ -209,4 +227,22 @@ export async function listTenderBoard(organizationId: string, filter: BoardFilte
   });
   if (!needle) return board;
   return board.filter((t) => `${t.title} ${t.convening_entity ?? ''} ${t.products.map((p: any) => p.description).join(' ')} ${t.awards.map((a: any) => a.supplier_name).join(' ')} ${t.bidders.map((b: any) => b.name).join(' ')}`.toLowerCase().includes(needle));
+}
+
+/** Entidades convocantes de las licitaciones visibles, para el filtro. */
+export async function listTenderEntities(organizationId: string): Promise<string[]> {
+  const { data, error } = await db().from('licitaciones_tenders').select('convening_entity')
+    .eq('organization_id', organizationId).is('dismissed_at', null).not('convening_entity', 'is', null).limit(5000);
+  if (error) rethrow(error, 'licitaciones_tenders');
+  return [...new Set((data ?? []).map((r: { convening_entity: string }) => r.convening_entity))].sort((a, b) => a.localeCompare(b, 'es'));
+}
+
+/** Descarta (o restaura) licitaciones de la organización. Devuelve cuántas cambiaron. */
+export async function setTendersDismissed(organizationId: string, ids: string[], dismissed: boolean): Promise<number> {
+  if (!ids.length) return 0;
+  const { data, error } = await db().from('licitaciones_tenders')
+    .update({ dismissed_at: dismissed ? new Date().toISOString() : null })
+    .eq('organization_id', organizationId).in('id', ids).select('id');
+  if (error) rethrow(error, 'licitaciones_tenders');
+  return data?.length ?? 0;
 }
