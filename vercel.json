@@ -8,5 +8,8 @@
       "feature/licitaciones-radar": false
     }
   },
+  "crons": [
+    { "path": "/api/licitaciones/cron", "schedule": "0 9 * * *" }
+  ],
   "ignoreCommand": "case \"$VERCEL_GIT_COMMIT_REF\" in feature/*|integration/*) exit 0;; *) exit 1;; esac"
 }

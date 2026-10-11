@@ -42,13 +42,13 @@ export interface ImportResult {
   candidates: number;
 }
 
-export async function importTender(organizationId: string, actorProfileId: string | null, tender: ParsedTender, rawDocument?: unknown): Promise<ImportResult> {
+export async function importTender(organizationId: string, actorProfileId: string | null, tender: ParsedTender, rawDocument?: unknown, options: { refresh?: boolean } = {}): Promise<ImportResult> {
   const client = db();
   const payload = {
     tender: {
       source: tender.source, external_id: tender.external_id, source_url: tender.source_url, title: tender.title,
       convening_entity: tender.convening_entity, procurement_object: tender.procurement_object, status: tender.status,
-      published_at: tender.published_at, closing_at: tender.closing_at, awarded_at: tender.awarded_at,
+      published_at: tender.published_at, closing_at: tender.closing_at, awarded_at: tender.awarded_at, source_updated_at: tender.source_updated_at,
       is_test_data: tender.is_test_data,
       raw_document: { release: rawDocument ?? null, documents: tender.documents, unconfirmed: tender.unconfirmed },
     },
@@ -60,7 +60,7 @@ export async function importTender(organizationId: string, actorProfileId: strin
   });
   if (error) rethrow(error, 'import_licitacion_atomic');
   const imported = data as { tender_id: string; created: boolean; items: number; parties: number };
-  const candidates = await refreshCandidates(organizationId);
+  const candidates = options.refresh === false ? 0 : await refreshCandidates(organizationId);
   return { ...imported, candidates };
 }
 
@@ -215,3 +215,6 @@ export async function convertCandidateToProspect(organizationId: string, actorPr
   if (error) rethrow(error, 'convert_licitacion_candidate_to_prospect');
   return data as { company_id: string; company_created: boolean; opportunity_id: string | null; already_converted: boolean };
 }
+
+// Internos compartidos con el escáner diario.
+export { db as licitacionesDb, rethrow as licitacionesRethrow };

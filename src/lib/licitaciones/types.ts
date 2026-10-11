@@ -51,6 +51,8 @@ export interface ParsedTender {
   published_at?: string;
   closing_at?: string;
   awarded_at?: string;
+  /** Fecha de última modificación publicada por la fuente (release.date). */
+  source_updated_at?: string;
   is_test_data: boolean;
   items: ParsedItem[];
   parties: ParsedParty[];

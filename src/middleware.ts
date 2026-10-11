@@ -15,7 +15,8 @@ export async function middleware(request: NextRequest) {
   const isMachineEndpoint =
     pathname === '/api/niupackbot/whatsapp' ||
     pathname === '/api/niupackbot/whatsapp/status' ||
-    pathname === '/api/niupackbot/campaigns/process';
+    pathname === '/api/niupackbot/campaigns/process' ||
+    pathname === '/api/licitaciones/cron';
 
   if (isLogin || isPublicMagicLink || isMachineEndpoint) return response;
 

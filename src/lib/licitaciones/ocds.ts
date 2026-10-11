@@ -160,6 +160,7 @@ export function parseOcdsRelease(release: Json, opts: { source?: TenderSource; i
     published_at: toIso(tender.datePublished) ?? toIso(tender.tenderPeriod?.startDate),
     closing_at: toIso(tender.tenderPeriod?.endDate),
     awarded_at: awardDates.sort()[0],
+    source_updated_at: toIso(release.date),
     is_test_data: opts.isTestData ?? false,
     items,
     parties,
