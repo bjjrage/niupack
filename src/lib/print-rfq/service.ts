@@ -20,7 +20,7 @@ const ERRORS: Record<string, [number, string]> = {
   PRINT_RFQ_NOT_OPEN: [409, 'La solicitud no está abierta'],
   PRINT_RFQ_FINAL: [409, 'La solicitud ya terminó y no se puede reabrir'],
   PRINT_RFQ_NOT_PURCHASABLE: [409, 'La solicitud no admite compra (propósito o estado)'],
-  PRINT_ART_REQUIRED: [409, 'Cada ítem necesita su arte registrado antes de invitar imprentas'],
+  PRINT_ART_REQUIRED: [409, 'Esta solicitud requiere arte: registralo en cada ítem antes de invitar proveedores'],
   PRINT_PROVIDERS_REQUIRED: [400, 'Elegí al menos una imprenta'],
   PRINT_PROVIDER_INVALID: [404, 'La imprenta no existe o está inactiva'],
   PRINT_INVITATION_NOT_FOUND: [404, 'Invitación no encontrada'],
@@ -99,7 +99,7 @@ const clean = (value: string | undefined) => (value && value.trim() ? value.trim
 export async function saveProvider(org: string, input: unknown, id?: string) {
   const parsed = providerSchema.parse(input);
   const row = {
-    name: parsed.name, ruc: clean(parsed.ruc), contact_name: clean(parsed.contact_name), email: clean(parsed.email), phone: clean(parsed.phone),
+    name: parsed.name, provider_type: parsed.provider_type, ruc: clean(parsed.ruc), contact_name: clean(parsed.contact_name), email: clean(parsed.email), phone: clean(parsed.phone),
     city: clean(parsed.city), processes: parsed.processes, notes: clean(parsed.notes), active: parsed.active, updated_at: new Date().toISOString(),
   };
   if (id) {
@@ -301,7 +301,7 @@ export async function resolveInvitation(token: string) {
   return data as Row;
 }
 
-/** Lo que ve la imprenta: ítems, ficha de impresión y arte. Nunca otras imprentas ni precios ajenos. */
+/** Lo que ve el proveedor: ítems, ficha técnica y arte (si hay). Nunca otros proveedores ni precios ajenos. */
 export async function getPortalView(token: string) {
   const invitation = await resolveInvitation(token);
   const rfq = invitation.print_rfqs as Row;

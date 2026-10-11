@@ -71,9 +71,9 @@ const HINTS: Record<string, [string, string]> = {
   '/demo/flexibles': ['Sitio de Envases Flexibles (demo)', 'Abre el demo del sitio de flexibles en una pestaña nueva, sin publicarlo.'],
   '/presupuestos': ['Presupuestos a clientes', 'Armá el presupuesto con los SKU del catálogo en el formato NIUPACK.'],
   '/ordenes-trabajo': ['Órdenes de Trabajo', 'Se generan al aceptar un presupuesto. Documento interno para producción.'],
-  '/imprentas': ['Solicitudes a imprentas', 'Pedí presupuesto de impresión a imprentas locales con el SKU y el arte a cotizar.'],
-  '/imprentas/proveedores': ['Imprentas locales', 'Catálogo de imprentas y los procesos de impresión que ofrecen.'],
-  '/imprentas/ordenes': ['Órdenes de compra', 'Órdenes emitidas a imprentas tras la autorización de un administrador.'],
+  '/compras': ['RFQ a proveedores', 'Pedí cotización de productos o servicios a tus proveedores, con revisión, autorización y orden de compra.'],
+  '/compras/proveedores': ['Proveedores', 'Registro de proveedores por tipo: imprentas, materia prima, servicios y otros.'],
+  '/compras/ordenes': ['Órdenes de compra', 'Órdenes emitidas a proveedores tras la autorización de un administrador.'],
   '/licitaciones': ['Licitaciones', 'Radar de compras públicas de inyectables: detecta empresas que podrían comprar cunas para ampollas.'],
   '/logistics': ['Logística · resumen', 'Estado general de fletes, rutas y transportistas.'],
   '/logistics/ocean': ['Flete marítimo', 'Cotizaciones y rutas de contenedores.'],
@@ -135,15 +135,6 @@ export const Sidebar: React.FC = () => {
       ],
     },
     {
-      title: 'RFQ',
-      items: [
-        { name: 'Descubrimiento', href: '/rfq/discovery', icon: Search },
-        { name: 'Especificaciones', href: '/rfq/rfqs', icon: FileText },
-        { name: 'Bandeja Gmail', href: '/rfq/inbox', icon: Inbox },
-        { name: 'Cotizaciones', href: '/rfq/quotes', icon: CheckSquare },
-      ],
-    },
-    {
       title: 'Presupuestos',
       items: [
         { name: 'Presupuestos', href: '/presupuestos', icon: FileText },
@@ -151,11 +142,11 @@ export const Sidebar: React.FC = () => {
       ],
     },
     {
-      title: 'Imprentas',
+      title: 'Compras',
       items: [
-        { name: 'Solicitudes', href: '/imprentas', icon: Printer },
-        { name: 'Imprentas locales', href: '/imprentas/proveedores', icon: Factory },
-        { name: 'Órdenes de compra', href: '/imprentas/ordenes', icon: ClipboardList },
+        { name: 'Proveedores', href: '/compras/proveedores', icon: Factory },
+        { name: 'RFQ a proveedores', href: '/compras', icon: Printer },
+        { name: 'Órdenes de compra', href: '/compras/ordenes', icon: ClipboardList },
       ],
     },
     {
@@ -166,6 +157,10 @@ export const Sidebar: React.FC = () => {
         { name: 'Terrestre', href: '/logistics/road', icon: Truck },
         { name: 'Transportistas', href: '/logistics/providers', icon: Factory },
         { name: 'Histórico', href: '/logistics/history', icon: Database },
+        { name: 'RFQ · Descubrimiento', href: '/rfq/discovery', icon: Search },
+        { name: 'RFQ · Especificaciones', href: '/rfq/rfqs', icon: FileText },
+        { name: 'RFQ · Bandeja Gmail', href: '/rfq/inbox', icon: Inbox },
+        { name: 'RFQ · Cotizaciones', href: '/rfq/quotes', icon: CheckSquare },
       ],
     },
     {
@@ -331,8 +326,7 @@ const MODULE_ICON: Record<string, React.ComponentType<{ className?: string }>> =
   Mercado: TrendingUp,
   Costos: Calculator,
   Pricing: DollarSign,
-  RFQ: FileText,
-  Imprentas: Printer,
+  Compras: Printer,
   Presupuestos: FileText,
   Logística: Truck,
   Comercial: Users,

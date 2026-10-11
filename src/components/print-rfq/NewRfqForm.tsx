@@ -20,6 +20,7 @@ export function NewRfqForm() {
   const router = useRouter();
   const [purpose, setPurpose] = useState<'' | 'PROCUREMENT' | 'COST_DISCOVERY'>('');
   const [title, setTitle] = useState('');
+  const [requiresArt, setRequiresArt] = useState(false);
   const [specifications, setSpecifications] = useState('');
   const [requiredDate, setRequiredDate] = useState('');
   const [expiresDays, setExpiresDays] = useState('14');
@@ -46,7 +47,7 @@ export function NewRfqForm() {
     try {
       const body = {
         header: {
-          purpose, title, specifications: specifications || undefined, required_date: requiredDate || undefined,
+          purpose, title, requires_art: requiresArt, specifications: specifications || undefined, required_date: requiredDate || undefined,
           expires_at: new Date(Date.now() + Number(expiresDays || 14) * 86_400_000).toISOString(),
         },
         items: items.map((i) => ({
@@ -58,7 +59,7 @@ export function NewRfqForm() {
       const workspace = await api<{ items: Array<{ id: string }> }>(`/api/print-rfq/rfqs/${created.id}`);
       const failures: string[] = [];
       for (const [index, item] of items.entries()) {
-        if (!item.file) continue;
+        if (!requiresArt || !item.file) continue;
         setProgress(`Registrando arte ${index + 1} de ${items.length}…`);
         const form = new FormData();
         form.set('item_id', workspace.items[index].id);
@@ -67,7 +68,7 @@ export function NewRfqForm() {
         catch (e) { failures.push(`${item.sku}: ${(e as Error).message}`); }
       }
       if (failures.length) window.alert(`La solicitud ${created.code} se creó, pero no se pudo registrar el arte de:\n${failures.join('\n')}\n\nPodés subirlo desde la solicitud.`);
-      router.push(`/imprentas/${created.id}`);
+      router.push(`/compras/${created.id}`);
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);
@@ -91,15 +92,16 @@ export function NewRfqForm() {
             </select>
           </label>
           <label className="text-[11px] text-slate-400">Necesitamos para<input type="date" value={requiredDate} onChange={(e) => setRequiredDate(e.target.value)} className={inputClass} /></label>
-          <label className="text-[11px] text-slate-400">Las imprentas pueden cotizar durante (días)<input type="number" min={1} max={90} value={expiresDays} onChange={(e) => setExpiresDays(e.target.value)} className={inputClass} /></label>
+          <label className="text-[11px] text-slate-400">Los proveedores pueden cotizar durante (días)<input type="number" min={1} max={90} value={expiresDays} onChange={(e) => setExpiresDays(e.target.value)} className={inputClass} /></label>
         </div>
-        <label className="block text-[11px] text-slate-400">Indicaciones generales para las imprentas<textarea rows={2} value={specifications} onChange={(e) => setSpecifications(e.target.value)} className={inputClass} /></label>
+        <label className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" checked={requiresArt} onChange={(e) => setRequiresArt(e.target.checked)} className="mt-0.5" /><span>Requiere arte de impresión: cada ítem lleva su arte registrado y no se puede invitar sin él (para imprentas y otros trabajos sobre un diseño).</span></label>
+        <label className="block text-[11px] text-slate-400">Indicaciones generales para los proveedores<textarea rows={2} value={specifications} onChange={(e) => setSpecifications(e.target.value)} className={inputClass} /></label>
       </section>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-white">Productos a imprimir</h2>
-          <button type="button" onClick={() => setItems((l) => [...l, blankItem()])} className={ghostButtonClass}><Plus className="h-3 w-3" />Agregar SKU</button>
+          <h2 className="text-sm font-semibold text-white">Productos o servicios a cotizar</h2>
+          <button type="button" onClick={() => setItems((l) => [...l, blankItem()])} className={ghostButtonClass}><Plus className="h-3 w-3" />Agregar ítem</button>
         </div>
         {items.map((item, index) => (
           <div key={item.key} className="space-y-3 rounded border border-slate-800 bg-[#141820] p-4" data-testid="rfq-item">
@@ -108,13 +110,14 @@ export function NewRfqForm() {
               {items.length > 1 && <button type="button" aria-label={`Quitar ítem ${index + 1}`} onClick={() => setItems((l) => l.filter((i) => i.key !== item.key))} className="text-slate-500 hover:text-red-400"><Trash2 className="h-3.5 w-3.5" /></button>}
             </div>
             <div className="grid gap-3 md:grid-cols-4">
-              <label className="text-[11px] text-slate-400">SKU *<input required list="print-skus" value={item.sku} onChange={(e) => pickSku(item.key, e.target.value)} className={inputClass} /></label>
+              <label className="text-[11px] text-slate-400">SKU (opcional)<input list="print-skus" value={item.sku} onChange={(e) => pickSku(item.key, e.target.value)} className={inputClass} /></label>
               <label className="text-[11px] text-slate-400 md:col-span-2">Descripción *<input required value={item.description} onChange={(e) => update(item.key, { description: e.target.value })} className={inputClass} /></label>
               <div className="grid grid-cols-2 gap-2">
                 <label className="text-[11px] text-slate-400">Cantidad *<input required type="number" min="0.0001" step="any" value={item.quantity} onChange={(e) => update(item.key, { quantity: e.target.value })} className={inputClass} /></label>
                 <label className="text-[11px] text-slate-400">Unidad *<input required value={item.unit} onChange={(e) => update(item.key, { unit: e.target.value })} className={inputClass} /></label>
               </div>
             </div>
+            {requiresArt && (<>
             <div className="grid gap-3 md:grid-cols-5">
               <label className="text-[11px] text-slate-400">Proceso
                 <select value={item.process} onChange={(e) => update(item.key, { process: e.target.value })} className={inputClass}>
@@ -133,7 +136,8 @@ export function NewRfqForm() {
                 <input type="file" accept={ART_ACCEPT} onChange={(e) => update(item.key, { file: e.target.files?.[0] ?? null })} className={`${inputClass} file:mr-2 file:rounded file:border-0 file:bg-slate-700 file:px-2 file:py-1 file:text-xs file:text-white`} />
               </label>
             </div>
-            {!item.file && <p className="text-[11px] text-amber-400">Sin arte no se puede invitar a las imprentas. Podés subirlo después, desde la solicitud.</p>}
+            {!item.file && <p className="text-[11px] text-amber-400">Sin arte no se puede invitar a los proveedores. Podés subirlo después, desde la solicitud.</p>}
+            </>)}
           </div>
         ))}
       </section>

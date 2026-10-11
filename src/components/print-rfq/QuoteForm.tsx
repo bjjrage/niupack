@@ -5,7 +5,7 @@ import { CURRENCIES } from '@/lib/print-rfq/domain';
 import { inputClass, buttonClass } from './format';
 
 export interface QuoteItem {
-  id: string; sku: string; description: string; quantity: number; unit: string; print_spec?: Record<string, string>;
+  id: string; sku: string | null; description: string; quantity: number; unit: string; print_spec?: Record<string, string>;
   art?: Array<{ id: string; file_name: string }>;
 }
 
@@ -68,7 +68,7 @@ export function QuoteForm({ items, artHref, onSubmit, submitLabel = 'Enviar pres
           <div key={item.id} className="space-y-2 rounded border border-slate-800 bg-[#0c0f14] p-3">
             <div>
               <p className="text-sm font-medium text-white">{item.description}</p>
-              <p className="text-[11px] text-slate-400">SKU {item.sku} · {item.quantity.toLocaleString('es-PY')} {item.unit}</p>
+              <p className="text-[11px] text-slate-400">{item.sku ? `SKU ${item.sku} · ` : ''}{item.quantity.toLocaleString('es-PY')} {item.unit}</p>
               {item.print_spec && Object.keys(item.print_spec).length > 0 && (
                 <p className="text-[11px] text-slate-400">{Object.entries(item.print_spec).map(([k, v]) => `${SPEC_LABEL[k] ?? k}: ${v}`).join(' · ')}</p>
               )}
