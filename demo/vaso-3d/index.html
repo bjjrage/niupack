@@ -30,7 +30,7 @@
             <button type="button" id="reset-view" aria-label="Restablecer vista" title="Restablecer vista"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg></button>
           </div>
         </div>
-        <div class="viewer-bottom"><span class="gesture-hint"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7-4 4 4 4m10-8 4 4-4 4M3 11h18"/></svg>Arrastrá para girar · Usá dos dedos para acercar</span><span class="live-badge"><i></i> Vista 3D en vivo</span></div>
+        <div class="viewer-bottom"><span class="gesture-hint"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7-4 4 4 4m10-8 4 4-4 4M3 11h18"/></svg>Arrastrá para girar · Usá dos dedos para acercar</span><div class="side-views" role="group" aria-label="Vistas del vaso"><button type="button" id="view-front">Ver frente</button><button type="button" id="view-back">Ver reverso</button></div><span class="live-badge"><i></i> Vista 3D en vivo</span></div>
       </section>
       <aside class="editor" aria-labelledby="editor-title">
         <div class="editor-heading"><div><p class="eyebrow">HECHO A TU MANERA</p><h2 id="editor-title">Diseñá tu vaso</h2></div><span class="step-count">01 — 03</span></div>
@@ -52,6 +52,9 @@
           <div class="section-heading"><h3 id="adjust-title"><span class="section-number">03</span>Ajustá los detalles</h3><button type="button" id="reset-design" class="text-button">Restablecer</button></div>
           <fieldset id="design-controls">
             <legend class="sr-only">Ajustes de diseño</legend>
+            <div class="layout-options" role="group" aria-label="Aplicación del diseño"><button type="button" data-layout="logo" aria-pressed="true" class="is-selected">Logo</button><button type="button" data-layout="wrap" aria-pressed="false">Diseño 360°</button></div>
+            <p id="layout-help" class="layout-help">Ubica la imagen en el frente y conserva sus proporciones.</p>
+            <div class="print-preview"><canvas id="print-preview" width="600" height="285" role="img" aria-label="Vista plana de la zona de impresión; el centro corresponde al frente y los extremos se unen atrás."></canvas><div><span>Reverso</span><span>Frente</span><span>Reverso</span></div></div>
             <label class="slider-label" for="design-size"><span>Tamaño</span><output id="size-value" for="design-size">100 %</output></label><input id="design-size" type="range" min="35" max="180" value="100" step="1">
             <label class="slider-label" for="design-x"><span>Posición horizontal</span><output id="x-value" for="design-x">0°</output></label><input id="design-x" type="range" min="-180" max="180" value="0" step="1">
             <label class="slider-label" for="design-y"><span>Posición vertical</span><output id="y-value" for="design-y">0 %</output></label><input id="design-y" type="range" min="-38" max="38" value="0" step="1">

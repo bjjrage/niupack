@@ -14,8 +14,15 @@ export const SHEET = {
 export const SHEET_WIDTH = SHEET.halfWidth * 2;
 export const SHEET_HEIGHT = SHEET.maxY - SHEET.minY;
 
-export interface DesignState { size: number; x: number; y: number; rotation: number }
-export const DEFAULT_DESIGN: Readonly<DesignState> = { size: 100, x: 0, y: 0, rotation: 0 };
+export type LayoutMode = 'logo' | 'wrap';
+export const PRINT_MARGIN = 0.045;
+export interface DesignState { size: number; x: number; y: number; rotation: number; mode: LayoutMode }
+export const DEFAULT_DESIGN: Readonly<DesignState> = { size: 100, x: 0, y: 0, rotation: 0, mode: 'logo' };
+
+// A suggestion only: the user can always switch layouts explicitly.
+export function suggestedLayout(width: number, height: number): LayoutMode {
+  return width / height >= 1.25 ? 'wrap' : 'logo';
+}
 
 // An annular-sector development, not a rectangular cylinder UV map. Distances
 // on the printed sheet follow the actual taper of the paper cup.
@@ -26,12 +33,29 @@ export function surfaceUV(circumferenceFraction: number, heightFraction: number)
 }
 
 export function artworkPlacement(width: number, height: number, state: DesignState) {
-  const fit = Math.min(1.08 / width, 0.72 / height) * state.size / 100;
+  const radius = SHEET.inner + SLANT * (0.5 + state.y / 100);
+  const rotation = state.rotation * Math.PI / 180;
+  // For full artwork, cover the actual annular sector with one uniformly scaled
+  // image. Sampling the boundary also accounts for image rotation and offset;
+  // enlarging a front-logo rectangle cannot cover the cone's back or its corners.
+  let cover = 0;
+  if (state.mode === 'wrap') {
+    const cos = Math.cos(rotation), sin = Math.sin(rotation);
+    for (const edge of [SHEET.inner + PRINT_MARGIN, SHEET.outer - PRINT_MARGIN]) {
+      for (let i = 0; i <= 96; i++) {
+        const phi = (i / 96 - 0.5) * SECTOR_ANGLE;
+        const dx = edge * Math.sin(phi);
+        const dy = radius - edge * Math.cos(phi);
+        cover = Math.max(cover, Math.abs(dx * cos + dy * sin) * 2 / width, Math.abs(-dx * sin + dy * cos) * 2 / height);
+      }
+    }
+  }
+  const fit = (state.mode === 'wrap' ? cover * 1.002 : Math.min(1.08 / width, 0.72 / height)) * state.size / 100;
   return {
     width: width * fit,
     height: height * fit,
-    radius: SHEET.inner + SLANT * (0.5 + state.y / 100),
+    radius,
     angle: state.x / 360 * SECTOR_ANGLE,
-    rotation: state.rotation * Math.PI / 180,
+    rotation,
   };
 }

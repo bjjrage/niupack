@@ -2,7 +2,7 @@
 
 ## Resultado
 
-**Build estático y typecheck: PASS. Pruebas de Node: 7/7 PASS. Banco de pruebas de navegador con WebGL real: 8/8 PASS.**
+**Build estático y typecheck: PASS. Pruebas de Node: 9/9 PASS. Banco de pruebas de navegador con WebGL real: 9/9 PASS**, después de corregir el ajuste envolvente.
 
 Validado localmente en Windows con Node 24.20.0 y Chromium del navegador integrado. Los archivos de imagen de prueba son sintéticos y no contienen datos de clientes.
 
@@ -28,13 +28,24 @@ La página `qa/browser.html` se ejecutó con Vite en el puerto 4181, separada de
 | JPG dañado rechazado | PASS |
 | Archivo mayor a 12 MiB rechazado antes de decodificar | PASS |
 | 12 reemplazos sucesivos, liberación de canvas anterior y capturas repetidas | PASS |
+| Diseño 360°: cobertura opaca en frente/reverso y cinco desplazamientos por la unión, sin dejar una banda vacía | PASS |
 | Pérdida y recuperación WebGL mediante `WEBGL_lose_context`, con arte visible en la captura posterior | PASS |
 
 La recuperación se probó después de reconstruir el mapa de entorno generado en GPU. El registro de consola de esta ejecución final no devolvió errores ni advertencias. En la primera ejecución se observaron advertencias de precisión del compilador gráfico del equipo y una constante de sombras obsoleta; se reemplazó la constante por la vigente, `PCFShadowMap`.
 
 ## Pruebas de Node
 
-7 casos: lectura de cabecera PNG; JPG baseline y progressive; rechazo de cabeceras dañadas/falsas; límites de resolución; límites y simetría del UV en la unión; escala física de la superficie cónica; proporciones de arte vertical, cuadrado y horizontal en distintos tamaños.
+9 casos: los 7 casos originales, ampliando la conservación de proporciones a los dos modos; sugerencia de modo para una composición ancha; y cobertura de toda la zona imprimible con imágenes verticales, cuadradas y horizontales, incluso con distintas rotaciones y desplazamientos verticales.
+
+## Corrección del ajuste a partir de las capturas del usuario
+
+La versión inicial ajustaba toda imagen a un rectángulo frontal de 1.08 × 0.72 unidades. Aumentar ese rectángulo no equivale a envolver el vaso y dejaba una zona grande sin diseño por detrás.
+
+Se conservó la geometría y el UV físico del cono. Se agregó un modo envolvente que calcula una escala uniforme para cubrir todo el sector imprimible. Las copias que cruzan la unión quedan recortadas a su propio sector, evitando que se pisen. El modo frontal sigue disponible para logos.
+
+Se reprodujo el caso con el archivo local `diseno_prueba_cafe_rojo.png` (1800 × 1100), sin modificar el original y sin versionarlo. Al cargarlo se seleccionó Diseño 360°; se inspeccionaron el frente, el reverso y la vista plana. El recorte necesario para cubrir la superficie se indica en la interfaz. El archivo contiene transparencia: el papel visible dentro de esas áreas pertenece al diseño y no es un fallo de cobertura.
+
+Se agregaron pruebas de regresión independientes del arte del usuario: una imagen opaca debe cubrir una cuadrícula de puntos de toda la superficie para cinco desplazamientos; un patrón con centro rojo y extremos azul/verde debe aparecer respectivamente en las capturas reales del frente y del reverso. Las dos pruebas pasaron, y la recuperación WebGL posterior conservó el diseño. La consola de la ejecución no devolvió errores ni advertencias.
 
 ## Aislamiento y privacidad
 

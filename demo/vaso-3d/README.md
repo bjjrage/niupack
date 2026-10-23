@@ -29,6 +29,8 @@ Usa el mismo puerto: detené el servidor anterior con Ctrl+C antes de iniciar ot
 - Geometría WebGL 2 auténtica: cuerpo cónico, pared interior, borde enrollado, base y fondo interior. Órbita de 360°, inclinación limitada y zoom con mouse, teclado o gestos de OrbitControls.
 - JPG y PNG como formatos principales; SVG estático simple opcional. Carga mediante selector o arrastre.
 - Tamaño, posición horizontal alrededor del vaso, altura y rotación independientes. Restablecer ajustes, quitar diseño, cambiar blanco/kraft y restablecer cámara.
+- Dos aplicaciones explícitas: **Logo** conserva la imagen como una marca frontal; **Diseño 360°** cubre toda la zona imprimible con una escala uniforme, recortando los bordes necesarios. Los archivos con proporción horizontal de al menos 1.25 se cargan inicialmente en Diseño 360°; el usuario puede cambiarlo. Las transparencias siempre dejan ver el papel.
+- Vista plana de la zona imprimible y accesos **Ver frente / Ver reverso**. Al cargar otra imagen se devuelve la cámara al frente. Restablecer conserva el modo elegido y devuelve la escala a 100%; en 360° ese es el mínimo de cobertura.
 - Mapeo UV mediante el desarrollo en sector anular del cono, para evitar el estiramiento artificial de un mapeo cilíndrico. El diseño se recorta al área de impresión y continúa alrededor de la unión posterior.
 - PNG del render real, con diseño y fondo. La captura copia inmediatamente el buffer de WebGL antes de codificar el PNG.
 - Iluminación de estudio, material mate, grano procedural, sombras y reflejos discretos. Recursos de presentación generados localmente mediante código.
@@ -71,7 +73,8 @@ Ver `QA.md` para la evidencia y los límites de esta validación.
 - Three.js 0.186.1, OrbitControls, RoomEnvironment, Canvas 2D nativo, TypeScript 5.9.3, Vite 8.3.5. Node nativo para servir el build y ejecutar pruebas. Sin React, Next.js, IA ni backend.
 - `index.html`, `src/style.css`: interfaz responsive y accesible.
 - `src/studio.mts`: geometría, materiales, cámara, UV, exportación y ciclo de vida WebGL.
-- `src/layout.mts`: desarrollo geométrico y colocación proporcional del arte.
+- `src/layout.mts`: desarrollo geométrico, ajuste frontal y cobertura del arte envolvente.
+- `src/print.mts`: composición compartida de la textura y la vista plana; cada copia se limita a su sector para evitar superposición en la unión.
 - `src/artwork.mts`: validación y procesamiento de imágenes.
 - `src/main.mts`: acciones de interfaz, carga, ajustes y estados.
 - `public/`: copia del logo existente y favicon.

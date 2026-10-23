@@ -2,12 +2,14 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { Artwork } from './artwork.mts';
-import { CUP, SHEET, SHEET_WIDTH, SHEET_HEIGHT, SECTOR_ANGLE, artworkPlacement, surfaceUV, type DesignState } from './layout.mts';
+import { CUP, SHEET_WIDTH, SHEET_HEIGHT, surfaceUV, type DesignState } from './layout.mts';
+import { composePrint } from './print.mts';
 
 export type Paper = 'white' | 'kraft';
 export interface Studio {
   update(artwork: Artwork | null, state: DesignState, paper: Paper): void;
   resetView(): void;
+  showSide(back: boolean): void;
   zoom(factor: number): void;
   rotate(horizontal: number, vertical?: number): void;
   capture(): Promise<Blob>;
@@ -198,36 +200,23 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
       const color = paper === 'white' ? '#f5f1e7' : '#b68d60';
       paperMaterial.color.set(color);
       bottomMaterial.color.set(paper === 'white' ? '#ddd7c9' : '#a57f53');
-      const scale = textureCanvas.width / SHEET_WIDTH;
-      ctx.clearRect(0, 0, textureCanvas.width, textureCanvas.height);
-      ctx.fillStyle = paper === 'white' ? '#faf8f2' : '#be996e';
-      ctx.fillRect(0, 0, textureCanvas.width, textureCanvas.height);
-      if (artwork) {
-        const placement = artworkPlacement(artwork.canvas.width, artwork.canvas.height, state);
-        ctx.save();
-        // Sheet coordinates have their origin at the cone's virtual apex.
-        ctx.translate(textureCanvas.width / 2, SHEET.maxY * scale);
-        ctx.beginPath();
-        const margin = 0.045;
-        const start = -Math.PI / 2 - SECTOR_ANGLE / 2;
-        const end = -Math.PI / 2 + SECTOR_ANGLE / 2;
-        ctx.arc(0, 0, (SHEET.outer - margin) * scale, start, end);
-        ctx.arc(0, 0, (SHEET.inner + margin) * scale, end, start, true);
-        ctx.closePath(); ctx.clip();
-        for (const turn of [-1, 0, 1]) {
-          const phi = placement.angle + turn * SECTOR_ANGLE;
-          ctx.save();
-          ctx.translate(Math.sin(phi) * placement.radius * scale, -Math.cos(phi) * placement.radius * scale);
-          ctx.rotate(phi + placement.rotation);
-          ctx.drawImage(artwork.canvas, -placement.width * scale / 2, -placement.height * scale / 2, placement.width * scale, placement.height * scale);
-          ctx.restore();
-        }
-        ctx.restore();
-      }
+      composePrint(ctx, artwork, state, paper);
       printTexture.needsUpdate = true;
       invalidate();
     },
     resetView() { controls.reset(); invalidate(); },
+    showSide(back) {
+      // Reset first to clear any damping left from a drag, then choose a known
+      // front/back angle. Loading a new image always returns to its front.
+      controls.reset();
+      if (back) {
+        const offset = camera.position.clone().sub(controls.target);
+        offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+        camera.position.copy(controls.target).add(offset);
+        controls.update();
+      }
+      invalidate();
+    },
     zoom(factor) {
       const offset = camera.position.clone().sub(controls.target);
       offset.setLength(THREE.MathUtils.clamp(offset.length() * factor, controls.minDistance, controls.maxDistance));

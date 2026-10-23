@@ -1,6 +1,7 @@
 import { createStudio, type Paper, type Studio } from './studio.mts';
 import { loadArtwork, exampleArtwork, releaseArtwork, type Artwork } from './artwork.mts';
-import { DEFAULT_DESIGN } from './layout.mts';
+import { DEFAULT_DESIGN, SHEET_HEIGHT, SHEET_WIDTH, suggestedLayout, type LayoutMode } from './layout.mts';
+import { drawPrintPreview } from './print.mts';
 
 function element<T extends HTMLElement>(id: string): T {
   const value = document.getElementById(id);
@@ -15,6 +16,8 @@ const input = element<HTMLInputElement>('artwork-file');
 const notice = element('upload-notice');
 const dropZone = element('drop-zone');
 const toast = element('toast');
+const printPreview = element<HTMLCanvasElement>('print-preview');
+printPreview.height = Math.round(printPreview.width * SHEET_HEIGHT / SHEET_WIDTH);
 const state = { ...DEFAULT_DESIGN };
 let paper: Paper = 'white';
 let artwork: Artwork | null = exampleArtwork();
@@ -43,9 +46,20 @@ function updateEnabled(): void {
   element<HTMLButtonElement>('reset-design').disabled = !artwork || loading;
   element<HTMLButtonElement>('remove-artwork').disabled = !artwork || loading;
 }
-function redraw(): void { studio?.update(artwork, state, paper); }
-function resetDesign(): void {
-  Object.assign(state, DEFAULT_DESIGN);
+function redraw(): void {
+  studio?.update(artwork, state, paper);
+  drawPrintPreview(printPreview, artwork, state, paper);
+}
+function resetDesign(mode: LayoutMode = state.mode): void {
+  Object.assign(state, DEFAULT_DESIGN, { mode });
+  document.querySelectorAll<HTMLButtonElement>('[data-layout]').forEach((button) => {
+    const selected = button.dataset.layout === mode;
+    button.classList.toggle('is-selected', selected); button.setAttribute('aria-pressed', String(selected));
+  });
+  element<HTMLInputElement>('design-size').min = mode === 'wrap' ? '100' : '35';
+  element('layout-help').textContent = mode === 'wrap'
+    ? 'Cubre los 360° sin estirar la imagen. Puede recortar bordes; revisá la vista plana y el reverso.'
+    : 'Ubica la imagen en el frente y conserva sus proporciones. El resto del vaso queda libre.';
   for (const [id, key, suffix, output] of sliderBindings) {
     element<HTMLInputElement>(id).value = String(state[key]);
     element(output).textContent = `${state[key]}${suffix}`;
@@ -84,7 +98,8 @@ async function upload(file: File): Promise<void> {
     const next = await loadArtwork(file);
     if (ticket !== generation) { releaseArtwork(next); return; }
     const previous = artwork; artwork = next;
-    resetDesign();
+    resetDesign(suggestedLayout(next.width, next.height));
+    studio?.showSide(false);
     releaseArtwork(previous);
     element('file-name').textContent = next.name;
     element('file-meta').textContent = `${next.kind} · ${next.width} × ${next.height} px`;
@@ -122,6 +137,13 @@ document.querySelectorAll<HTMLButtonElement>('[data-material]').forEach((button)
     redraw();
   });
 });
+document.querySelectorAll<HTMLButtonElement>('[data-layout]').forEach((button) => {
+  button.addEventListener('click', () => {
+    resetDesign(button.dataset.layout === 'wrap' ? 'wrap' : 'logo');
+    studio?.showSide(false);
+    qualityNotice();
+  });
+});
 element('reset-design').addEventListener('click', () => { resetDesign(); qualityNotice(); announce('Ajustes restablecidos.'); });
 element('remove-artwork').addEventListener('click', () => {
   releaseArtwork(artwork); artwork = null;
@@ -131,6 +153,8 @@ element('remove-artwork').addEventListener('click', () => {
 element('zoom-in').addEventListener('click', () => studio?.zoom(0.88));
 element('zoom-out').addEventListener('click', () => studio?.zoom(1.14));
 element('reset-view').addEventListener('click', () => studio?.resetView());
+element('view-front').addEventListener('click', () => studio?.showSide(false));
+element('view-back').addEventListener('click', () => studio?.showSide(true));
 element('reload-viewer').addEventListener('click', () => window.location.reload());
 viewer.addEventListener('keydown', (event) => {
   const handled = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '+', '=', '-', 'Home'];
