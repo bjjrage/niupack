@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rasterMetadata, checkDimensions, MAX_PIXELS } from '../src/artwork.mts';
-import { surfaceUV, artworkPlacement, DEFAULT_DESIGN, SHEET, SECTOR_ANGLE, PRINT_MARGIN, SHEET_WIDTH, SHEET_HEIGHT, CUP, suggestedLayout } from '../src/layout.mts';
+import { surfaceUV, textureUV, artworkPlacement, DEFAULT_DESIGN, WRAP, PRINT_MARGIN, SHEET_WIDTH, SHEET_HEIGHT, CUP, suggestedLayout } from '../src/layout.mts';
 
 test('PNG dimensions are read from content before allocating an image', () => {
   const bytes = new Uint8Array(24);
@@ -55,16 +55,25 @@ test('a wide composition suggests wrap, while square and portrait artwork start 
   assert.equal(suggestedLayout(1000, 1000), 'logo');
   assert.equal(suggestedLayout(500, 900), 'logo');
 });
-test('wrap at 100% covers the complete printable sector, including the back, after rotation and vertical shifts', () => {
-  for (const [width, height] of [[1800, 1100], [1000, 1000], [400, 1200]]) for (const rotation of [-140, 0, 27, 90]) for (const y of [-38, 0, 38]) {
-    const place = artworkPlacement(width, height, { ...DEFAULT_DESIGN, mode: 'wrap', rotation, y });
-    for (const radius of [SHEET.inner + PRINT_MARGIN, (SHEET.inner + SHEET.outer) / 2, SHEET.outer - PRINT_MARGIN]) for (let i = 0; i <= 73; i++) {
-      const phi = (i / 73 - 0.5) * SECTOR_ANGLE;
-      const dx = radius * Math.sin(phi), dy = place.radius - radius * Math.cos(phi);
-      const x = dx * Math.cos(place.rotation) + dy * Math.sin(place.rotation);
-      const localY = -dx * Math.sin(place.rotation) + dy * Math.cos(place.rotation);
-      assert.ok(Math.abs(x) <= place.width / 2 + 1e-8);
-      assert.ok(Math.abs(localY) <= place.height / 2 + 1e-8);
-    }
+test('wrap uses equal angular steps and constant wall height throughout the circumference', () => {
+  for (const height of [0, 0.2, 0.5, 0.8, 1]) for (let angle = 0; angle <= 1; angle += 0.05) {
+    const uv = textureUV(angle, height, 'wrap');
+    assert.equal(uv[0], angle);
+    assert.equal(uv[1], height);
+  }
+});
+test('wrap initial fit covers the rectangular print band with uniform image scale', () => {
+  for (const [width, height] of [[1800, 1100], [1000, 1000], [400, 1200]]) {
+    const place = artworkPlacement(width, height, { ...DEFAULT_DESIGN, mode: 'wrap' });
+    assert.ok(place.width >= WRAP.width - 1e-10);
+    assert.ok(place.height >= WRAP.height - PRINT_MARGIN * 2 - 1e-10);
+  }
+});
+test('horizontal movement, vertical movement and rotation do not implicitly resize the wrap image', () => {
+  const base = artworkPlacement(1800, 1100, { ...DEFAULT_DESIGN, mode: 'wrap' });
+  for (const x of [-180, -90, 0, 90, 180]) for (const y of [-38, 8, 32, 38]) for (const rotation of [-140, -9, 0, 27, 90]) {
+    const place = artworkPlacement(1800, 1100, { ...DEFAULT_DESIGN, mode: 'wrap', x, y, rotation });
+    assert.equal(place.width, base.width);
+    assert.equal(place.height, base.height);
   }
 });

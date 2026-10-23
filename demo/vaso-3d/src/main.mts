@@ -1,6 +1,6 @@
 import { createStudio, type Paper, type Studio } from './studio.mts';
 import { loadArtwork, exampleArtwork, releaseArtwork, type Artwork } from './artwork.mts';
-import { DEFAULT_DESIGN, SHEET_HEIGHT, SHEET_WIDTH, suggestedLayout, type LayoutMode } from './layout.mts';
+import { DEFAULT_DESIGN, suggestedLayout, type LayoutMode } from './layout.mts';
 import { drawPrintPreview } from './print.mts';
 
 function element<T extends HTMLElement>(id: string): T {
@@ -17,7 +17,6 @@ const notice = element('upload-notice');
 const dropZone = element('drop-zone');
 const toast = element('toast');
 const printPreview = element<HTMLCanvasElement>('print-preview');
-printPreview.height = Math.round(printPreview.width * SHEET_HEIGHT / SHEET_WIDTH);
 const state = { ...DEFAULT_DESIGN };
 let paper: Paper = 'white';
 let artwork: Artwork | null = exampleArtwork();
@@ -58,8 +57,11 @@ function resetDesign(mode: LayoutMode = state.mode): void {
   });
   element<HTMLInputElement>('design-size').min = mode === 'wrap' ? '100' : '35';
   element('layout-help').textContent = mode === 'wrap'
-    ? 'Cubre los 360° sin estirar la imagen. Puede recortar bordes; revisá la vista plana y el reverso.'
+    ? 'Envuelve una imagen alrededor del vaso. Los extremos del archivo se unen; revisá la banda y el reverso.'
     : 'Ubica la imagen en el frente y conserva sus proporciones. El resto del vaso queda libre.';
+  printPreview.setAttribute('aria-label', mode === 'wrap'
+    ? 'Banda rectangular del diseño 360 grados: centro al frente y extremos unidos atrás.'
+    : 'Vista plana del logo sobre la zona de impresión.');
   for (const [id, key, suffix, output] of sliderBindings) {
     element<HTMLInputElement>(id).value = String(state[key]);
     element(output).textContent = `${state[key]}${suffix}`;

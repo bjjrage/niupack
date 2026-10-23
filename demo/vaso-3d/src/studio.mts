@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { Artwork } from './artwork.mts';
-import { CUP, SHEET_WIDTH, SHEET_HEIGHT, surfaceUV, type DesignState } from './layout.mts';
+import { CUP, SHEET_WIDTH, SHEET_HEIGHT, textureUV, type DesignState, type LayoutMode } from './layout.mts';
 import { composePrint } from './print.mts';
 
 export type Paper = 'white' | 'kraft';
@@ -122,8 +122,9 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
   cup.position.y = 0.025;
   const bodyGeometry = new THREE.CylinderGeometry(CUP.top, CUP.bottom, CUP.height, 192, 32, true, Math.PI);
   const uv = bodyGeometry.getAttribute('uv');
+  const nativeUV = Float32Array.from(uv.array);
   for (let i = 0; i < uv.count; i++) {
-    const [u, v] = surfaceUV(uv.getX(i), uv.getY(i));
+    const [u, v] = textureUV(nativeUV[i * 2], nativeUV[i * 2 + 1], 'logo');
     uv.setXY(i, u, v);
   }
   const exterior = new THREE.Mesh(bodyGeometry, exteriorMaterial);
@@ -151,6 +152,7 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
   let contextLost = false;
   let exportInProgress = false;
   let mobileLayout: boolean | null = null;
+  let mappedMode: LayoutMode = 'logo';
   function invalidate(): void {
     if (!frame && !disposed && !contextLost && !document.hidden && !exportInProgress) frame = requestAnimationFrame(render);
   }
@@ -197,6 +199,14 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
 
   return {
     update(artwork, state, paper) {
+      if (mappedMode !== state.mode) {
+        for (let i = 0; i < uv.count; i++) {
+          const [u, v] = textureUV(nativeUV[i * 2], nativeUV[i * 2 + 1], state.mode);
+          uv.setXY(i, u, v);
+        }
+        uv.needsUpdate = true;
+        mappedMode = state.mode;
+      }
       const color = paper === 'white' ? '#f5f1e7' : '#b68d60';
       paperMaterial.color.set(color);
       bottomMaterial.color.set(paper === 'white' ? '#ddd7c9' : '#a57f53');

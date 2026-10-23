@@ -29,9 +29,9 @@ Usa el mismo puerto: detené el servidor anterior con Ctrl+C antes de iniciar ot
 - Geometría WebGL 2 auténtica: cuerpo cónico, pared interior, borde enrollado, base y fondo interior. Órbita de 360°, inclinación limitada y zoom con mouse, teclado o gestos de OrbitControls.
 - JPG y PNG como formatos principales; SVG estático simple opcional. Carga mediante selector o arrastre.
 - Tamaño, posición horizontal alrededor del vaso, altura y rotación independientes. Restablecer ajustes, quitar diseño, cambiar blanco/kraft y restablecer cámara.
-- Dos aplicaciones explícitas: **Logo** conserva la imagen como una marca frontal; **Diseño 360°** cubre toda la zona imprimible con una escala uniforme, recortando los bordes necesarios. Los archivos con proporción horizontal de al menos 1.25 se cargan inicialmente en Diseño 360°; el usuario puede cambiarlo. Las transparencias siempre dejan ver el papel.
+- Dos aplicaciones explícitas: **Logo** conserva la imagen como una marca frontal; **Diseño 360°** ajusta inicialmente una imagen rectangular al contorno, con escala uniforme y recorte de los bordes necesarios. La posición y la rotación no cambian su escala automáticamente. Los archivos con proporción horizontal de al menos 1.25 se cargan inicialmente en Diseño 360°; el usuario puede cambiarlo. Las transparencias siempre dejan ver el papel.
 - Vista plana de la zona imprimible y accesos **Ver frente / Ver reverso**. Al cargar otra imagen se devuelve la cámara al frente. Restablecer conserva el modo elegido y devuelve la escala a 100%; en 360° ese es el mínimo de cobertura.
-- Mapeo UV mediante el desarrollo en sector anular del cono, para evitar el estiramiento artificial de un mapeo cilíndrico. El diseño se recorta al área de impresión y continúa alrededor de la unión posterior.
+- El modo 360° usa coordenadas UV de ángulo y altura, con una banda rectangular periódica. Así, trasladar horizontalmente el diseño no inclina sus fragmentos: la forma cónica y la perspectiva las aporta el modelo. El modo Logo conserva su proyección métrica en sector anular. La banda 360° es una previsualización comercial, no un troquel de imprenta.
 - PNG del render real, con diseño y fondo. La captura copia inmediatamente el buffer de WebGL antes de codificar el PNG.
 - Iluminación de estudio, material mate, grano procedural, sombras y reflejos discretos. Recursos de presentación generados localmente mediante código.
 - Renderizado a demanda, límite de pixel ratio, texturas de 1024 px en móvil y hasta 2048 px en escritorio; los diseños se reducen proporcionalmente a un máximo de 2048 px.
@@ -73,8 +73,8 @@ Ver `QA.md` para la evidencia y los límites de esta validación.
 - Three.js 0.186.1, OrbitControls, RoomEnvironment, Canvas 2D nativo, TypeScript 5.9.3, Vite 8.3.5. Node nativo para servir el build y ejecutar pruebas. Sin React, Next.js, IA ni backend.
 - `index.html`, `src/style.css`: interfaz responsive y accesible.
 - `src/studio.mts`: geometría, materiales, cámara, UV, exportación y ciclo de vida WebGL.
-- `src/layout.mts`: desarrollo geométrico, ajuste frontal y cobertura del arte envolvente.
-- `src/print.mts`: composición compartida de la textura y la vista plana; cada copia se limita a su sector para evitar superposición en la unión.
+- `src/layout.mts`: proyección del logo, coordenadas angulares de 360° y ajuste proporcional del archivo.
+- `src/print.mts`: composición compartida de textura y vista plana; en modo 360° se traslada una banda rectangular periódica, sin copias giradas sobre sectores curvos.
 - `src/artwork.mts`: validación y procesamiento de imágenes.
 - `src/main.mts`: acciones de interfaz, carga, ajustes y estados.
 - `public/`: copia del logo existente y favicon.
@@ -84,5 +84,7 @@ Ver `QA.md` para la evidencia y los límites de esta validación.
 ## Límites conocidos
 
 Es un mockup comercial. Las medidas y colores no certifican un troquel ni una prueba de imprenta. La perspectiva y la curvatura cambian naturalmente la apariencia del diseño. El material kraft es una aproximación de pantalla, no una simulación de tintas/absorción o de tinta blanca. Una foto de un vaso ya impreso no sustituye al diseño plano. Un JPG/PNG pequeño no recupera detalle por ampliarlo. Revisar siempre el arte antes de fabricar.
+
+En 360°, los extremos izquierdo y derecho del archivo se unen: si el arte no tiene extremos compatibles, la unión seguirá siendo visible. La herramienta no inventa ni mezcla contenido para ocultarla. Un desplazamiento de 180° lleva el centro del diseño al reverso; las posiciones -180° y +180° son equivalentes. Mover o rotar el archivo puede descubrir papel o recortar contenido, y la escala permanece bajo control del usuario.
 
 La validación móvil se realizó mediante viewport responsive en Chromium, sin certificar dispositivos físicos, Safari de iPhone, autonomía, temperatura o FPS en celulares de gama baja. WebGL 2 y aceleración gráfica son necesarios. Si no se pueden iniciar, aparece una explicación y la descarga queda deshabilitada.

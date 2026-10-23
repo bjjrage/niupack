@@ -1,6 +1,6 @@
 import { createStudio } from '../src/studio.mts';
 import { loadArtwork, releaseArtwork, MAX_BYTES } from '../src/artwork.mts';
-import { DEFAULT_DESIGN, SHEET_WIDTH, SHEET_HEIGHT, surfaceUV } from '../src/layout.mts';
+import { DEFAULT_DESIGN, WRAP, textureUV } from '../src/layout.mts';
 import { composePrint } from '../src/print.mts';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#qa-viewer')!;
@@ -93,12 +93,12 @@ document.querySelector<HTMLButtonElement>('#run')!.addEventListener('click', asy
     const artCanvas = document.createElement('canvas'); artCanvas.width = 1800; artCanvas.height = 1100;
     const artContext = artCanvas.getContext('2d')!; artContext.fillStyle = '#d41128'; artContext.fillRect(0, 0, 1800, 1100);
     const art = { canvas: artCanvas, width: 1800, height: 1100, name: 'wrap-regression.png', kind: 'PNG' as const };
-    const texture = document.createElement('canvas'); texture.width = 1200; texture.height = Math.round(1200 * SHEET_HEIGHT / SHEET_WIDTH);
+    const texture = document.createElement('canvas'); texture.width = 1200; texture.height = Math.round(1200 * WRAP.height / WRAP.width);
     const ctx = texture.getContext('2d')!;
     for (const x of [-180, -90, 0, 90, 180]) {
       composePrint(ctx, art, { ...DEFAULT_DESIGN, mode: 'wrap', x }, 'white');
       for (let u = 0.025; u < 1; u += 0.05) for (const v of [0.08, 0.3, 0.5, 0.7, 0.92]) {
-        const uv = surfaceUV(u, v);
+        const uv = textureUV(u, v, 'wrap');
         const pixel = ctx.getImageData(Math.floor(uv[0] * texture.width), Math.floor((1 - uv[1]) * texture.height), 1, 1).data;
         assert(pixel[0] > 150 && pixel[1] < 70 && pixel[2] < 80, `Zona sin imprimir en x=${x}, u=${u}, v=${v}`);
       }
@@ -111,6 +111,34 @@ document.querySelector<HTMLButtonElement>('#run')!.addEventListener('click', asy
     assert(front.red > 5000, 'El diseño central no quedó en el frente');
     assert(back.blue + back.green > 5000, 'El reverso quedó vacío o perdió los extremos del diseño');
     studio.showSide(false); releaseArtwork(art); texture.width = 0; texture.height = 0;
+  });
+  await check('Regresión: líneas horizontales conservan su altura en toda la circunferencia con x=-180° e y=32%', async () => {
+    const source = document.createElement('canvas'); source.width = 1200; source.height = 600;
+    const paint = source.getContext('2d')!;
+    paint.fillStyle = '#fff'; paint.fillRect(0, 0, 1200, 600);
+    paint.fillStyle = '#d41128'; paint.fillRect(0, 292, 1200, 16);
+    const art = { canvas: source, width: 1200, height: 600, name: 'horizontal-rule.png', kind: 'PNG' as const };
+    const texture = document.createElement('canvas'); texture.width = 1200; texture.height = Math.round(1200 * WRAP.height / WRAP.width);
+    const ctx = texture.getContext('2d')!;
+    for (const y of [0, 8, 32]) for (const x of [-180, -90, 0, 90, 180]) {
+      composePrint(ctx, art, { ...DEFAULT_DESIGN, mode: 'wrap', x, y }, 'white');
+      const centers: number[] = [];
+      for (let u = 0.025; u < 1; u += 0.05) {
+        const column = ctx.getImageData(Math.floor(u * texture.width), 0, 1, texture.height).data;
+        let count = 0, sum = 0;
+        for (let row = 0; row < texture.height; row++) if (column[row * 4] > 150 && column[row * 4 + 1] < 70) { count++; sum += row; }
+        assert(count > 0, `La línea se cortó al envolver x=${x}, y=${y}, u=${u}`);
+        centers.push(sum / count);
+      }
+      assert(Math.max(...centers) - Math.min(...centers) <= 1, `El movimiento horizontal inclinó la línea: x=${x}, y=${y}`);
+      assert(Math.abs(centers[0] - texture.height * (0.5 - y / 100)) <= 2, 'La altura no coincide con el desplazamiento solicitado');
+    }
+    composePrint(ctx, art, { ...DEFAULT_DESIGN, mode: 'wrap', x: -180 }, 'white');
+    const left = ctx.getImageData(0, 0, texture.width, texture.height).data;
+    composePrint(ctx, art, { ...DEFAULT_DESIGN, mode: 'wrap', x: 180 }, 'white');
+    const right = ctx.getImageData(0, 0, texture.width, texture.height).data;
+    assert(left.every((value, index) => value === right[index]), '-180° y +180° no producen la misma envoltura');
+    source.width = 0; source.height = 0; texture.width = 0; texture.height = 0;
   });
   await check('Pérdida y recuperación del contexto WebGL con diseño conservado', async () => {
     const gl = canvas.getContext('webgl2')!;
