@@ -45,10 +45,38 @@ test('the physical scale of the sheet accounts for taper', () => {
   assert.ok(Math.abs(upperDistance / lowerDistance - CUP.top / CUP.bottom) < 1e-6);
 });
 test('portrait, square and landscape artwork preserves its proportions at all supported sizes', () => {
-  for (const mode of ['logo', 'wrap'] as const) for (const [width, height] of [[100, 500], [1000, 1000], [2000, 300]]) for (const size of [35, 100, 180]) {
+  for (const mode of ['logo', 'wrap'] as const) for (const [width, height] of [[100, 500], [1000, 1000], [2000, 300]]) for (const size of [10, 35, 90, 100, 180, 400]) {
     const result = artworkPlacement(width, height, { ...DEFAULT_DESIGN, mode, size });
     assert.ok(Math.abs(result.width / result.height - width / height) < 1e-10);
   }
+});
+
+test('full circumference width preserves chosen height and position at every supported scale', () => {
+  for (const [width, height] of [[1800, 1100], [1000, 1000], [400, 1200]]) for (const size of [10, 50, 90, 100, 180, 400]) {
+    const state = { ...DEFAULT_DESIGN, mode: 'wrap' as const, size, x: -180, y: 8 };
+    const before = artworkPlacement(width, height, state);
+    const after = artworkPlacement(width, height, { ...state, fullWidth: true });
+    assert.equal(after.height, before.height);
+    assert.equal(after.radius, before.radius);
+    assert.equal(after.angle, before.angle);
+    assert.ok(Math.abs(after.width * after.stretchX - WRAP.width) < 1e-10);
+    assert.equal(state.size, size);
+  }
+});
+
+test('width fitting acts along the circumference after rotation, preserving the vertical extent', () => {
+  for (const rotation of [-180, -90, -9, 0, 27, 90, 180]) {
+    const state = { ...DEFAULT_DESIGN, mode: 'wrap' as const, size: 90, rotation };
+    const before = artworkPlacement(1800, 1100, state);
+    const after = artworkPlacement(1800, 1100, { ...state, fullWidth: true });
+    const horizontalExtent = Math.abs(Math.cos(after.rotation)) * after.width + Math.abs(Math.sin(after.rotation)) * after.height;
+    assert.ok(Math.abs(horizontalExtent * after.stretchX - WRAP.width) < 1e-10);
+    assert.equal(after.height, before.height);
+    assert.equal(after.width, before.width);
+    assert.equal(after.rotation, before.rotation);
+    assert.ok(Number.isFinite(after.stretchX) && after.stretchX > 0);
+  }
+  assert.equal(artworkPlacement(1800, 1100, { ...DEFAULT_DESIGN, fullWidth: true }).stretchX, 1);
 });
 test('a wide composition suggests wrap, while square and portrait artwork start as a logo', () => {
   assert.equal(suggestedLayout(1800, 1100), 'wrap');

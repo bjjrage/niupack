@@ -17,8 +17,8 @@ export const SHEET_HEIGHT = SHEET.maxY - SHEET.minY;
 export type LayoutMode = 'logo' | 'wrap';
 export const PRINT_MARGIN = 0.045;
 export const WRAP = { width: Math.PI * (CUP.top + CUP.bottom), height: SLANT } as const;
-export interface DesignState { size: number; x: number; y: number; rotation: number; mode: LayoutMode }
-export const DEFAULT_DESIGN: Readonly<DesignState> = { size: 100, x: 0, y: 0, rotation: 0, mode: 'logo' };
+export interface DesignState { size: number; x: number; y: number; rotation: number; mode: LayoutMode; fullWidth: boolean }
+export const DEFAULT_DESIGN: Readonly<DesignState> = { size: 100, x: 0, y: 0, rotation: 0, mode: 'logo', fullWidth: false };
 
 // A suggestion only: the user can always switch layouts explicitly.
 export function suggestedLayout(width: number, height: number): LayoutMode {
@@ -45,9 +45,15 @@ export function artworkPlacement(width: number, height: number, state: DesignSta
   const cover = Math.max(WRAP.width / width, (WRAP.height - PRINT_MARGIN * 2) / height);
   // Only size changes the scale. Panning and rotation never silently zoom it.
   const fit = (state.mode === 'wrap' ? cover : Math.min(1.08 / width, 0.72 / height)) * state.size / 100;
+  const placedWidth = width * fit;
+  const placedHeight = height * fit;
+  const rotatedWidth = Math.abs(Math.cos(rotation)) * placedWidth + Math.abs(Math.sin(rotation)) * placedHeight;
   return {
-    width: width * fit,
-    height: height * fit,
+    width: placedWidth,
+    height: placedHeight,
+    // Applied along the cup's horizontal axis AFTER rotation. This changes
+    // circumference coverage without changing any vertical coordinates.
+    stretchX: state.mode === 'wrap' && state.fullWidth ? WRAP.width / rotatedWidth : 1,
     radius,
     angle: state.x / 360 * SECTOR_ANGLE,
     rotation,

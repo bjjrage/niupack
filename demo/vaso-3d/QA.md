@@ -1,5 +1,23 @@
 # Evidencia de validación · 23 de octubre de 2026
 
+## Ajustar ancho a 360° · 24 de octubre de 2026
+
+Resultado actual: **build y typecheck PASS; Node 13/13 PASS; navegador con WebGL real 12/12 PASS**. La demo compilada responde HTTP 200 en el puerto 4173; el banco de QA se ejecutó por separado en 4181. Consola final del banco: sin errores ni advertencias.
+
+Se agregó un ajuste explícito y reversible del ancho, separado del tamaño. Normaliza una sola imagen a una vuelta completa y aplica la corrección en el eje horizontal del vaso después de la rotación, por lo que conserva todas sus coordenadas verticales. No agrega motivos repetidos. La composición se comparte entre vista plana, textura 3D y PNG exportado.
+
+Las regresiones nuevas comprueban 25 combinaciones de tamaño (10%, 50%, 90%, 150% y 400%) y posición horizontal (-180°, -90°, 0°, 90° y 180°): ninguna columna de la banda opaca queda vacía, una marca central ocupa exactamente una décima parte de la vuelta sin duplicarse y la altura coincide con el estado previo al ajuste. Las capturas WebGL de frente y reverso comprueban la ubicación de esa marca. Otras seis combinaciones de rotación/posición vertical conservan los límites superior e inferior del arte con tolerancia de un píxel.
+
+En la interfaz del build se cargó `diseno_prueba_cafe_rojo.png` (1800 × 1100), se redujo al 90% y se inspeccionó el reverso antes y después del botón. El espacio central entre los extremos desapareció; tamaño 90%, x=0°, y=0% y rotación=0° se mantuvieron. El botón se puede desactivar sin cambiar el tamaño. Cambiar el tamaño a 89% mantuvo el ajuste activo. Restablecer devolvió 100% y Libre; cambiar a Logo ocultó el control y desactivó el ajuste. Cargar el archivo también restableció el ajuste a Libre. La consola de la interfaz no devolvió errores ni advertencias. El archivo del usuario no se modificó ni se versionó.
+
+Evidencia ignorada por Git en `qa/artifacts/`: `full-width-browser-results.txt`, `full-width-cafe90-before.png` y `full-width-cafe90-after.png`. El ajuste no rellena transparencias del propio archivo ni garantiza continuidad entre extremos incompatibles; la rotación puede dejar esquinas sin cubrir. Solo se modificaron archivos del demo, sin publicación ni cambios en la web pública o el OS.
+
+## Ampliación del control de tamaño · 24 de octubre de 2026
+
+Diseño 360° admite ahora 10% a 400%, frente al rango anterior de 100% a 180%. Solo se cambiaron los límites de la interfaz y su explicación; la composición, el mapeo angular y el ajuste proporcional conservan la implementación validada.
+
+Build y typecheck: PASS. Las 11 pruebas de Node existentes: PASS. En la interfaz del build se comprobaron los extremos de 10% y 400% con el arte de ejemplo y Diseño 360° seleccionado; ambos actualizan la vista plana y el vaso. Cambiar a Logo conserva su rango de 35% a 180%; volver a Diseño 360° recupera 10% a 400%. Restablecer devuelve 100% y mantiene seleccionado Diseño 360°. La consola de esta comprobación no devolvió errores ni advertencias. Evidencia en `qa/artifacts/scale-360-min10.png` y `scale-360-max400.png`. No se repitió el banco completo de carga de archivos/WebGL, cuyo resultado anterior se documenta abajo.
+
 ## Resultado
 
 **Build estático y typecheck: PASS. Pruebas de Node: 11/11 PASS. Banco de pruebas de navegador con WebGL real: 10/10 PASS**, con mapeo angular del modo 360° y regresión de alineación horizontal.

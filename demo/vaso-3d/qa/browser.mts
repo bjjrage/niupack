@@ -140,6 +140,68 @@ document.querySelector<HTMLButtonElement>('#run')!.addEventListener('click', asy
     assert(left.every((value, index) => value === right[index]), '-180° y +180° no producen la misma envoltura');
     source.width = 0; source.height = 0; texture.width = 0; texture.height = 0;
   });
+  await check('Ajustar ancho a 360°: cierra el espacio posterior sin cambiar altura ni repetir el arte', async () => {
+    const source = document.createElement('canvas'); source.width = 1200; source.height = 600;
+    const paint = source.getContext('2d')!;
+    paint.fillStyle = '#d41128'; paint.fillRect(0, 0, 1200, 600);
+    paint.fillStyle = '#0c50f0'; paint.fillRect(540, 0, 120, 600);
+    const art = { canvas: source, width: 1200, height: 600, name: 'width-fit.png', kind: 'PNG' as const };
+    const texture = document.createElement('canvas'); texture.width = 1200; texture.height = Math.round(1200 * WRAP.height / WRAP.width);
+    const ctx = texture.getContext('2d')!;
+    const isInk = (r: number, g: number, b: number) => r > g * 1.4 || b > r * 1.4;
+    for (const size of [10, 50, 90, 150, 400]) {
+      const state = { ...DEFAULT_DESIGN, mode: 'wrap' as const, size };
+      composePrint(ctx, art, state, 'white');
+      const before = ctx.getImageData(600, 0, 1, texture.height).data;
+      for (const x of [-180, -90, 0, 90, 180]) {
+        composePrint(ctx, art, { ...state, fullWidth: true, x }, 'white');
+        const after = ctx.getImageData(600, 0, 1, texture.height).data;
+        for (let row = 0; row < texture.height; row++) {
+          const i = row * 4;
+          assert(isInk(before[i], before[i + 1], before[i + 2]) === isInk(after[i], after[i + 1], after[i + 2]), `La altura cambió: tamaño=${size}, x=${x}, fila=${row}`);
+        }
+        const band = ctx.getImageData(0, Math.floor(texture.height / 2), texture.width, 1).data;
+        let blue = 0;
+        for (let col = 0; col < texture.width; col++) {
+          const i = col * 4;
+          assert(isInk(band[i], band[i + 1], band[i + 2]), `Hueco radial: tamaño=${size}, x=${x}, columna=${col}`);
+          if (band[i + 2] > band[i] * 1.4) blue++;
+        }
+        // One source marker occupies 10% of the circumference, regardless of
+        // scale or seam position. Repeated art would produce extra markers.
+        assert(Math.abs(blue - 120) <= 2, `El motivo se repitió o perdió ancho: ${blue} px, tamaño=${size}, x=${x}`);
+      }
+    }
+    studio.update(art, { ...DEFAULT_DESIGN, mode: 'wrap', size: 90, fullWidth: true }, 'white');
+    studio.showSide(false); const front = await capturedColors();
+    studio.showSide(true); const back = await capturedColors();
+    assert(front.blue > 500, 'La marca central no aparece en el frente del render');
+    assert(back.red > 5000 && back.blue < front.blue / 10, 'El reverso perdió cobertura o repitió la marca central');
+    studio.showSide(false); releaseArtwork(art); texture.width = 0; texture.height = 0;
+  });
+  await check('Ajustar ancho conserva también la altura y posición de un arte rotado', async () => {
+    const source = document.createElement('canvas'); source.width = 1200; source.height = 600;
+    const paint = source.getContext('2d')!; paint.fillStyle = '#d41128'; paint.fillRect(0, 0, 1200, 600);
+    const art = { canvas: source, width: 1200, height: 600, name: 'rotated-width-fit.png', kind: 'PNG' as const };
+    const texture = document.createElement('canvas'); texture.width = 1200; texture.height = Math.round(1200 * WRAP.height / WRAP.width);
+    const ctx = texture.getContext('2d')!;
+    function verticalBounds() {
+      const pixels = ctx.getImageData(0, 0, texture.width, texture.height).data;
+      let top = texture.height, bottom = -1;
+      for (let y = 0; y < texture.height; y++) for (let x = 0; x < texture.width; x++) {
+        const i = (y * texture.width + x) * 4;
+        if (pixels[i] > pixels[i + 1] * 1.4) { top = Math.min(top, y); bottom = Math.max(bottom, y); }
+      }
+      return [top, bottom];
+    }
+    for (const rotation of [-9, 15, 90]) for (const y of [0, 8]) {
+      const state = { ...DEFAULT_DESIGN, mode: 'wrap' as const, size: 30, rotation, y };
+      composePrint(ctx, art, state, 'white'); const before = verticalBounds();
+      composePrint(ctx, art, { ...state, fullWidth: true }, 'white'); const after = verticalBounds();
+      assert(Math.abs(before[0] - after[0]) <= 1 && Math.abs(before[1] - after[1]) <= 1, `Altura o posición alteradas con rotación=${rotation}, y=${y}: ${before} → ${after}`);
+    }
+    source.width = 0; source.height = 0; texture.width = 0; texture.height = 0;
+  });
   await check('Pérdida y recuperación del contexto WebGL con diseño conservado', async () => {
     const gl = canvas.getContext('webgl2')!;
     const extension = gl.getExtension('WEBGL_lose_context');

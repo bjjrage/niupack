@@ -25,6 +25,7 @@ function composeWrap(ctx: CanvasRenderingContext2D, artwork: Artwork, state: Des
     ctx.beginPath(); ctx.rect(0, 0, width, height); ctx.clip();
     ctx.translate(width / 2, height / 2 - state.y / 100 * height);
     ctx.scale(width / WRAP.width, height / WRAP.height);
+    ctx.scale(placement.stretchX, 1);
     ctx.rotate(placement.rotation);
     ctx.drawImage(artwork.canvas, -placement.width / 2, -placement.height / 2, placement.width, placement.height);
     ctx.restore();

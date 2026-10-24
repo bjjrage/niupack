@@ -46,6 +46,16 @@ function updateEnabled(): void {
   element<HTMLButtonElement>('remove-artwork').disabled = !artwork || loading;
 }
 function redraw(): void {
+  const fullWidth = state.mode === 'wrap' && state.fullWidth;
+  element('wrap-width-controls').hidden = state.mode !== 'wrap';
+  element('size-label').textContent = state.mode === 'wrap' ? '1. Tamaño del arte' : 'Tamaño';
+  element('coverage-value').textContent = fullWidth ? '360° activo' : 'Libre';
+  const widthButton = element<HTMLButtonElement>('fit-wrap-width');
+  widthButton.setAttribute('aria-pressed', String(fullWidth));
+  widthButton.classList.toggle('is-selected', fullWidth);
+  element('wrap-width-help').textContent = fullWidth
+    ? `Ancho completo con altura al ${state.size}%. Pulsá de nuevo para deshacer. El tamaño ajusta ahora la altura.`
+    : 'Conserva la altura elegida; adapta sólo el ancho y no repite el arte.';
   studio?.update(artwork, state, paper);
   drawPrintPreview(printPreview, artwork, state, paper);
 }
@@ -55,9 +65,11 @@ function resetDesign(mode: LayoutMode = state.mode): void {
     const selected = button.dataset.layout === mode;
     button.classList.toggle('is-selected', selected); button.setAttribute('aria-pressed', String(selected));
   });
-  element<HTMLInputElement>('design-size').min = mode === 'wrap' ? '100' : '35';
+  const sizeInput = element<HTMLInputElement>('design-size');
+  sizeInput.min = mode === 'wrap' ? '10' : '35';
+  sizeInput.max = mode === 'wrap' ? '400' : '180';
   element('layout-help').textContent = mode === 'wrap'
-    ? 'Envuelve una imagen alrededor del vaso. Los extremos del archivo se unen; revisá la banda y el reverso.'
+    ? 'Primero elegí el tamaño (10% a 400%). Después podés ajustar el ancho para cerrar la vuelta, manteniendo la altura elegida.'
     : 'Ubica la imagen en el frente y conserva sus proporciones. El resto del vaso queda libre.';
   printPreview.setAttribute('aria-label', mode === 'wrap'
     ? 'Banda rectangular del diseño 360 grados: centro al frente y extremos unidos atrás.'
@@ -83,10 +95,19 @@ for (const [id, key, suffix, output] of sliderBindings) {
   });
 }
 
+element('fit-wrap-width').addEventListener('click', () => {
+  if (!artwork || state.mode !== 'wrap') return;
+  state.fullWidth = !state.fullWidth;
+  redraw(); qualityNotice();
+  announce(state.fullWidth
+    ? 'Ancho ajustado a 360°. Conservamos la altura elegida, sin repetir el arte.'
+    : 'Ajuste de ancho desactivado. El arte recuperó sus proporciones.');
+});
+
 function qualityNotice(): void {
   if (!artwork) { showNotice(privacyMessage); return; }
   const messages: string[] = [];
-  if (Math.min(artwork.width, artwork.height) < 500 && state.size >= 90) messages.push('La imagen es pequeña y puede verse pixelada al ampliarla.');
+  if (Math.min(artwork.width, artwork.height) < 500 && (state.size >= 90 || state.mode === 'wrap' && state.fullWidth)) messages.push('La imagen es pequeña y puede verse pixelada al ampliarla.');
   if (artwork.kind === 'JPG') messages.push('El fondo del JPG también se aplica. Para un logo sin fondo, usá PNG con transparencia.');
   if (artwork.width > 2048 || artwork.height > 2048) messages.push('Se redujo la resolución para cuidar el rendimiento del visor.');
   showNotice(messages.length ? messages.join(' ') : privacyMessage, messages.length ? 'warning' : '');

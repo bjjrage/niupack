@@ -55,7 +55,12 @@
             <div class="layout-options" role="group" aria-label="Aplicación del diseño"><button type="button" data-layout="logo" aria-pressed="true" class="is-selected">Logo</button><button type="button" data-layout="wrap" aria-pressed="false">Diseño 360°</button></div>
             <p id="layout-help" class="layout-help">Ubica la imagen en el frente y conserva sus proporciones.</p>
             <div class="print-preview"><canvas id="print-preview" width="600" height="285" role="img" aria-label="Vista plana de la zona de impresión; el centro corresponde al frente y los extremos se unen atrás."></canvas><div><span>Reverso</span><span>Frente</span><span>Reverso</span></div></div>
-            <label class="slider-label" for="design-size"><span>Tamaño</span><output id="size-value" for="design-size">100 %</output></label><input id="design-size" type="range" min="35" max="180" value="100" step="1">
+            <label class="slider-label" for="design-size"><span id="size-label">Tamaño</span><output id="size-value" for="design-size">100 %</output></label><input id="design-size" type="range" min="35" max="180" value="100" step="1">
+            <div id="wrap-width-controls" class="wrap-width-controls" hidden>
+              <div class="slider-label"><span>2. Cobertura del contorno</span><output id="coverage-value">Libre</output></div>
+              <button id="fit-wrap-width" type="button" class="secondary-button" aria-pressed="false" aria-describedby="wrap-width-help">Ajustar ancho a 360°</button>
+              <p id="wrap-width-help" class="small-note">Conserva la altura elegida; adapta sólo el ancho y no repite el arte.</p>
+            </div>
             <label class="slider-label" for="design-x"><span>Posición horizontal</span><output id="x-value" for="design-x">0°</output></label><input id="design-x" type="range" min="-180" max="180" value="0" step="1">
             <label class="slider-label" for="design-y"><span>Posición vertical</span><output id="y-value" for="design-y">0 %</output></label><input id="design-y" type="range" min="-38" max="38" value="0" step="1">
             <label class="slider-label" for="design-rotation"><span>Rotación del diseño</span><output id="rotation-value" for="design-rotation">0°</output></label><input id="design-rotation" type="range" min="-180" max="180" value="0" step="1">
