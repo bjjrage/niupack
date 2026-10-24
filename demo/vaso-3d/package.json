@@ -1,0 +1,28 @@
+{
+  "name": "niupack-cup-studio",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite --base /demo/vaso-3d/ --host 127.0.0.1 --port 4173 --strictPort",
+    "typecheck": "tsc --noEmit",
+    "catalog:import": "node scripts/import-catalog.mjs",
+    "test": "npm run catalog:import && node --experimental-strip-types --test qa/*.test.mts",
+    "build": "npm run catalog:import && npm run typecheck && vite build",
+    "preview:integrated": "npm run build && node scripts/preview-integration.mjs",
+    "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
+    "serve": "node serve.mjs"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0",
+    "postcss": "8.5.31",
+    "typescript": "5.9.3",
+    "vite": "8.3.5"
+  }
+}

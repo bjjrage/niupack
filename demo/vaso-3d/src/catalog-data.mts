@@ -1,0 +1,331 @@
+// Generated from data/supplier-models.json. Supplier drawing dimensions; no catalog estimates.
+export const SUPPLIER_MODELS = [
+  {
+    "id": "pot-3oz",
+    "supplier": "Mingyuan",
+    "family": "pot",
+    "wall": "single",
+    "sizeOz": 3,
+    "heightMm": 40,
+    "rimOuterDiameterMm": 70.4,
+    "mouthInnerDiameterMm": 65.22,
+    "footDiameterMm": 57.84,
+    "bottomFormingDiameterMm": 59,
+    "wallAngleDeg": 5.95,
+    "rollDiameterMm": 2.6,
+    "paperThicknessMm": 0.36,
+    "bottomRecessMm": 9,
+    "die": {
+      "outerRadiusMm": 325.32,
+      "innerRadiusMm": 268.32,
+      "angleDeg": 37.32,
+      "radialWidthMm": 57
+    },
+    "rimDropMm": 2.6,
+    "source": {
+      "file": "Sinlge wall Pote 3oz.pdf",
+      "folder": "Mingyaun",
+      "page": 1,
+      "revision": null,
+      "date": "2026-03-12",
+      "sha256": "18bc63f946078f5c0d3444cada438421dbd1bb8d78eea021a8d4a64bf80a2579"
+    }
+  },
+  {
+    "id": "pot-5oz",
+    "supplier": "Mingyuan",
+    "family": "pot",
+    "wall": "single",
+    "sizeOz": 5,
+    "heightMm": 46,
+    "rimOuterDiameterMm": 71.6,
+    "mouthInnerDiameterMm": 66.42,
+    "footDiameterMm": 57.8,
+    "bottomFormingDiameterMm": 59,
+    "wallAngleDeg": 5.91,
+    "rollDiameterMm": 2.6,
+    "paperThicknessMm": 0.33,
+    "bottomRecessMm": 9,
+    "die": {
+      "outerRadiusMm": 333.1,
+      "innerRadiusMm": 270.1,
+      "angleDeg": 37.07,
+      "radialWidthMm": 63
+    },
+    "rimDropMm": 2.6,
+    "source": {
+      "file": "Single wall  Pote 5oz.pdf",
+      "folder": "Mingyaun",
+      "page": 1,
+      "revision": null,
+      "date": "2026-03-12",
+      "sha256": "c81342dae769c74d7a6facccc188141c8fe88936577c33a104926bab22cb9b3b"
+    }
+  },
+  {
+    "id": "pot-8oz",
+    "supplier": "Mingyuan",
+    "family": "pot",
+    "wall": "single",
+    "sizeOz": 8,
+    "heightMm": 54,
+    "rimOuterDiameterMm": 97.01,
+    "mouthInnerDiameterMm": 91.03,
+    "footDiameterMm": 78.36,
+    "bottomFormingDiameterMm": 80.2,
+    "wallAngleDeg": 7.23,
+    "rollDiameterMm": 3,
+    "paperThicknessMm": 0.35,
+    "bottomRecessMm": 10,
+    "die": {
+      "outerRadiusMm": 373.02,
+      "innerRadiusMm": 300.02,
+      "angleDeg": 45.31,
+      "radialWidthMm": 73
+    },
+    "rimDropMm": 3,
+    "source": {
+      "file": "Single wall Pote 8oz.pdf",
+      "folder": "Mingyaun",
+      "page": 1,
+      "revision": null,
+      "date": "2026-03-12",
+      "sha256": "78cbb79c05838e81e607528379bf78cc33b7ad6fd1d02427e07a2af884a9fc7c"
+    }
+  },
+  {
+    "id": "cup-6oz",
+    "supplier": "Mingyuan",
+    "family": "cup",
+    "wall": "single",
+    "sizeOz": 6,
+    "heightMm": 76.5,
+    "rimOuterDiameterMm": 71.99,
+    "mouthInnerDiameterMm": 66.81,
+    "footDiameterMm": 49.34,
+    "bottomFormingDiameterMm": 50,
+    "wallAngleDeg": 6.86,
+    "rollDiameterMm": 2.6,
+    "paperThicknessMm": 0.33,
+    "bottomRecessMm": 5.5,
+    "die": {
+      "outerRadiusMm": 289.68,
+      "innerRadiusMm": 199.68,
+      "angleDeg": 43,
+      "radialWidthMm": 90
+    },
+    "rimDropMm": 2.6,
+    "source": {
+      "file": "Single wall Cup 6oz.pdf",
+      "folder": "Mingyaun",
+      "page": 1,
+      "revision": null,
+      "date": "2026-03-12",
+      "sha256": "e33da8330f885861c33aea7e34fbc424d1b43e02b0c7cdff1b88d3a38149fa4c"
+    }
+  },
+  {
+    "id": "cup-9oz",
+    "supplier": "Ruida",
+    "family": "cup",
+    "wall": "single",
+    "sizeOz": 9,
+    "heightMm": 87,
+    "rimOuterDiameterMm": 77.8,
+    "mouthInnerDiameterMm": 72.1,
+    "footDiameterMm": 54.94,
+    "bottomFormingDiameterMm": 55.4,
+    "wallAngleDeg": 5.95,
+    "rollDiameterMm": 3,
+    "paperThicknessMm": 0.47,
+    "bottomRecessMm": 6.7,
+    "die": {
+      "outerRadiusMm": 356.96,
+      "innerRadiusMm": 253.91,
+      "angleDeg": 37.32,
+      "radialWidthMm": 103.1
+    },
+    "rimDropMm": 3.2,
+    "source": {
+      "file": "Single wall 9oz.pdf",
+      "folder": "Ruida",
+      "page": 1,
+      "revision": null,
+      "date": "2026-03-25",
+      "sha256": "2c78107af5efdc154ff61f25e11efb44045f76aa57be1f2f73b19f12240ae39c"
+    },
+    "notes": [
+      "Drawing says same mouth as the 8 oz model; this does not identify it as an 8 oz cup."
+    ]
+  },
+  {
+    "id": "cup-12oz",
+    "supplier": "Ruida",
+    "family": "cup",
+    "wall": "single",
+    "sizeOz": 12,
+    "heightMm": 109,
+    "rimOuterDiameterMm": 83.2,
+    "mouthInnerDiameterMm": 77.5,
+    "footDiameterMm": 55.3,
+    "bottomFormingDiameterMm": 56,
+    "wallAngleDeg": 6,
+    "rollDiameterMm": 3,
+    "paperThicknessMm": 0.35,
+    "bottomRecessMm": 6.7,
+    "die": {
+      "outerRadiusMm": 379.78,
+      "innerRadiusMm": 254.6,
+      "angleDeg": 37.63,
+      "radialWidthMm": 125.2
+    },
+    "rimDropMm": 3.2,
+    "source": {
+      "file": "Single wall 12oz.pdf",
+      "folder": "Ruida",
+      "page": 1,
+      "revision": 2,
+      "date": "2026-03-25",
+      "sha256": "57f82e5eb3c45691389647e011386580030c0313e739aae9d219cbd9c78bb181"
+    }
+  },
+  {
+    "id": "cup-16oz",
+    "supplier": "Ruida",
+    "family": "cup",
+    "wall": "single",
+    "sizeOz": 16,
+    "heightMm": 124.5,
+    "rimOuterDiameterMm": 89.7,
+    "mouthInnerDiameterMm": 84.3,
+    "footDiameterMm": 61.46,
+    "bottomFormingDiameterMm": 62.2,
+    "wallAngleDeg": 5.38,
+    "rollDiameterMm": 2.85,
+    "paperThicknessMm": 0.32,
+    "bottomRecessMm": 7.33,
+    "die": {
+      "outerRadiusMm": 457.97,
+      "innerRadiusMm": 317.3,
+      "angleDeg": 33.75,
+      "radialWidthMm": 140.7
+    },
+    "rimDropMm": 3.1,
+    "source": {
+      "file": "Single wall 16oz.pdf",
+      "folder": "Ruida",
+      "page": 1,
+      "revision": 1,
+      "date": "2026-03-17",
+      "sha256": "cdbf1e81ded3b0ef7279f93270867fa86540d5838afbfebc3718cc5c75a9092c"
+    }
+  },
+  {
+    "id": "cup-21oz",
+    "supplier": "Ruida",
+    "family": "cup",
+    "wall": "single",
+    "sizeOz": 21,
+    "heightMm": 166,
+    "rimOuterDiameterMm": 89.7,
+    "mouthInnerDiameterMm": 84.2,
+    "footDiameterMm": 60.63,
+    "bottomFormingDiameterMm": 61.46,
+    "wallAngleDeg": 4.16,
+    "rollDiameterMm": 2.85,
+    "paperThicknessMm": 0.31,
+    "bottomRecessMm": 10,
+    "die": {
+      "outerRadiusMm": 588.63,
+      "innerRadiusMm": 403.92,
+      "angleDeg": 26.12,
+      "radialWidthMm": 184.7
+    },
+    "rimDropMm": 3.1,
+    "source": {
+      "file": "Single wall 21oz .pdf",
+      "folder": "Ruida",
+      "page": 1,
+      "revision": 3,
+      "date": "2026-03-25",
+      "sha256": "09ead6435011695b1e2f4e78c0055664c92dcf172e9da1a348b6130fe8143aef"
+    }
+  },
+  {
+    "id": "cup-9oz-double",
+    "supplier": "Ruida",
+    "family": "cup",
+    "wall": "double",
+    "sizeOz": 9,
+    "heightMm": 87,
+    "rimOuterDiameterMm": 77.83,
+    "footDiameterMm": 54.94,
+    "bottomFormingDiameterMm": 55.4,
+    "innerWallAngleDeg": 5.95,
+    "sleeveAngleDeg": 5.07,
+    "rollDiameterMm": 3,
+    "innerPaperThicknessMm": 0.47,
+    "sleeveThicknessMm": 0.4,
+    "exposedBaseHeightMm": 12,
+    "sleeveBottomRollDiameterMm": 1.5,
+    "bottomRecessMm": 6.74,
+    "die": {
+      "outerRadiusMm": 409.99,
+      "innerRadiusMm": 331.57,
+      "angleDeg": 31.82,
+      "radialWidthMm": 78.43
+    },
+    "rimDropMm": 3.2,
+    "innerModelId": "cup-9oz",
+    "source": {
+      "file": "double wall 9oz.pdf",
+      "folder": "Ruida",
+      "page": 1,
+      "revision": 1,
+      "date": "2026-03-25",
+      "sha256": "fbcd03364e843c6c63f226042407fe323522b5eae9706bd012414886067bce34"
+    },
+    "notes": [
+      "The dieline is labelled coated face; confirm artwork face/orientation before deriving production artwork."
+    ]
+  },
+  {
+    "id": "cup-12oz-double",
+    "supplier": "Ruida",
+    "family": "cup",
+    "wall": "double",
+    "sizeOz": 12,
+    "heightMm": 109,
+    "rimOuterDiameterMm": 83.21,
+    "footDiameterMm": 55.3,
+    "bottomFormingDiameterMm": 56,
+    "innerWallAngleDeg": 6,
+    "sleeveAngleDeg": 5.39,
+    "rollDiameterMm": 3,
+    "innerPaperThicknessMm": 0.35,
+    "sleeveThicknessMm": 0.4,
+    "exposedBaseHeightMm": 12,
+    "sleeveBottomRollDiameterMm": 1.4,
+    "sleeveLowerOuterDiameterMm": 60.77,
+    "bottomRecessMm": 6.7,
+    "die": {
+      "outerRadiusMm": 413.09,
+      "innerRadiusMm": 312.14,
+      "angleDeg": 33.81,
+      "radialWidthMm": 100.95
+    },
+    "rimDropMm": 3.2,
+    "innerModelId": "cup-12oz",
+    "source": {
+      "file": "double wall 12oz.pdf",
+      "folder": "Ruida",
+      "page": 1,
+      "revision": 3,
+      "date": "2026-03-24",
+      "sha256": "18b01b6b23d3d16798fdca2c01f37702eb24bac359e6cdc23a46e0ca65f39e25"
+    },
+    "notes": [
+      "The revision notes request an 8.5 mm overlap, while a dieline callout reads 6.5 mm. Clarify before producing print-ready artwork."
+    ]
+  }
+] as const;
