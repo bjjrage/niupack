@@ -5,8 +5,9 @@ import { resolve, sep, extname } from 'node:path';
 
 // Deliberately serves only the compiled demo, never the repository or OS.
 const root = fileURLToPath(new URL('./dist/', import.meta.url));
+const port = Number(process.env.NIUPACK_DEMO_PORT || 4173);
 const mounts = ['/demo/vaso-3d/', '/niupack/demo/vaso-3d/'];
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.mp4': 'video/mp4', '.pdf': 'application/pdf', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
 const server = createServer(async (request, response) => {
   try {
     const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
@@ -36,8 +37,8 @@ const server = createServer(async (request, response) => {
   }
 });
 server.on('error', (error) => {
-  if (error.code === 'EADDRINUSE') console.error('El puerto 4173 ya está en uso. Si el demo ya está abierto, usá http://127.0.0.1:4173/demo/vaso-3d/');
+  if (error.code === 'EADDRINUSE') console.error(`El puerto ${port} ya está en uso. Si el demo ya está abierto, usá http://127.0.0.1:${port}/demo/vaso-3d/`);
   else console.error('No se pudo iniciar el servidor local:', error.message);
   process.exitCode = 1;
 });
-server.listen(4173, '127.0.0.1', () => console.log('NIUPACK Studio: http://127.0.0.1:4173/demo/vaso-3d/'));
+server.listen(port, '127.0.0.1', () => console.log(`NIUPACK Studio: http://127.0.0.1:${port}/demo/vaso-3d/`));

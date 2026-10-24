@@ -1,14 +1,21 @@
 import { createStudio, type Paper, type Studio } from './studio.mts';
 import { loadArtwork, exampleArtwork, releaseArtwork, type Artwork } from './artwork.mts';
-import { CUP, DEFAULT_SURFACE, createSurfaceLayout, DEFAULT_DESIGN, suggestedLayout, type LayoutMode } from './layout.mts';
+import { createSurfaceLayout, DEFAULT_DESIGN, frontFitMode, type LayoutMode } from './layout.mts';
 import { drawPrintPreview } from './print.mts';
-import { CATALOG, DEMO_MODEL_ID, catalogModel, selectionStatus, formatMm } from './catalog.mts';
+import { CATALOG, DEFAULT_MODEL_ID, catalogModel, modelLabel, selectionStatus, formatMm, type SupplierModel } from './catalog.mts';
+import { createModelPicker } from './model-picker.mts';
 
+const embeddedRoot = document.querySelector<HTMLElement>('[data-niu-studio]');
+const studioRoot = embeddedRoot ?? document;
+const idPrefix = embeddedRoot?.dataset.idPrefix ?? '';
 function element<T extends HTMLElement>(id: string): T {
-  const value = document.getElementById(id);
+  const value = document.getElementById(idPrefix + id);
   if (!value) throw new Error(`Missing element: ${id}`);
   return value as T;
 }
+// The standalone page owns its navigation; the inline version uses the site
+// header and never binds handlers to the site's menu or other product controls.
+if (!embeddedRoot) {
 const navToggle = element<HTMLButtonElement>('nav-toggle');
 const siteNav = element('site-nav');
 function closeNavigation(): void {
@@ -30,10 +37,11 @@ document.addEventListener('keydown', (event) => {
   }
 });
 window.matchMedia('(min-width: 961px)').addEventListener('change', closeNavigation);
+}
 
 const viewer = element<HTMLCanvasElement>('viewer');
 const stage = element('stage');
-const downloadButton = element<HTMLButtonElement>('download');
+const quoteLink = element<HTMLAnchorElement>('request-quote');
 const controlsFieldset = element<HTMLFieldSetElement>('design-controls');
 const input = element<HTMLInputElement>('artwork-file');
 const notice = element('upload-notice');
@@ -41,17 +49,43 @@ const dropZone = element('drop-zone');
 const toast = element('toast');
 const printPreview = element<HTMLCanvasElement>('print-preview');
 const state = { ...DEFAULT_DESIGN };
-let selectedModel = DEMO_MODEL_ID;
-let surface = DEFAULT_SURFACE;
+const initialModel = CATALOG.find((model) => model.id === DEFAULT_MODEL_ID)!;
+const initialShape = catalogModel(initialModel)!.shape;
+let selectedModel = DEFAULT_MODEL_ID;
+let surface = createSurfaceLayout(initialShape);
 let paper: Paper = 'white';
 let artwork: Artwork | null = exampleArtwork();
 let studio: Studio | null = null;
 let loading = false;
 let lostContext = false;
-let saving = false;
 let toastTimer = 0;
 let generation = 0;
-const privacyMessage = 'Tu archivo se procesa en este navegador. No se envía ni se guarda en un servidor.';
+const privacyMessage = 'Archivo privado: no se envía a un servidor.';
+const modelGroups = [
+  { id: 'cup-single', family: 'cup', wall: 'single', label: 'Vaso · pared simple' },
+  { id: 'cup-double', family: 'cup', wall: 'double', label: 'Vaso · pared doble' },
+  { id: 'pot-single', family: 'pot', wall: 'single', label: 'Pote · pared simple' },
+] as const;
+function chooseModel(id: string): void {
+  const select = element<HTMLSelectElement>('cup-model');
+  if (select.disabled) return;
+  select.value = id; select.dispatchEvent(new Event('change', { bubbles: true }));
+}
+const familyPicker = createModelPicker(element<HTMLButtonElement>('model-family'), element('model-family-options'), id => {
+  const group = modelGroups.find(item => item.id === id)!;
+  const current = CATALOG.find(item => item.id === selectedModel)!;
+  const models = CATALOG.filter(item => item.family === group.family && item.wall === group.wall && selectionStatus(item.id).selectable);
+  const next = models.find(item => item.sizeOz === current.sizeOz)
+    ?? models.find(item => item.sizeOz === (group.family === 'pot' ? 8 : 12)) ?? models[0];
+  if (next) chooseModel(next.id);
+});
+const sizePicker = createModelPicker(element<HTMLButtonElement>('model-size'), element('model-size-options'), chooseModel);
+
+function syncModelPickers(cup: SupplierModel): void {
+  familyPicker.setOptions(modelGroups.map(group => ({ value: group.id, label: group.label })), `${cup.family}-${cup.wall}`);
+  sizePicker.setOptions(CATALOG.filter(item => item.family === cup.family && item.wall === cup.wall && selectionStatus(item.id).selectable)
+    .sort((a, b) => a.sizeOz - b.sizeOz).map(item => ({ value: item.id, label: `${item.sizeOz} oz` })), cup.id);
+}
 
 function showNotice(message: string, kind: '' | 'warning' | 'error' = ''): void {
   notice.textContent = message;
@@ -64,21 +98,25 @@ function announce(message: string): void {
 
 function initializeCatalog(): void {
   const select = element<HTMLSelectElement>('cup-model');
-  const current = new Option('Modelo de prueba actual', DEMO_MODEL_ID, true, true);
-  const pending = document.createElement('optgroup');
-  pending.label = 'Catálogo · vista aproximada';
+  select.replaceChildren();
+  for (const [family, wall, label] of [['cup', 'single', 'Vasos · Pared simple'], ['cup', 'double', 'Vasos · Pared doble'], ['pot', 'single', 'Potes · Pared simple']] as const) {
+    const group = document.createElement('optgroup');
+    group.label = label;
+    for (const cup of CATALOG.filter((m) => m.family === family && m.wall === wall).sort((a, b) => a.sizeOz - b.sizeOz)) {
+      const option = new Option(modelLabel(cup), cup.id, cup.id === DEFAULT_MODEL_ID, cup.id === DEFAULT_MODEL_ID);
+      option.disabled = !selectionStatus(cup.id).selectable;
+      option.title = cup.supplier + ' · ' + cup.source.file;
+      group.append(option);
+    }
+    select.append(group);
+  }
   const rows = element('catalog-measurements');
   rows.replaceChildren();
   for (const cup of CATALOG) {
-    const availability = selectionStatus(cup.id);
-    const model = catalogModel(cup);
-    const option = new Option(`${cup.sizeOz} oz — ${availability.selectable ? 'aproximado' : 'pendiente'}`, cup.id);
-    option.disabled = !availability.selectable;
-    option.title = availability.reasons.join('. ');
-    pending.append(option);
     const row = document.createElement('tr');
     row.dataset.modelId = cup.id;
-    const values = [`${cup.sizeOz} oz${cup.approximate ? ' ≈' : cup.sourceWall === 'double' ? ' *' : ''}`, formatMm(cup.topDiameterMm), formatMm(cup.heightMm), model ? `${formatMm(model.baseDiameterMm)}${model.baseEstimated ? ' ≈' : ''}` : formatMm(cup.baseDiameterMm)];
+    row.title = cup.supplier + ' · ' + cup.source.file;
+    const values = [`${cup.family === 'pot' ? 'Pote' : 'Vaso'} ${cup.sizeOz} oz ${cup.wall === 'double' ? 'D' : 'S'}`, formatMm(cup.rimOuterDiameterMm), formatMm(cup.heightMm), formatMm(cup.footDiameterMm)];
     values.forEach((value, index) => {
       const cell = document.createElement(index === 0 ? 'th' : 'td');
       if (index === 0) cell.setAttribute('scope', 'row');
@@ -86,72 +124,98 @@ function initializeCatalog(): void {
     });
     rows.append(row);
   }
-  select.replaceChildren(current, pending);
-  const approximate = CATALOG.filter((cup) => cup.approximate).map((cup) => `${cup.sizeOz} oz`).join(', ');
-  const doubleWall = CATALOG.filter((cup) => cup.sourceWall === 'double').map((cup) => `${cup.sizeOz} oz`).join(', ');
-  element('catalog-notes').textContent = [
-    '≈ Bases estimadas como 2/3 de la boca, siguiendo la proporción del modelo de prueba. No son medidas de fabricación.',
-    approximate && `≈ ${approximate}: medidas aproximadas; falta ficha validada.`,
-    doubleWall && `* ${doubleWall}: medidas de fichas de pared doble; confirmar pared simple.`,
-  ].filter(Boolean).join(' ');
+  element('catalog-notes').textContent = 'S: pared simple · D: pared doble. Boca: diámetro exterior del borde. Apoyo: diámetro del pie. Medidas nominales de los planos de Mingyuan y Ruida. El vaso de 9 oz reemplaza al vaso de 8 oz; el pote de 8 oz es un modelo independiente.';
+  updateModelInfo(initialModel);
   select.addEventListener('change', () => {
-    if (!selectionStatus(select.value).selectable || !studio || saving) { select.value = selectedModel; return; }
-    const cup = CATALOG.find((item) => item.id === select.value);
-    const model = cup ? catalogModel(cup) : null;
-    const shape = model?.shape ?? CUP;
-    studio.setDimensions(shape);
-    surface = createSurfaceLayout(shape);
+    if (!selectionStatus(select.value).selectable || !studio) { select.value = selectedModel; return; }
+    const cup = CATALOG.find((item) => item.id === select.value)!;
+    const model = catalogModel(cup)!;
+    studio.setDimensions(model.shape);
+    surface = createSurfaceLayout(model.shape);
     selectedModel = select.value;
-    element('model-caption').textContent = cup ? `${cup.sizeOz} OZ · APROXIMADO` : 'MODELO DE PRUEBA';
-    element('model-caption-detail').textContent = cup && model
-      ? `Boca ${formatMm(cup.topDiameterMm)} mm · Altura ${formatMm(cup.heightMm)} mm · Base ${formatMm(model.baseDiameterMm)} mm${model.baseEstimated ? ' ≈' : ''}`
-      : 'Vista ilustrativa · Elegí un tamaño del catálogo';
-    element('model-notice').textContent = cup && model
-      ? `Vista aproximada de ${cup.sizeOz} oz. ${model.baseEstimated ? 'Base estimada; boca y altura tomadas del catálogo.' : 'Medidas tomadas del catálogo.'} Tu arte y ajustes 360° se conservan.${cup.sourceWall === 'double' ? ' La ficha de origen es de pared doble.' : ''}`
-      : 'Probá los tamaños del catálogo con bases estimadas para esta demo. Tu arte y ajustes 360° se conservan.';
+    updateModelInfo(cup);
     redraw();
-    announce(cup ? `Vaso de ${cup.sizeOz} oz, vista aproximada. Conservamos tu arte y ajustes.` : 'Modelo de prueba. Conservamos tu arte y ajustes.');
+    announce(modelLabel(cup) + '. Conservamos tu arte y ajustes.');
   });
 }
+function updateModelInfo(cup: SupplierModel): void {
+  syncModelPickers(cup);
+  element('model-caption').textContent = modelLabel(cup).toLocaleUpperCase('es');
+  element('model-caption-detail').textContent = `${cup.supplier} · Boca ${formatMm(cup.rimOuterDiameterMm)} mm · Alto ${formatMm(cup.heightMm)} mm · Apoyo ${formatMm(cup.footDiameterMm)} mm`;
+  element('model-notice').textContent = `${modelLabel(cup)}. Medidas del plano de ${cup.supplier}. Tu arte y ajustes 360° se conservan.`;
+  element('model-source').textContent = `Fuente: ${cup.source.file} · ${cup.source.date}${cup.source.revision ? ' · Rev. ' + cup.source.revision : ''}`;
+}
 function updateEnabled(): void {
-  downloadButton.disabled = !studio || lostContext || loading || saving;
   controlsFieldset.disabled = !artwork || loading;
+  element<HTMLFieldSetElement>('application-controls').disabled = !artwork || loading;
   input.disabled = loading;
-  element<HTMLSelectElement>('cup-model').disabled = !studio || lostContext || loading || saving;
+  element<HTMLSelectElement>('cup-model').disabled = !studio || lostContext || loading;
+  familyPicker.setDisabled(!studio || lostContext || loading);
+  sizePicker.setDisabled(!studio || lostContext || loading);
   dropZone.classList.toggle('is-busy', loading);
   dropZone.setAttribute('aria-busy', String(loading));
   element<HTMLButtonElement>('reset-design').disabled = !artwork || loading;
   element<HTMLButtonElement>('remove-artwork').disabled = !artwork || loading;
 }
 function redraw(): void {
+  const model = CATALOG.find(item => item.id === selectedModel)!;
+  const message = `Hola, quiero pedir presupuesto de un envase personalizado NIU PACK.\nModelo: ${modelLabel(model)}.\nPapel: ${paper === 'kraft' ? 'Kraft' : 'blanco'}.`;
+  quoteLink.href = `https://wa.me/595971350619?text=${encodeURIComponent(message)}`;
+  const front = state.mode === 'logo';
+  const duplicate = front && state.duplicateBack;
   const fullWidth = state.mode === 'wrap' && state.fullWidth;
   element('wrap-width-controls').hidden = state.mode !== 'wrap';
-  element('size-label').textContent = state.mode === 'wrap' ? '1. Tamaño del arte' : 'Tamaño';
-  element('coverage-value').textContent = fullWidth ? '360° activo' : 'Libre';
+  element('front-controls').hidden = !front;
+  element('front-fit-controls').hidden = !front;
+  const frontFit = frontFitMode(state, surface);
+  studioRoot.querySelectorAll<HTMLButtonElement>('[data-front-fit]').forEach((button) => {
+    const selected = button.dataset.frontFit === frontFit;
+    button.setAttribute('aria-pressed', String(selected));
+    button.classList.toggle('is-selected', selected);
+  });
+  element('front-fit-help').textContent = frontFit === 'cover'
+    ? 'Llena cada mitad al 100%. Recorta bordes, sin deformar.'
+    : 'Imagen completa al 100%. Puede dejar márgenes.';
+  element('size-label').textContent = front ? 'Tamaño frontal' : 'Tamaño del arte';
+  element('coverage-value').textContent = fullWidth ? 'Ancho 360° activo' : 'Libre';
   const widthButton = element<HTMLButtonElement>('fit-wrap-width');
   widthButton.setAttribute('aria-pressed', String(fullWidth));
   widthButton.classList.toggle('is-selected', fullWidth);
+  const duplicateButton = element<HTMLButtonElement>('duplicate-back');
+  duplicateButton.setAttribute('aria-pressed', String(duplicate));
+  duplicateButton.classList.toggle('is-selected', duplicate);
+  element('duplicate-status').textContent = duplicate ? 'Frente y reverso' : 'Reverso libre';
   element('wrap-width-help').textContent = fullWidth
     ? `Ancho completo con altura al ${state.size}%. Pulsá de nuevo para deshacer. El tamaño ajusta ahora la altura.`
     : 'Conserva la altura elegida; adapta sólo el ancho y no repite el arte.';
+  element('duplicate-back-help').textContent = duplicate
+    ? 'Los cambios del frente se copian igual atrás. Cada mitad recorta el arte en sus propios límites. Pulsá de nuevo para quitar la copia.'
+    : 'Copia los 180° frontales a los 180° posteriores, con la misma orientación y proporciones.';
+  printPreview.parentElement!.classList.toggle('is-front', front);
+  element('preview-first').textContent = front ? 'Frente · 180°' : 'Reverso';
+  element('preview-second').textContent = front ? duplicate ? 'Reverso · 180°' : 'Reverso libre · 180°' : 'Frente';
+  element('preview-third').hidden = front;
   studio?.update(artwork, state, paper);
   drawPrintPreview(printPreview, artwork, state, paper, surface);
 }
 function resetDesign(mode: LayoutMode = state.mode): void {
   Object.assign(state, DEFAULT_DESIGN, { mode });
-  document.querySelectorAll<HTMLButtonElement>('[data-layout]').forEach((button) => {
+  studioRoot.querySelectorAll<HTMLButtonElement>('[data-layout]').forEach((button) => {
     const selected = button.dataset.layout === mode;
     button.classList.toggle('is-selected', selected); button.setAttribute('aria-pressed', String(selected));
   });
   const sizeInput = element<HTMLInputElement>('design-size');
-  sizeInput.min = mode === 'wrap' ? '10' : '35';
-  sizeInput.max = mode === 'wrap' ? '400' : '180';
+  sizeInput.min = '10'; sizeInput.max = '400';
+  const xInput = element<HTMLInputElement>('design-x');
+  xInput.min = mode === 'wrap' ? '-180' : '-90';
+  xInput.max = mode === 'wrap' ? '180' : '90';
+  element('x-label').textContent = 'Horizontal';
   element('layout-help').textContent = mode === 'wrap'
-    ? 'Primero elegí el tamaño (10% a 400%). Después podés ajustar el ancho para cerrar la vuelta, manteniendo la altura elegida.'
-    : 'Ubica la imagen en el frente y conserva sus proporciones. El resto del vaso queda libre.';
+    ? 'Diseño continuo sobre el contorno completo. Ajustá tamaño y posición o adaptá el ancho a 360°.'
+    : 'Ajustá el arte dentro de los 180° frontales. Conserva sus proporciones y se recorta al salir de esa mitad.';
   printPreview.setAttribute('aria-label', mode === 'wrap'
     ? 'Banda rectangular del diseño 360 grados: centro al frente y extremos unidos atrás.'
-    : 'Vista plana del logo sobre la zona de impresión.');
+    : 'Dos mitades completas de 180 grados: frente a la izquierda y reverso a la derecha.');
   for (const [id, key, suffix, output] of sliderBindings) {
     element<HTMLInputElement>(id).value = String(state[key]);
     element(output).textContent = `${state[key]}${suffix}`;
@@ -182,6 +246,27 @@ element('fit-wrap-width').addEventListener('click', () => {
     : 'Ajuste de ancho desactivado. El arte recuperó sus proporciones.');
 });
 
+element('duplicate-back').addEventListener('click', () => {
+  if (!artwork || state.mode !== 'logo') return;
+  state.duplicateBack = !state.duplicateBack;
+  state.fullWidth = false;
+  redraw(); qualityNotice();
+  announce(state.duplicateBack
+    ? 'Frente duplicado en el reverso. Los cambios se aplican igual en ambas mitades.'
+    : 'Copia posterior desactivada. Conservamos el frente y sus ajustes.');
+});
+
+studioRoot.querySelectorAll<HTMLButtonElement>('[data-front-fit]').forEach((button) => {
+  button.addEventListener('click', () => {
+    if (!artwork || state.mode !== 'logo') return;
+    state.frontFit = button.dataset.frontFit === 'cover' ? 'cover' : 'contain';
+    redraw(); qualityNotice();
+    announce(state.frontFit === 'cover'
+      ? 'Ajuste para cubrir los 180°. Conservamos las proporciones; los bordes sobrantes se recortan.'
+      : 'Ajuste para ver el arte completo. Conservamos la posición y el tamaño elegido.');
+  });
+});
+
 function qualityNotice(): void {
   if (!artwork) { showNotice(privacyMessage); return; }
   const messages: string[] = [];
@@ -199,7 +284,7 @@ async function upload(file: File): Promise<void> {
     const next = await loadArtwork(file);
     if (ticket !== generation) { releaseArtwork(next); return; }
     const previous = artwork; artwork = next;
-    resetDesign(suggestedLayout(next.width, next.height));
+    resetDesign('logo');
     studio?.showSide(false);
     releaseArtwork(previous);
     element('file-name').textContent = next.name;
@@ -228,17 +313,17 @@ dropZone.addEventListener('drop', (event) => {
 // Keep accidental drops outside the upload target from navigating away.
 window.addEventListener('dragover', (event) => event.preventDefault());
 window.addEventListener('drop', (event) => event.preventDefault());
-document.querySelectorAll<HTMLButtonElement>('[data-material]').forEach((button) => {
+studioRoot.querySelectorAll<HTMLButtonElement>('[data-material]').forEach((button) => {
   button.addEventListener('click', () => {
     paper = button.dataset.material === 'kraft' ? 'kraft' : 'white';
-    document.querySelectorAll<HTMLButtonElement>('[data-material]').forEach((option) => {
+    studioRoot.querySelectorAll<HTMLButtonElement>('[data-material]').forEach((option) => {
       const selected = option === button;
       option.classList.toggle('is-selected', selected); option.setAttribute('aria-pressed', String(selected));
     });
     redraw();
   });
 });
-document.querySelectorAll<HTMLButtonElement>('[data-layout]').forEach((button) => {
+studioRoot.querySelectorAll<HTMLButtonElement>('[data-layout]').forEach((button) => {
   button.addEventListener('click', () => {
     resetDesign(button.dataset.layout === 'wrap' ? 'wrap' : 'logo');
     studio?.showSide(false);
@@ -269,28 +354,14 @@ viewer.addEventListener('keydown', (event) => {
   if (event.key === '-') studio?.zoom(1.1);
   if (event.key === 'Home') studio?.resetView();
 });
-downloadButton.addEventListener('click', async () => {
-  if (!studio || saving) return;
-  saving = true; updateEnabled();
-  const label = downloadButton.querySelector('span')!;
-  label.textContent = 'Preparando PNG…';
-  try {
-    const blob = await studio.capture();
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    const cup = CATALOG.find((item) => item.id === selectedModel);
-    anchor.href = url; anchor.download = `niupack-vaso-${cup ? `${cup.sizeOz}oz-aproximado` : 'demo'}-${paper}.png`;
-    document.body.append(anchor); anchor.click(); anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-    announce('PNG preparado. Revisá las descargas de tu navegador.');
-  } catch (error) {
-    announce(error instanceof Error ? error.message : 'No se pudo descargar el PNG.');
-  } finally {
-    saving = false; label.textContent = 'Descargar vista PNG'; updateEnabled();
-  }
-});
-
 initializeCatalog();
+embeddedRoot?.addEventListener('niupack:select-model', (event) => {
+  const id = (event as CustomEvent<{ modelId?: unknown }>).detail?.modelId;
+  if (typeof id !== 'string' || !selectionStatus(id).selectable || !studio || loading || lostContext) return;
+  const select = element<HTMLSelectElement>('cup-model');
+  select.value = id;
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+});
 
 try {
   studio = createStudio(viewer, (lost) => {
@@ -299,11 +370,12 @@ try {
     element('stage-error-message').textContent = 'La vista 3D se interrumpió. Estamos intentando recuperarla; tu diseño sigue en esta pestaña.';
     updateEnabled();
   });
+  studio.setDimensions(initialShape);
   redraw();
-  document.documentElement.dataset.studio = 'ready';
+  (embeddedRoot ?? document.documentElement).dataset.studio = 'ready';
 } catch (error) {
   element('stage-error').hidden = false;
-  document.documentElement.dataset.studio = 'unavailable';
+  (embeddedRoot ?? document.documentElement).dataset.studio = 'unavailable';
   console.error('No se pudo iniciar NIUPACK Studio:', error);
 } finally {
   element('stage-loading').hidden = true;

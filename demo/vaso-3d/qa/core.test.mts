@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rasterMetadata, checkDimensions, MAX_PIXELS } from '../src/artwork.mts';
-import { surfaceUV, textureUV, artworkPlacement, DEFAULT_DESIGN, WRAP, PRINT_MARGIN, SHEET_WIDTH, SHEET_HEIGHT, CUP, suggestedLayout } from '../src/layout.mts';
+import { surfaceUV, textureUV, artworkPlacement, DEFAULT_DESIGN, WRAP, PRINT_MARGIN, SHEET_WIDTH, SHEET_HEIGHT, CUP } from '../src/layout.mts';
 
 test('PNG dimensions are read from content before allocating an image', () => {
   const bytes = new Uint8Array(24);
@@ -78,10 +78,25 @@ test('width fitting acts along the circumference after rotation, preserving the 
   }
   assert.equal(artworkPlacement(1800, 1100, { ...DEFAULT_DESIGN, fullWidth: true }).stretchX, 1);
 });
-test('a wide composition suggests wrap, while square and portrait artwork start as a logo', () => {
-  assert.equal(suggestedLayout(1800, 1100), 'wrap');
-  assert.equal(suggestedLayout(1000, 1000), 'logo');
-  assert.equal(suggestedLayout(500, 900), 'logo');
+test('at 100% the entire artwork fits the front 180 degrees without distortion', () => {
+  assert.equal(DEFAULT_DESIGN.mode, 'logo');
+  for (const [w, h] of [[1800, 1100], [1000, 1000], [500, 900], [8192, 1]]) {
+    const place = artworkPlacement(w, h, DEFAULT_DESIGN);
+    assert.ok(place.width <= WRAP.width / 2 + 1e-10);
+    assert.ok(place.height <= WRAP.height - PRINT_MARGIN * 2 + 1e-10);
+    assert.ok(Math.abs(place.width / place.height - w / h) < 1e-10);
+  }
+});
+
+test('rear duplication retains front size and proportions even with a stale width-fit flag', () => {
+  for (const [width, height] of [[1800, 1100], [1000, 1000], [400, 1200]]) for (const size of [10, 53, 90, 150, 400]) for (const rotation of [-90, -9, 0, 27, 180]) {
+    const state = { ...DEFAULT_DESIGN, size, rotation, x: -80, y: 8 };
+    const free = artworkPlacement(width, height, state);
+    const duplicated = artworkPlacement(width, height, { ...state, fullWidth: true, duplicateBack: true });
+    assert.deepEqual(duplicated, free);
+    assert.ok(Math.abs(duplicated.width / duplicated.height - width / height) < 1e-10);
+    assert.equal(state.size, size);
+  }
 });
 test('wrap uses equal angular steps and constant wall height throughout the circumference', () => {
   for (const height of [0, 0.2, 0.5, 0.8, 1]) for (let angle = 0; angle <= 1; angle += 0.05) {

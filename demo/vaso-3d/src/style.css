@@ -195,14 +195,17 @@ input[type=range]::-moz-range-thumb { width: 10px; height: 10px; border-radius: 
 .primary-button svg { width: 17px; height: 17px; }
 .button-arrow { margin-left: auto; font-size: 16px; font-weight: 500; }
 .primary-button > svg { margin-right: auto; }
+.quote-button .whatsapp-icon { width: 20px; height: 20px; margin: 0; fill: #fff; stroke: none; background: #25d366; border-radius: 50%; }
 .editor-footer p { font-size: 10px; color: var(--muted); text-align: center; line-height: 1.6; margin: 13px 0 0; }
 .layout-options { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: #f5f7f9; gap: 4px; }
 .layout-options button { padding: 10px 4px; background: none; border: 1px solid transparent; border-radius: 7px; font-size: 11px; font-weight: 600; color: var(--muted); }
 .layout-options button.is-selected { background: #fff1f0; color: var(--brand-dark); border-color: #f5373280; }
 .layout-help { font-size: 10px; color: var(--muted); line-height: 1.7; margin: 10px 0 13px; }
+.front-fit-controls { margin-bottom: 14px; }
 .print-preview { padding: 9px 9px 7px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 16px; background: #f9fafb; }
 .print-preview canvas { width: 100%; height: auto; display: block; }
 .print-preview > div { display: flex; justify-content: space-between; padding-top: 6px; font-size: 9px; color: var(--muted); }
+.print-preview.is-front > div { display: grid; grid-template-columns: 1fr 1fr; text-align: center; }
 .wrap-width-controls { margin: 0 0 20px; }
 .secondary-button { background: white; border: 1px solid var(--line); border-radius: 9px; padding: 11px 14px; font-size: 11px; font-weight: 700; }
 .wrap-width-controls .secondary-button { width: 100%; margin-top: 5px; }
@@ -308,3 +311,83 @@ input[type=range]::-moz-range-thumb { width: 10px; height: 10px; border-radius: 
   .editor { padding: 20px; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { animation: none !important; transition: none !important; } }
+
+/* Product configuration above the viewer; artwork actions stay at the right. */
+.workspace { row-gap: 18px; }
+.studio-toolbar { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(240px, 1.4fr) minmax(180px, .8fr) minmax(240px, 1fr); gap: 9px 24px; align-items: start; padding: 14px 18px; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 8px 24px #15191f05; }
+.studio-toolbar > * { min-width: 0; }
+.model-pickers { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 12px; }
+.model-picker { min-width: 0; position: relative; }
+.model-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 40px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; background: #fff; font: inherit; font-size: 12px; font-weight: 600; line-height: 1.5; text-align: left; }
+.model-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-trigger > svg { width: 16px; height: 16px; color: var(--muted); }
+.model-trigger:hover:not(:disabled), .model-trigger[aria-expanded=true] { border-color: var(--red); background: #fff8f7; }
+.model-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 20; padding: 5px; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 30px #15191f1a; }
+.model-menu > button { display: block; width: 100%; min-height: 36px; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: #15191f; font: inherit; font-size: 12px; font-weight: 500; line-height: 1.5; text-align: left; }
+.model-menu > button:hover, .model-menu > button.is-active { background: #f5f7f9; }
+.model-menu > button[aria-selected=true] { color: var(--brand-dark); background: #fff1f0; font-weight: 700; }
+.toolbar-label { display: block; margin: 0 0 6px; padding: 0; color: #66717d; font-size: 10px; font-weight: 700; line-height: 1.5; }
+.studio-toolbar .model-select { min-height: 40px; padding-block: 8px; }
+.studio-toolbar .material-option { min-height: 40px; padding: 7px 12px; gap: 8px; }
+.studio-toolbar .material-swatch { width: 18px; height: 23px; }
+.studio-toolbar .layout-options { padding: 3px; }
+.studio-toolbar .layout-options button { min-height: 32px; padding: 6px; }
+.toolbar-details { grid-column: 1 / -1; margin: 0; }
+.toolbar-details summary { font-size: 10px; width: fit-content; }
+.catalog-content { max-width: 680px; padding: 8px 0 4px; }
+.toolbar-details .catalog-table { font-size: 11px; }
+.studio-toolbar + .viewer-column { top: 100px; }
+.stage { height: clamp(480px, calc(100dvh - 285px), 660px); }
+.editor { padding: 16px; overflow: visible; max-height: none; }
+.editor-heading { padding-bottom: 12px; }
+.editor-heading h2 { font-size: 21px; }
+.editor-section { padding-top: 10px; margin-bottom: 10px; }
+.editor .upload-zone { display: grid; grid-template-columns: 25px minmax(0, 1fr); column-gap: 11px; padding: 11px 12px; align-items: center; }
+.editor .upload-zone > svg { grid-row: 1 / 3; width: 24px; height: 24px; margin: 0; }
+.editor .upload-zone strong { font-size: 12px; margin: 0; }
+.editor .upload-zone small { grid-column: 2; margin: 2px 0 0; font-size: 9px; line-height: 1.5; }
+.editor .file-info { margin-top: 8px; padding: 6px 8px; gap: 7px; }
+.editor .file-icon { width: 22px; height: 26px; }
+.editor .file-info strong { font-size: 10px; }
+.editor .file-info div > span { font-size: 9px; margin-top: 0; }
+.editor .file-info button { padding: 3px; }
+.editor .notice { font-size: 9px; margin-top: 7px; line-height: 1.5; }
+.editor .print-preview { margin-bottom: 8px; padding: 6px 7px; }
+.editor .print-preview canvas { width: 100%; height: 56px; object-fit: contain; }
+.editor .print-preview > div { padding-top: 4px; font-size: 9px; }
+.editor .layout-options button { padding: 6px 3px; min-height: 30px; font-size: 10px; }
+.editor .front-fit-controls { margin-bottom: 10px; }
+.editor .front-fit-controls .small-note { font-size: 9px; margin-top: 5px; }
+.sliders-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 16px; }
+.sliders-grid > div { min-width: 0; }
+.sliders-grid .slider-label { font-size: 10px; margin: 3px 0 0; gap: 5px; }
+.sliders-grid .slider-label output { font-size: 9px; }
+.sliders-grid input[type=range] { height: 28px; margin: 0 0 5px; }
+.editor .wrap-width-controls { display: flex; align-items: center; gap: 10px; margin: 5px 0 0; }
+.editor .wrap-width-controls .secondary-button { flex: 1; width: auto; min-height: 38px; padding: 8px; margin: 0; font-size: 10px; }
+.editor .wrap-width-controls > output { max-width: 75px; color: var(--muted); font-size: 9px; text-align: right; line-height: 1.5; }
+.design-guide { margin-top: 10px; font-size: 10px; color: var(--muted); line-height: 1.6; }
+.design-guide summary { cursor: pointer; width: fit-content; font-size: 10px; color: var(--brand-dark); }
+.design-guide p { margin: 8px 0 0; font-size: 10px; }
+.editor-footer { padding-top: 10px; }
+.editor-footer .primary-button { min-height: 40px; padding: 8px 12px; font-size: 11px; }
+.editor-footer p { font-size: 9px; margin-top: 5px; line-height: 1.45; }
+@media (max-width: 1080px) {
+  .studio-toolbar { margin-bottom: 18px; }
+  .studio-toolbar + .viewer-column { top: auto; }
+}
+@media (max-width: 780px) {
+  .studio-toolbar { grid-template-columns: 1fr 1fr; gap: 12px; padding: 14px; }
+  .toolbar-model { grid-column: 1 / -1; }
+  .studio-toolbar .material-option { padding: 8px 5px; justify-content: center; gap: 5px; }
+  .studio-toolbar .material-option > span:nth-child(2) { font-size: 10px; }
+  .studio-toolbar .material-swatch { width: 14px; height: 20px; }
+  .studio-toolbar .layout-options button { font-size: 10px; padding-inline: 2px; }
+  .studio-toolbar .material-options { gap: 5px; }
+  .stage { height: 540px; }
+  .editor { max-width: 550px; margin-top: 0; padding: 18px; }
+  .sliders-grid .slider-label { font-size: 11px; margin-top: 6px; }
+  .sliders-grid input[type=range] { height: 32px; }
+  .editor .wrap-width-controls .secondary-button { min-height: 42px; font-size: 11px; }
+  .editor .print-preview canvas { height: 84px; }
+}

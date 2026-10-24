@@ -4,6 +4,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { Artwork } from './artwork.mts';
 import { CUP, DEFAULT_SURFACE, createSurfaceLayout, textureUV, type CupShape, type DesignState, type LayoutMode } from './layout.mts';
 import { composePrint } from './print.mts';
+import { createCupParts } from './cup-geometry.mts';
 
 export type Paper = 'white' | 'kraft';
 export interface Studio {
@@ -64,6 +65,12 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
   scene.background = new THREE.Color('#eeede8');
   scene.fog = new THREE.Fog('#eeede8', 6, 15);
   const camera = new THREE.PerspectiveCamera(31, 1, 0.05, 40);
+  // Keep ordinary wheel scrolling on the page, including when over the cup.
+  // Ctrl/trackpad pinch, touch gestures and explicit zoom buttons still zoom.
+  const pageWheel = (event: WheelEvent): void => {
+    if (!event.ctrlKey && !event.metaKey) event.stopImmediatePropagation();
+  };
+  canvas.addEventListener('wheel', pageWheel, { capture: true, passive: true });
   const controls = new OrbitControls(camera, canvas);
   controls.target.set(0, 0.61, 0);
   controls.enablePan = false;
@@ -114,7 +121,7 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
 
   const textureCanvas = document.createElement('canvas');
   textureCanvas.width = Math.min(window.innerWidth < 780 ? 1024 : 2048, renderer.capabilities.maxTextureSize);
-  textureCanvas.height = Math.round(textureCanvas.width * surface.sheetHeight / surface.sheetWidth);
+  textureCanvas.height = Math.round(textureCanvas.width * surface.wrap.height / surface.wrap.width);
   const ctx = textureCanvas.getContext('2d')!;
   function makePrintTexture(): THREE.CanvasTexture {
     const texture = new THREE.CanvasTexture(textureCanvas);
@@ -128,34 +135,16 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
   const insideMaterial = new THREE.MeshStandardMaterial({ color: '#eee9dd', roughness: 0.78, side: THREE.BackSide, bumpMap: grain, bumpScale: 0.0006 });
   const paperMaterial = new THREE.MeshStandardMaterial({ color: '#f5f1e7', roughness: 0.84, bumpMap: grain, bumpScale: 0.0009 });
   const bottomMaterial = new THREE.MeshStandardMaterial({ color: '#ded8c9', roughness: 0.88 });
-  const cup = new THREE.Group();
-  cup.position.y = 0.025;
-  let bodyGeometry = new THREE.CylinderGeometry(CUP.top, CUP.bottom, CUP.height, 192, 32, true, Math.PI);
+  const cupMaterials = { exterior: exteriorMaterial, inside: insideMaterial, paper: paperMaterial, bottom: bottomMaterial };
+  let parts = createCupParts(CUP, cupMaterials);
+  scene.add(parts.group);
+  let bodyGeometry = parts.exterior.geometry;
   let uv = bodyGeometry.getAttribute('uv');
   let nativeUV = Float32Array.from(uv.array);
   for (let i = 0; i < uv.count; i++) {
     const [u, v] = textureUV(nativeUV[i * 2], nativeUV[i * 2 + 1], 'logo');
     uv.setXY(i, u, v);
   }
-  const exterior = new THREE.Mesh(bodyGeometry, exteriorMaterial);
-  exterior.position.y = CUP.height / 2;
-  exterior.castShadow = true; exterior.receiveShadow = true;
-  cup.add(exterior);
-  const interior = new THREE.Mesh(new THREE.CylinderGeometry(CUP.top - 0.015, CUP.bottom - 0.015, CUP.height - 0.055, 160, 1, true), insideMaterial);
-  interior.position.y = CUP.height / 2 + 0.0275;
-  interior.receiveShadow = true; cup.add(interior);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(CUP.top - 0.006, 0.019, 20, 192), paperMaterial);
-  rim.rotation.x = Math.PI / 2; rim.position.y = CUP.height;
-  rim.castShadow = true; rim.receiveShadow = true; cup.add(rim);
-  const bottomRim = new THREE.Mesh(new THREE.TorusGeometry(CUP.bottom - 0.008, 0.012, 12, 160), paperMaterial);
-  bottomRim.rotation.x = Math.PI / 2; bottomRim.position.y = 0.012;
-  bottomRim.castShadow = true; cup.add(bottomRim);
-  const innerBase = new THREE.Mesh(new THREE.CircleGeometry(CUP.bottom - 0.014, 160), paperMaterial);
-  innerBase.rotation.x = -Math.PI / 2; innerBase.position.y = 0.056;
-  innerBase.receiveShadow = true; cup.add(innerBase);
-  const base = new THREE.Mesh(new THREE.CircleGeometry(CUP.bottom - 0.01, 160), bottomMaterial);
-  base.rotation.x = Math.PI / 2; base.position.y = 0.025; cup.add(base);
-  scene.add(cup);
 
   let frame = 0;
   let disposed = false;
@@ -163,22 +152,22 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
   let exportInProgress = false;
   let mobileLayout: boolean | null = null;
   function defaultCamera(): void {
-    controls.target.set(0, 0.025 + surface.cup.height * (0.61 - 0.025) / CUP.height, 0);
+    const totalHeight = surface.cup.details?.fullHeight ?? surface.cup.height;
+    controls.target.set(0, 0.025 + totalHeight * (0.61 - 0.025) / CUP.height, 0);
     controls.minDistance = 1.95 * viewScale;
     controls.maxDistance = 5.4 * viewScale;
     camera.position.set(0, controls.target.y + ((mobileLayout ? 1.62 : 1.54) - 0.61) * viewScale, (mobileLayout ? 3.65 : 3.35) * viewScale);
     controls.update(); controls.saveState();
   }
-  function replaceGeometry(mesh: THREE.Mesh, geometry: THREE.BufferGeometry): void {
-    mesh.geometry.dispose(); mesh.geometry = geometry;
-  }
   function setDimensions(shape: CupShape): void {
-    if (shape.height === surface.cup.height && shape.top === surface.cup.top && shape.bottom === surface.cup.bottom) return;
+    if (JSON.stringify(shape) === JSON.stringify(surface.cup)) return;
     const nextSurface = createSurfaceLayout(shape);
     const oldScale = viewScale;
     const offset = camera.position.clone().sub(controls.target);
-    const nextBody = new THREE.CylinderGeometry(shape.top, shape.bottom, shape.height, 192, 32, true, Math.PI);
-    replaceGeometry(exterior, nextBody); bodyGeometry = nextBody;
+    const nextParts = createCupParts(shape, cupMaterials);
+    scene.remove(parts.group); parts.disposeGeometry();
+    parts = nextParts; scene.add(parts.group);
+    bodyGeometry = parts.exterior.geometry;
     uv = bodyGeometry.getAttribute('uv'); nativeUV = Float32Array.from(uv.array);
     surface = nextSurface;
     for (let i = 0; i < uv.count; i++) {
@@ -186,17 +175,10 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
       uv.setXY(i, u, v);
     }
     uv.needsUpdate = true;
-    exterior.position.y = shape.height / 2;
-    replaceGeometry(interior, new THREE.CylinderGeometry(shape.top - 0.015, shape.bottom - 0.015, shape.height - 0.055, 160, 1, true));
-    interior.position.y = shape.height / 2 + 0.0275;
-    replaceGeometry(rim, new THREE.TorusGeometry(shape.top - 0.006, 0.019, 20, 192));
-    rim.position.y = shape.height;
-    replaceGeometry(bottomRim, new THREE.TorusGeometry(shape.bottom - 0.008, 0.012, 12, 160));
-    replaceGeometry(innerBase, new THREE.CircleGeometry(shape.bottom - 0.014, 160));
-    replaceGeometry(base, new THREE.CircleGeometry(shape.bottom - 0.01, 160));
-    shadow.scale.set(shape.bottom / CUP.bottom, shape.bottom / CUP.bottom, 1);
+    const foot = shape.details?.foot ?? shape.bottom;
+    shadow.scale.set(foot / CUP.bottom, foot / CUP.bottom, 1);
     // Reframe the new size while retaining the user's current angle and zoom.
-    viewScale = Math.max(shape.height, shape.top * 2) / CUP.height;
+    viewScale = Math.max(shape.details?.fullHeight ?? shape.height, (shape.details?.rimOuter ?? shape.top) * 2) / CUP.height;
     defaultCamera();
     camera.position.copy(controls.target).add(offset.multiplyScalar(viewScale / oldScale));
     controls.update(); invalidate();
@@ -258,7 +240,7 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
       const color = paper === 'white' ? '#f5f1e7' : '#b68d60';
       paperMaterial.color.set(color);
       bottomMaterial.color.set(paper === 'white' ? '#ddd7c9' : '#a57f53');
-      const ratio = state.mode === 'wrap' ? surface.wrap.height / surface.wrap.width : surface.sheetHeight / surface.sheetWidth;
+      const ratio = surface.wrap.height / surface.wrap.width;
       const textureHeight = Math.round(textureCanvas.width * ratio);
       if (textureCanvas.height !== textureHeight) {
         // Texture dimensions are immutable after GPU upload in Three.js.
@@ -330,6 +312,7 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
     dispose() {
       disposed = true; cancelAnimationFrame(frame);
       observer.disconnect(); controls.dispose();
+      canvas.removeEventListener('wheel', pageWheel, true);
       canvas.removeEventListener('webglcontextlost', lost);
       canvas.removeEventListener('webglcontextrestored', restored);
       document.removeEventListener('visibilitychange', visibility);

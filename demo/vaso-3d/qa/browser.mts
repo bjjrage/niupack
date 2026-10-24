@@ -38,15 +38,15 @@ async function capturedColors() {
   const copy = document.createElement('canvas'); copy.width = bitmap.width; copy.height = bitmap.height;
   const ctx = copy.getContext('2d')!; ctx.drawImage(bitmap, 0, 0); bitmap.close();
   const pixels = ctx.getImageData(0, 0, copy.width, copy.height).data;
-  let red = 0, blue = 0, green = 0;
+  let red = 0, blue = 0, green = 0, redSumX = 0, blueSumX = 0;
   for (let i = 0; i < pixels.length; i += 16) {
     const [r, g, b] = pixels.slice(i, i + 3);
-    if (r > g * 1.4 && r > b * 1.4) red++;
-    if (b > r * 1.4 && b > g * 1.2) blue++;
+    if (r > g * 1.4 && r > b * 1.4) { red++; redSumX += (i / 4) % copy.width; }
+    if (b > r * 1.4 && b > g * 1.2) { blue++; blueSumX += (i / 4) % copy.width; }
     if (g > r * 1.4 && g > b * 1.2) green++;
   }
   copy.width = 0; copy.height = 0;
-  return { red, blue, green };
+  return { red, blue, green, redX: redSumX / red, blueX: blueSumX / blue };
 }
 document.querySelector<HTMLButtonElement>('#run')!.addEventListener('click', async (event) => {
   (event.currentTarget as HTMLButtonElement).disabled = true;
@@ -243,7 +243,9 @@ document.querySelector<HTMLButtonElement>('#run')!.addEventListener('click', asy
         bounds.push((x1 - x0) / (y1 - y0));
         copy.width = 0; copy.height = 0;
       }
-      assert(bounds[0] > bounds[6] * 2, '4 oz y 24 oz conservaron la misma silueta');
+      const pot8 = CATALOG.findIndex((m) => m.id === 'pot-8oz');
+      const cup21 = CATALOG.findIndex((m) => m.id === 'cup-21oz');
+      assert(bounds[pot8] > bounds[cup21] * 2, 'Pote 8 oz y vaso 21 oz conservaron la misma silueta');
       assert(JSON.stringify(state) === before, 'Los ajustes se modificaron');
       studio.setDimensions(CUP); studio.update(jpg, DEFAULT_DESIGN, 'white');
     } finally {
@@ -255,19 +257,145 @@ document.querySelector<HTMLButtonElement>('#run')!.addEventListener('click', asy
     const paint = source.getContext('2d')!; paint.fillStyle = '#d41128'; paint.fillRect(250, 250, 500, 500);
     const art = { canvas: source, width: 1000, height: 1000, name: 'sparse-logo.png', kind: 'PNG' as const };
     try {
-      for (const size of [4, 12, 24, 12]) {
-        studio.setDimensions(catalogModel(CATALOG.find((cup) => cup.sizeOz === size)!)!.shape);
+      for (const id of ['pot-3oz', 'cup-12oz', 'cup-21oz', 'cup-12oz-double']) {
+        studio.setDimensions(catalogModel(CATALOG.find((cup) => cup.id === id)!)!.shape);
         studio.update(art, { ...DEFAULT_DESIGN, mode: 'wrap', x: -137, size: 90, fullWidth: true }, 'white');
         await studio.capture();
         studio.update(art, DEFAULT_DESIGN, 'white');
         studio.showSide(false); const front = await capturedColors();
         studio.showSide(true); const back = await capturedColors();
-        assert(front.red > 500, 'El logo desapareció del frente al cambiar de modo en ' + size + ' oz');
+        assert(front.red > 500, 'El logo desapareció del frente al cambiar de modo en ' + id);
         assert(back.red < front.red / 5, 'El logo dejó una textura anterior en el reverso');
       }
       studio.setDimensions(CUP); studio.update(art, DEFAULT_DESIGN, 'white');
       studio.showSide(false);
     } finally { source.width = 0; source.height = 0; }
+  });
+  await check('Frente 180°: agrandar, desplazar y rotar no imprimen en el reverso', async () => {
+    const source = document.createElement('canvas'); source.width = 1200; source.height = 600;
+    const paint = source.getContext('2d')!;
+    paint.fillStyle = '#d41128'; paint.fillRect(0, 0, 600, 600);
+    paint.fillStyle = '#0c50f0'; paint.fillRect(600, 0, 600, 600);
+    const art = { canvas: source, width: 1200, height: 600, name: 'front-only.png', kind: 'PNG' as const };
+    const texture = document.createElement('canvas'); texture.width = 400;
+    try {
+      for (const id of ['pot-3oz', 'cup-9oz', 'cup-12oz-double', 'cup-21oz']) {
+        const layout = createSurfaceLayout(catalogModel(CATALOG.find(m => m.id === id)!)!.shape);
+        texture.height = Math.round(texture.width * layout.wrap.height / layout.wrap.width);
+        const ctx = texture.getContext('2d')!;
+        for (const size of [10, 48, 100, 200, 400]) for (const x of [-90, 0, 90]) for (const rotation of [-45, 0, 90]) {
+          const state = { ...DEFAULT_DESIGN, size, x, y: 8, rotation };
+          composePrint(ctx, art, state, 'white', layout);
+          const pixels = ctx.getImageData(0, 0, texture.width, texture.height).data;
+          for (let y = 0; y < texture.height; y++) for (let col = 0; col < texture.width; col++) {
+            if (col >= 100 && col < 300) continue;
+            const i = (y * texture.width + col) * 4;
+            assert(pixels[i] === 250 && pixels[i + 1] === 248 && pixels[i + 2] === 242, `El frente invadió el reverso: ${id}, ${size}%, x=${x}, r=${rotation}`);
+          }
+        }
+      }
+      studio.setDimensions(CUP); studio.update(art, DEFAULT_DESIGN, 'white');
+      studio.showSide(false); const front = await capturedColors();
+      studio.showSide(true); const back = await capturedColors();
+      assert(front.red > 500 && front.blue > 500, 'El frente perdió la composición');
+      assert(back.red + back.blue < 100, 'El render muestra arte en el reverso sin duplicación');
+      studio.showSide(false);
+    } finally { source.width = 0; texture.width = 0; }
+  });
+  await check('Duplicar en reverso copia píxeles idénticos sin espejar, deformar ni superponer', async () => {
+    const source = document.createElement('canvas'); source.width = 1200; source.height = 600;
+    const paint = source.getContext('2d')!;
+    paint.fillStyle = '#d41128'; paint.fillRect(0, 0, 600, 600);
+    paint.fillStyle = '#0c50f0'; paint.fillRect(600, 0, 600, 600);
+    const art = { canvas: source, width: 1200, height: 600, name: 'asymmetric-front.png', kind: 'PNG' as const };
+    const texture = document.createElement('canvas'); texture.width = 400;
+    const png = await loadArtwork(await fixture('logo-transparent.png'));
+    const jpg = await loadArtwork(await fixture('design-flat.jpg'));
+    try {
+      for (const model of CATALOG) {
+        const layout = createSurfaceLayout(catalogModel(model)!.shape);
+        texture.height = Math.round(400 * layout.wrap.height / layout.wrap.width);
+        const ctx = texture.getContext('2d')!;
+        for (const [size, x, y, rotation] of [[48, 0, 0, 0], [100, 0, 0, 0], [180, 45, 8, -9], [400, -90, 38, 90]]) for (const image of [art, png]) {
+          const state = { ...DEFAULT_DESIGN, size, x, y, rotation };
+          composePrint(ctx, image, state, 'kraft', layout);
+          const before = ctx.getImageData(100, 0, 200, texture.height).data;
+          composePrint(ctx, image, { ...state, duplicateBack: true }, 'kraft', layout);
+          const pixels = ctx.getImageData(0, 0, 400, texture.height).data;
+          for (let row = 0; row < texture.height; row++) for (let col = 0; col < 200; col++) for (let channel = 0; channel < 4; channel++) {
+            const front = (row * 400 + 100 + col) * 4 + channel;
+            const rear = (row * 400 + (300 + col) % 400) * 4 + channel;
+            const original = (row * 200 + col) * 4 + channel;
+            assert(pixels[front] === before[original], 'Duplicar modificó el frente');
+            assert(pixels[rear] === pixels[front], `La copia posterior difiere o está espejada: ${model.id}`);
+          }
+        }
+        studio.setDimensions(layout.cup);
+        for (const image of [jpg, png]) {
+          studio.update(image, { ...DEFAULT_DESIGN, duplicateBack: true, size: 100, x: 12, y: 8, rotation: -9 }, 'kraft');
+          assert((await studio.capture()).size > 10000, 'La duplicación perdió JPG/PNG en ' + model.id);
+        }
+      }
+      studio.setDimensions(CUP);
+      studio.update(art, { ...DEFAULT_DESIGN, duplicateBack: true }, 'white');
+      studio.showSide(false); const front = await capturedColors();
+      studio.showSide(true); const back = await capturedColors();
+      assert(front.red > 500 && front.blue > 500 && back.red > 500 && back.blue > 500, 'Falta el arte en una de las caras');
+      assert(front.redX < front.blueX && back.redX < back.blueX, 'El reverso está espejado');
+      studio.showSide(false);
+      studio.update(jpg, { ...DEFAULT_DESIGN, duplicateBack: true }, 'white');
+    } finally { source.width = 0; texture.width = 0; releaseArtwork(png); releaseArtwork(jpg); }
+  });
+  await check('Potes 3/5/8 oz: una imagen 1672 × 941 cubre ambas mitades sin franjas ni estiramiento', async () => {
+    const source = document.createElement('canvas'); source.width = 1672; source.height = 941;
+    const paint = source.getContext('2d')!;
+    paint.fillStyle = '#d41128'; paint.fillRect(0, 0, 836, 941);
+    paint.fillStyle = '#0c50f0'; paint.fillRect(836, 0, 836, 941);
+    const art = { canvas: source, width: 1672, height: 941, name: 'pot-coverage.png', kind: 'PNG' as const };
+    const texture = document.createElement('canvas'); texture.width = 1200;
+    const isInk = (pixels: Uint8ClampedArray, i: number) => pixels[i] > pixels[i + 1] * 1.4 || pixels[i + 2] > pixels[i] * 1.4;
+    try {
+      for (const model of CATALOG.filter(m => m.family === 'pot')) {
+        const layout = createSurfaceLayout(catalogModel(model)!.shape);
+        texture.height = Math.round(1200 * layout.wrap.height / layout.wrap.width);
+        const ctx = texture.getContext('2d')!;
+        const state = { ...DEFAULT_DESIGN, duplicateBack: true };
+        composePrint(ctx, art, { ...state, frontFit: 'contain' }, 'white', layout);
+        const before = ctx.getImageData(0, Math.floor(texture.height / 2), 1200, 1).data;
+        assert(before.some((_, i) => i % 4 === 0 && !isInk(before, i)), 'No se reprodujo la franja de papel del ajuste anterior');
+        composePrint(ctx, art, state, 'white', layout);
+        const pixels = ctx.getImageData(0, 0, 1200, texture.height).data;
+        for (let i = 0; i < pixels.length; i += 4) assert(isInk(pixels, i), 'Franja sin cubrir en ' + model.id);
+        studio.setDimensions(layout.cup); studio.update(art, state, 'white');
+        for (const back of [false, true]) {
+          studio.showSide(back); const colors = await capturedColors();
+          assert(colors.red > 500 && colors.blue > 500, 'La cobertura perdió una cara en ' + model.id);
+        }
+        studio.showSide(false); studio.rotate(Math.PI / 2);
+        const bitmap = await createImageBitmap(await studio.capture());
+        const image = document.createElement('canvas'); image.width = bitmap.width; image.height = bitmap.height;
+        const imageCtx = image.getContext('2d')!; imageCtx.drawImage(bitmap, 0, 0); bitmap.close();
+        const rendered = imageCtx.getImageData(0, 0, image.width, image.height).data;
+        let best = { ink: 0, span: 0 };
+        for (let row = Math.floor(image.height * 0.4); row < image.height * 0.8; row++) {
+          let ink = 0, first = image.width, last = -1;
+          for (let col = 0; col < image.width; col++) if (isInk(rendered, (row * image.width + col) * 4)) { ink++; first = Math.min(first, col); last = col; }
+          if (ink > best.ink) best = { ink, span: last - first + 1 };
+        }
+        assert(best.ink > 50 && best.span - best.ink <= 3, 'El render lateral conserva una franja sin arte: ' + model.id);
+        image.width = 0;
+      }
+      studio.setDimensions(CUP); studio.update(art, { ...DEFAULT_DESIGN, duplicateBack: true }, 'white'); studio.showSide(false);
+    } finally { source.width = 0; texture.width = 0; }
+  });
+  await check('La rueda normal permite desplazar la página; Ctrl o gesto de trackpad conserva el zoom 3D', async () => {
+    const pageWheel = new WheelEvent('wheel', { deltaY: 120, bubbles: true, cancelable: true });
+    canvas.dispatchEvent(pageWheel);
+    assert(!pageWheel.defaultPrevented, 'El visor bloqueó el scroll normal de la página');
+    const pinch = new WheelEvent('wheel', { deltaY: -25, ctrlKey: true, bubbles: true, cancelable: true });
+    canvas.dispatchEvent(pinch);
+    assert(pinch.defaultPrevented, 'El gesto de zoom no llegó a los controles 3D');
+    studio.resetView();
   });
   await check('Pérdida y recuperación del contexto WebGL con diseño conservado', async () => {
     const gl = canvas.getContext('webgl2')!;

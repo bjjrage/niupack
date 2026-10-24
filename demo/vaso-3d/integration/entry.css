@@ -1,0 +1,23 @@
+.studio-section { scroll-margin-top: 80px; padding-block: 20px 40px; background: linear-gradient(180deg, #fff, #fff8f7); }
+.studio-section:focus { outline: none; }
+.studio-section > .container { width: min(100% - 48px, 1180px); }
+.studio-product-notice { padding: 14px 18px; margin: 0 0 22px; border: 1px solid #f5373240; border-radius: 12px; background: #fff6f5; color: #9d2521; font-size: 13px; line-height: 1.6; }
+.studio-product-notice[hidden] { display: none; }
+#niu-studio { background: transparent; isolation: auto; }
+#niu-studio::before { content: none; }
+#niu-studio .workspace { max-width: none; margin: 0; padding: 0; }
+#niu-studio .viewer-column { top: 100px; }
+#niu-studio .intro { max-width: 390px; }
+#niu-studio .intro h2 { max-width: none; }
+#niu-studio .editor h3 { max-width: none; }
+.integration-preview-tag { position: fixed; z-index: 60; left: 12px; bottom: 12px; padding: 7px 11px; border: 1px solid #f5d2d0; border-radius: 999px; color: #a82723; background: #fff7f6; box-shadow: 0 4px 14px #15191f0d; font-size: 9px; font-weight: 700; pointer-events: none; }
+@media (max-width: 1080px) {
+  #niu-studio .viewer-column { top: auto; }
+}
+@media (max-width: 780px) {
+  .studio-section { scroll-margin-top: 86px; padding-block: 34px 48px; }
+  .studio-section > .container { width: min(100% - 28px, 1180px); }
+  #niu-studio .workspace { margin: 0; }
+  #niu-studio .intro { max-width: 335px; }
+  .integration-preview-tag { font-size: 8px; padding: 5px 8px; bottom: 8px; left: 8px; }
+}
