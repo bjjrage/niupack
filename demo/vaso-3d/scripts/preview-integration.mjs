@@ -10,6 +10,12 @@ const build = resolve(demo, 'dist');
 const preview = resolve(build, 'vista-integrada');
 const moduleOutput = resolve(preview, 'personaliza-tu-vaso');
 const rootSource = await readFile(resolve(repository, 'index.html'), 'utf8');
+const heroCard = /<div class="visual-card hero-product-card" data-tilt>[\s\S]*?<div class="visual-badge">[^<]*<\/div>\s*<\/div>/;
+if (!heroCard.test(rootSource)) throw new Error('No se encontró la tarjeta original del hero.');
+const previewSource = rootSource
+  .replace(heroCard, await readFile(resolve(demo, 'integration/hero.html'), 'utf8'))
+  .replace('class="hero-visual reveal"', 'class="hero-video-visual reveal"')
+  .replace('class="hero section-dark"', 'class="hero section-dark hero-video-hero"');
 const moduleSource = await readFile(resolve(build, 'index.html'), 'utf8');
 await mkdir(moduleOutput, { recursive: true });
 
@@ -28,6 +34,9 @@ await cp(resolve(build, 'fonts'), resolve(preview, 'fonts'), { recursive: true }
 const stylesPath = resolve(preview, 'css/styles.css');
 const styles = await readFile(stylesPath, 'utf8');
 await writeFile(stylesPath, styles.replace(/^@import[^\n]*fonts\.googleapis\.com[^\n]*\n/, '@font-face { font-family: "Montserrat"; src: url("../fonts/montserrat-latin-variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }\n'), 'utf8');
+// The local hero replaces the old visual wrapper; keep its entrance animation in sync.
+const motionPath = resolve(preview, 'js/site-motion.js');
+await writeFile(motionPath, (await readFile(motionPath, 'utf8')).replace("document.querySelector('.hero-visual')", "document.querySelector('.hero-video-visual')"), 'utf8');
 
 const moduleEntry = moduleSource.match(/<script type="module"[^>]*src="\.\/(assets\/[\w.-]+\.js)"/)?.[1];
 const moduleCSS = moduleSource.match(/<link rel="stylesheet"[^>]*href="\.\/(assets\/[\w.-]+\.css)"/)?.[1];
@@ -36,7 +45,7 @@ const inline = inlineStudioMarkup(moduleSource);
 const inlineOutput = resolve(preview, 'studio');
 for (const folder of ['assets', 'fonts']) await cp(resolve(build, folder), resolve(inlineOutput, folder), { recursive: true });
 await writeFile(resolve(inlineOutput, 'assets/scoped-studio.css'), scopeStudioCSS(await readFile(resolve(build, moduleCSS), 'utf8'), inline.ids), 'utf8');
-let home = integrateStudioHome(rootSource, inline.content)
+let home = integrateStudioHome(previewSource, inline.content)
   .replace('data-studio="pending"', `data-studio="pending" data-studio-entry="./studio/${moduleEntry}"`)
   .replace(/href="index\.html(#[\w-]+)"/g, 'href="$1"');
 home = home
@@ -48,6 +57,8 @@ await writeFile(resolve(preview, 'index.html'), home, 'utf8');
 await copyFile(resolve(demo, 'integration/entry.css'), resolve(preview, 'integration.css'));
 await copyFile(resolve(demo, 'integration/entry.js'), resolve(preview, 'integration.js'));
 await copyFile(resolve(demo, 'integration/selection.js'), resolve(preview, 'selection.js'));
+await copyFile(resolve(demo, 'integration/hero-video.js'), resolve(preview, 'hero-video.js'));
+await cp(resolve(demo, 'integration/media'), resolve(preview, 'media'), { recursive: true });
 
 // Use the actual compiled module as a subpage with local return navigation.
 for (const folder of ['assets', 'fonts']) await cp(resolve(build, folder), resolve(moduleOutput, folder), { recursive: true });

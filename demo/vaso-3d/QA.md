@@ -1,5 +1,25 @@
 # Evidencia de validación · 23 de octubre de 2026
 
+## Hover de papel y aplicación · 24 de octubre de 2026
+
+Blanco, Kraft, Frente 180° y Diseño 360° tienen transición de fondo/borde, sombra y elevación de 1 px con mouse. El hover seleccionado usa un fondo más intenso; no modifica `aria-pressed`. Solo se aplica a botones habilitados con puntero fino y capacidad de hover. La preferencia de movimiento reducido conserva la regla global que elimina transiciones.
+
+Typecheck y build integrado: PASS. Verificación real con mouse de ambos papeles y ambos modos; Kraft no seleccionado bajo el puntero mantuvo `aria-pressed=false` con el hover visible. Se conservaron el ejemplo y los controles. También se actualizó, solo en la copia local, el selector de la animación de entrada del hero para que apunte a `hero-video-visual` tras reemplazar la tarjeta anterior. Evidencia: `qa/artifacts/toolbar-hover.jpg`.
+
+## Corrección de ubicación del video · 24 de octubre de 2026
+
+Se retiró del hero integrado el contenedor anterior `hero-visual`, cuyo pseudo-elemento rojo sobresalía detrás del video. El nuevo `hero-video-visual` no hereda ese fondo ni la alineación vertical centrada. La grilla alinea sus columnas arriba y el video comienza a la altura del título. La sombra se redujo.
+
+Generador de vista integrada: PASS. Navegador a 1280 px: título en y=123,56 y video en y=123,55; cero contenedores `hero-visual` o `hero-product-card` dentro del hero y `::before` sin contenido. Video 707,64 × 398,05 (16:9), readyState 4, reproducción activa y sin desborde horizontal. Captura local ignorada: `qa/artifacts/hero-video-aligned-desktop.jpg`. Se corrigieron únicamente el generador y CSS de la demo, sin alterar el motor 3D ni publicar.
+
+## Video ampliado en el hero · 24 de octubre de 2026
+
+La portada integrada reemplaza la tarjeta estática por el MP4 aportado por el usuario: 1280 × 720, 24 fps, 15,04 segundos, 8,22 MB. La copia mantiene el mismo SHA-256 que el original. El realce reversible de color usa saturación 1,15 y contraste 1,04 en CSS. Se añadió un poster capturado del video y un control accesible para pausar/reanudar; el video se reproduce sin sonido, en bucle y dentro de la página.
+
+**Typecheck, build integrado y 26/26 pruebas existentes de Node: PASS.** En navegador el video alcanzó readyState 4, sin error de medios, con dimensiones nativas correctas, silencio y bucle activos. Pausar y reanudar mediante teclado actualizó estado y etiqueta. Al desplazarse hasta el configurador se pausó el video y el configurador inició correctamente (`ready`). Consola sin errores ni advertencias.
+
+Escritorio 1440 × 900: video de 802,11 × 451,17 px; móvil 390 × 844: 343 × 192,94 px. Ambas medidas conservan 16:9 y no hay desborde horizontal. La tarjeta anterior ya no está en el hero de la copia local. La preferencia de movimiento reducido impide el inicio automático por implementación; no se emuló esa preferencia en esta revisión. Evidencia local ignorada: `qa/artifacts/hero-video-desktop.jpg` y `hero-video-mobile.jpg`. Solo se modificaron fuentes y recursos de la demo; no se publicó ni se tocó el OS.
+
 ## Presupuesto por WhatsApp en lugar de descarga · 24 de octubre de 2026
 
 Se sustituyó Descargar vista PNG por el enlace **Pedí presupuesto**, con el ícono de WhatsApp junto al texto. Se reutilizó el SVG presente en el sitio original. Apunta al comercial **+595 971 350619**, abre otra pestaña y prepara modelo y papel en el mensaje. No incluye archivo, nombre del arte ni píxeles; el envío queda a cargo del cliente en WhatsApp. Se retiraron el handler de descarga y su estado `saving` de la aplicación. La captura del motor continúa solo como utilidad de QA, sin acceso de descarga en la interfaz.

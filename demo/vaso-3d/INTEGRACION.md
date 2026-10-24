@@ -17,6 +17,12 @@ URL de revisión: `http://127.0.0.1:4174/demo/vaso-3d/vista-integrada/index.html
 
 ## Implementación de la copia local
 
+El hero de esta copia sustituye la tarjeta estática por el video proporcionado por el usuario, conservado en `integration/media/hero-niupack.mp4` (1280 × 720, 15,04 segundos). El contenedor ocupa una columna más amplia y respeta el formato 16:9 completo, también en móvil. `integration/hero.html` y `integration/hero-video.js` se aplican solamente al generar la vista integrada; el HTML y los recursos del sitio original no cambian.
+
+El color se realza con `saturate(1.15) contrast(1.04)` en `integration/entry.css`, sin recomprimir ni alterar el MP4. Una captura del propio video sirve como poster. La reproducción es silenciosa, en bucle y dentro de la página; el control permite pausar/reanudar con teclado o mouse. Se pausa al salir de pantalla o cambiar de pestaña, y no arranca automáticamente si el navegador pide reducir movimiento. Si la reproducción automática se bloquea, el botón permite iniciarla manualmente.
+
+El video usa su propio contenedor `hero-video-visual`, separado de los estilos de la tarjeta anterior. Se retira el antiguo `hero-visual` y su fondo rojo decorativo; la grilla alinea el video con el comienzo del título. En pantallas de hasta 1080 px se apila sin ese desplazamiento superior.
+
 La configuración general está en una barra horizontal: modelo/tamaño, papel y Frente 180°/Diseño 360°. La barra derecha contiene acciones sobre el arte, con sliders en dos columnas, vista plana compacta y el acceso comercial Pedí presupuesto. Las medidas y las explicaciones se expanden en el flujo de la página, sin alto máximo ni scroll interno. La rueda normal sobre el vaso desplaza la página; botones +/−, teclado, dos dedos y Ctrl/gesto de trackpad conservan el zoom. En móvil la barra superior se adapta a dos filas y las acciones quedan debajo del visor.
 
 Modelo/tamaño se divide en dos bloques paralelos: Tipo de envase y Tamaño. Los menús HTML usan Montserrat y muestran tres tipos y únicamente las 2–5 medidas disponibles de cada uno. La sección Pendientes de ficha se retiró de la interfaz. Los identificadores incompletos siguen rechazados internamente. Un cambio de tipo conserva las onzas actuales cuando ese formato existe; de lo contrario usa 12 oz en vasos u 8 oz en potes, o la primera medida válida. El selector canónico oculto conserva la conexión con el showroom, sin otro desplegable visible.

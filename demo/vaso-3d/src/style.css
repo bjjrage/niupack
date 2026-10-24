@@ -332,6 +332,11 @@ input[type=range]::-moz-range-thumb { width: 10px; height: 10px; border-radius: 
 .studio-toolbar .material-swatch { width: 18px; height: 23px; }
 .studio-toolbar .layout-options { padding: 3px; }
 .studio-toolbar .layout-options button { min-height: 32px; padding: 6px; }
+.studio-toolbar .material-option, .studio-toolbar .layout-options button { transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease; }
+@media (hover: hover) and (pointer: fine) {
+  .studio-toolbar .material-option:enabled:hover, .studio-toolbar .layout-options button:enabled:hover { background: #ffe6e3; border-color: var(--red); color: var(--brand-dark); box-shadow: 0 3px 10px #f5373226; transform: translateY(-1px); }
+  .studio-toolbar .material-option.is-selected:enabled:hover, .studio-toolbar .layout-options button.is-selected:enabled:hover { background: #ffd5d1; border-color: var(--brand-dark); }
+}
 .toolbar-details { grid-column: 1 / -1; margin: 0; }
 .toolbar-details summary { font-size: 10px; width: fit-content; }
 .catalog-content { max-width: 680px; padding: 8px 0 4px; }

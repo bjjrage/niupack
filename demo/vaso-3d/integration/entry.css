@@ -1,3 +1,11 @@
+.hero-video-hero .hero-grid { width: min(1540px, calc(100% - 64px)); grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr); gap: clamp(32px, 3.2vw, 56px); align-items: start; }
+.hero-video-visual { min-width: 0; width: 100%; margin-top: calc(.78rem * 1.6 + 14px); }
+.hero-video-card { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 22px; background: #eee6df; box-shadow: 0 20px 50px #15191f1a; }
+.hero-video { display: block; width: 100%; height: 100%; object-fit: contain; filter: saturate(1.15) contrast(1.04); }
+.hero-video-toggle { position: absolute; right: 14px; bottom: 14px; min-height: 40px; padding: 9px 14px; border: 1px solid #ffffff4d; border-radius: 999px; background: #15191fe6; color: #fff; font: 600 12px/1.4 "Montserrat", sans-serif; cursor: pointer; }
+.hero-video-toggle[hidden] { display: none; }
+.hero-video-toggle:hover { background: #15191f; }
+.hero-video-toggle:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 .studio-section { scroll-margin-top: 80px; padding-block: 20px 40px; background: linear-gradient(180deg, #fff, #fff8f7); }
 .studio-section:focus { outline: none; }
 .studio-section > .container { width: min(100% - 48px, 1180px); }
@@ -12,12 +20,21 @@
 #niu-studio .editor h3 { max-width: none; }
 .integration-preview-tag { position: fixed; z-index: 60; left: 12px; bottom: 12px; padding: 7px 11px; border: 1px solid #f5d2d0; border-radius: 999px; color: #a82723; background: #fff7f6; box-shadow: 0 4px 14px #15191f0d; font-size: 9px; font-weight: 700; pointer-events: none; }
 @media (max-width: 1080px) {
+  .hero-video-hero .hero-grid { width: min(100% - 40px, 940px); grid-template-columns: 1fr; gap: 36px; }
+  .hero-video-visual { margin-top: 0; }
+  .hero-video-hero .hero-metrics { width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 32px; transform: none; }
   #niu-studio .viewer-column { top: auto; }
 }
 @media (max-width: 780px) {
+  .hero-video-hero .hero-grid { width: calc(100% - 32px); }
+  .hero-video-card { border-radius: 16px; }
+  .hero-video-toggle { right: 10px; bottom: 10px; padding-inline: 12px; font-size: 11px; }
   .studio-section { scroll-margin-top: 86px; padding-block: 34px 48px; }
   .studio-section > .container { width: min(100% - 28px, 1180px); }
   #niu-studio .workspace { margin: 0; }
   #niu-studio .intro { max-width: 335px; }
   .integration-preview-tag { font-size: 8px; padding: 5px 8px; bottom: 8px; left: 8px; }
+}
+@media (max-width: 600px) {
+  .hero-video-hero .hero-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

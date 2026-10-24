@@ -1,4 +1,7 @@
 import { studioSelection } from './selection.js';
+import { initializeHeroVideo } from './hero-video.js';
+
+initializeHeroVideo();
 
 // Local integration only. The original website and its showroom are unchanged.
 const section = document.getElementById('configurador-3d');
