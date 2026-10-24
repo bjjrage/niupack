@@ -1,3 +1,4 @@
+import { t, pageLocale } from '../integration/i18n.js';
 import { createStudio, type Paper, type Studio } from './studio.mts';
 import { loadArtwork, exampleArtwork, releaseArtwork, type Artwork } from './artwork.mts';
 import { createSurfaceLayout, DEFAULT_DESIGN, frontFitMode, type LayoutMode } from './layout.mts';
@@ -21,12 +22,12 @@ const siteNav = element('site-nav');
 function closeNavigation(): void {
   siteNav.classList.remove('is-open');
   navToggle.setAttribute('aria-expanded', 'false');
-  navToggle.setAttribute('aria-label', 'Abrir menú');
+  navToggle.setAttribute('aria-label', t('Abrir menú'));
 }
 navToggle.addEventListener('click', () => {
   const open = siteNav.classList.toggle('is-open');
   navToggle.setAttribute('aria-expanded', String(open));
-  navToggle.setAttribute('aria-label', open ? 'Cerrar menú' : 'Abrir menú');
+  navToggle.setAttribute('aria-label', t(open ? 'Cerrar menú' : 'Abrir menú'));
 });
 siteNav.addEventListener('click', (event) => {
   if ((event.target as HTMLElement).closest('a')) closeNavigation();
@@ -62,9 +63,9 @@ let toastTimer = 0;
 let generation = 0;
 const privacyMessage = 'Archivo privado: no se envía a un servidor.';
 const modelGroups = [
-  { id: 'cup-single', family: 'cup', wall: 'single', label: 'Vaso · pared simple' },
-  { id: 'cup-double', family: 'cup', wall: 'double', label: 'Vaso · pared doble' },
-  { id: 'pot-single', family: 'pot', wall: 'single', label: 'Pote · pared simple' },
+  { id: 'cup-single', family: 'cup', wall: 'single', label: t('Vaso · pared simple') },
+  { id: 'cup-double', family: 'cup', wall: 'double', label: t('Vaso · pared doble') },
+  { id: 'pot-single', family: 'pot', wall: 'single', label: t('Pote · pared simple') },
 ] as const;
 function chooseModel(id: string): void {
   const select = element<HTMLSelectElement>('cup-model');
@@ -88,11 +89,11 @@ function syncModelPickers(cup: SupplierModel): void {
 }
 
 function showNotice(message: string, kind: '' | 'warning' | 'error' = ''): void {
-  notice.textContent = message;
+  notice.textContent = t(message);
   notice.className = `notice${kind ? ` is-${kind}` : ''}`;
 }
 function announce(message: string): void {
-  clearTimeout(toastTimer); toast.textContent = message; toast.hidden = false;
+  clearTimeout(toastTimer); toast.textContent = t(message); toast.hidden = false;
   toastTimer = window.setTimeout(() => { toast.hidden = true; }, 4500);
 }
 
@@ -101,7 +102,7 @@ function initializeCatalog(): void {
   select.replaceChildren();
   for (const [family, wall, label] of [['cup', 'single', 'Vasos · Pared simple'], ['cup', 'double', 'Vasos · Pared doble'], ['pot', 'single', 'Potes · Pared simple']] as const) {
     const group = document.createElement('optgroup');
-    group.label = label;
+    group.label = t(label);
     for (const cup of CATALOG.filter((m) => m.family === family && m.wall === wall).sort((a, b) => a.sizeOz - b.sizeOz)) {
       const option = new Option(modelLabel(cup), cup.id, cup.id === DEFAULT_MODEL_ID, cup.id === DEFAULT_MODEL_ID);
       option.disabled = !selectionStatus(cup.id).selectable;
@@ -120,11 +121,11 @@ function initializeCatalog(): void {
     values.forEach((value, index) => {
       const cell = document.createElement(index === 0 ? 'th' : 'td');
       if (index === 0) cell.setAttribute('scope', 'row');
-      cell.textContent = value; row.append(cell);
+      cell.textContent = t(value); row.append(cell);
     });
     rows.append(row);
   }
-  element('catalog-notes').textContent = 'S: pared simple · D: pared doble. Boca: diámetro exterior del borde. Apoyo: diámetro del pie. Medidas nominales de los planos de Mingyuan y Ruida. El vaso de 9 oz reemplaza al vaso de 8 oz; el pote de 8 oz es un modelo independiente.';
+  element('catalog-notes').textContent = t('S: pared simple · D: pared doble. Boca: diámetro exterior del borde. Apoyo: diámetro del pie. Medidas nominales de los planos de Mingyuan y Ruida. El vaso de 9 oz reemplaza al vaso de 8 oz; el pote de 8 oz es un modelo independiente.');
   updateModelInfo(initialModel);
   select.addEventListener('change', () => {
     if (!selectionStatus(select.value).selectable || !studio) { select.value = selectedModel; return; }
@@ -140,10 +141,10 @@ function initializeCatalog(): void {
 }
 function updateModelInfo(cup: SupplierModel): void {
   syncModelPickers(cup);
-  element('model-caption').textContent = modelLabel(cup).toLocaleUpperCase('es');
-  element('model-caption-detail').textContent = `${cup.supplier} · Boca ${formatMm(cup.rimOuterDiameterMm)} mm · Alto ${formatMm(cup.heightMm)} mm · Apoyo ${formatMm(cup.footDiameterMm)} mm`;
-  element('model-notice').textContent = `${modelLabel(cup)}. Medidas del plano de ${cup.supplier}. Tu arte y ajustes 360° se conservan.`;
-  element('model-source').textContent = `Fuente: ${cup.source.file} · ${cup.source.date}${cup.source.revision ? ' · Rev. ' + cup.source.revision : ''}`;
+  element('model-caption').textContent = t(modelLabel(cup).toLocaleUpperCase(pageLocale()));
+  element('model-caption-detail').textContent = t(`${cup.supplier} · Boca ${formatMm(cup.rimOuterDiameterMm)} mm · Alto ${formatMm(cup.heightMm)} mm · Apoyo ${formatMm(cup.footDiameterMm)} mm`);
+  element('model-notice').textContent = t(`${modelLabel(cup)}. Medidas del plano de ${cup.supplier}. Tu arte y ajustes 360° se conservan.`);
+  element('model-source').textContent = t(`Fuente: ${cup.source.file} · ${cup.source.date}${cup.source.revision ? ' · Rev. ' + cup.source.revision : ''}`);
 }
 function updateEnabled(): void {
   controlsFieldset.disabled = !artwork || loading;
@@ -159,7 +160,7 @@ function updateEnabled(): void {
 }
 function redraw(): void {
   const model = CATALOG.find(item => item.id === selectedModel)!;
-  const message = `Hola, quiero pedir presupuesto de un envase personalizado NIU PACK.\nModelo: ${modelLabel(model)}.\nPapel: ${paper === 'kraft' ? 'Kraft' : 'blanco'}.`;
+  const message = t(`Hola, quiero pedir presupuesto de un envase personalizado NIU PACK.\nModelo: ${modelLabel(model)}.\nPapel: ${paper === 'kraft' ? 'Kraft' : 'blanco'}.`);
   quoteLink.href = `https://wa.me/595971350619?text=${encodeURIComponent(message)}`;
   const front = state.mode === 'logo';
   const duplicate = front && state.duplicateBack;
@@ -173,27 +174,27 @@ function redraw(): void {
     button.setAttribute('aria-pressed', String(selected));
     button.classList.toggle('is-selected', selected);
   });
-  element('front-fit-help').textContent = frontFit === 'cover'
+  element('front-fit-help').textContent = t(frontFit === 'cover'
     ? 'Llena cada mitad al 100%. Recorta bordes, sin deformar.'
-    : 'Imagen completa al 100%. Puede dejar márgenes.';
-  element('size-label').textContent = front ? 'Tamaño frontal' : 'Tamaño del arte';
-  element('coverage-value').textContent = fullWidth ? 'Ancho 360° activo' : 'Libre';
+    : 'Imagen completa al 100%. Puede dejar márgenes.');
+  element('size-label').textContent = t(front ? 'Tamaño frontal' : 'Tamaño del arte');
+  element('coverage-value').textContent = t(fullWidth ? 'Ancho 360° activo' : 'Libre');
   const widthButton = element<HTMLButtonElement>('fit-wrap-width');
   widthButton.setAttribute('aria-pressed', String(fullWidth));
   widthButton.classList.toggle('is-selected', fullWidth);
   const duplicateButton = element<HTMLButtonElement>('duplicate-back');
   duplicateButton.setAttribute('aria-pressed', String(duplicate));
   duplicateButton.classList.toggle('is-selected', duplicate);
-  element('duplicate-status').textContent = duplicate ? 'Frente y reverso' : 'Reverso libre';
-  element('wrap-width-help').textContent = fullWidth
+  element('duplicate-status').textContent = t(duplicate ? 'Frente y reverso' : 'Reverso libre');
+  element('wrap-width-help').textContent = t(fullWidth
     ? `Ancho completo con altura al ${state.size}%. Pulsá de nuevo para deshacer. El tamaño ajusta ahora la altura.`
-    : 'Conserva la altura elegida; adapta sólo el ancho y no repite el arte.';
-  element('duplicate-back-help').textContent = duplicate
+    : 'Conserva la altura elegida; adapta sólo el ancho y no repite el arte.');
+  element('duplicate-back-help').textContent = t(duplicate
     ? 'Los cambios del frente se copian igual atrás. Cada mitad recorta el arte en sus propios límites. Pulsá de nuevo para quitar la copia.'
-    : 'Copia los 180° frontales a los 180° posteriores, con la misma orientación y proporciones.';
+    : 'Copia los 180° frontales a los 180° posteriores, con la misma orientación y proporciones.');
   printPreview.parentElement!.classList.toggle('is-front', front);
-  element('preview-first').textContent = front ? 'Frente · 180°' : 'Reverso';
-  element('preview-second').textContent = front ? duplicate ? 'Reverso · 180°' : 'Reverso libre · 180°' : 'Frente';
+  element('preview-first').textContent = t(front ? 'Frente · 180°' : 'Reverso');
+  element('preview-second').textContent = t(front ? duplicate ? 'Reverso · 180°' : 'Reverso libre · 180°' : 'Frente');
   element('preview-third').hidden = front;
   studio?.update(artwork, state, paper);
   drawPrintPreview(printPreview, artwork, state, paper, surface);
@@ -209,16 +210,16 @@ function resetDesign(mode: LayoutMode = state.mode): void {
   const xInput = element<HTMLInputElement>('design-x');
   xInput.min = mode === 'wrap' ? '-180' : '-90';
   xInput.max = mode === 'wrap' ? '180' : '90';
-  element('x-label').textContent = 'Horizontal';
-  element('layout-help').textContent = mode === 'wrap'
+  element('x-label').textContent = t('Horizontal');
+  element('layout-help').textContent = t(mode === 'wrap'
     ? 'Diseño continuo sobre el contorno completo. Ajustá tamaño y posición o adaptá el ancho a 360°.'
-    : 'Ajustá el arte dentro de los 180° frontales. Conserva sus proporciones y se recorta al salir de esa mitad.';
-  printPreview.setAttribute('aria-label', mode === 'wrap'
+    : 'Ajustá el arte dentro de los 180° frontales. Conserva sus proporciones y se recorta al salir de esa mitad.');
+  printPreview.setAttribute('aria-label', t(mode === 'wrap'
     ? 'Banda rectangular del diseño 360 grados: centro al frente y extremos unidos atrás.'
-    : 'Dos mitades completas de 180 grados: frente a la izquierda y reverso a la derecha.');
+    : 'Dos mitades completas de 180 grados: frente a la izquierda y reverso a la derecha.'));
   for (const [id, key, suffix, output] of sliderBindings) {
     element<HTMLInputElement>(id).value = String(state[key]);
-    element(output).textContent = `${state[key]}${suffix}`;
+    element(output).textContent = t(`${state[key]}${suffix}`);
   }
   redraw();
 }
@@ -231,7 +232,7 @@ const sliderBindings = [
 for (const [id, key, suffix, output] of sliderBindings) {
   element<HTMLInputElement>(id).addEventListener('input', (event) => {
     state[key] = Number((event.target as HTMLInputElement).value);
-    element(output).textContent = `${state[key]}${suffix}`;
+    element(output).textContent = t(`${state[key]}${suffix}`);
     redraw();
     if (artwork && artwork.kind !== 'example') qualityNotice();
   });
@@ -273,7 +274,7 @@ function qualityNotice(): void {
   if (Math.min(artwork.width, artwork.height) < 500 && (state.size >= 90 || state.mode === 'wrap' && state.fullWidth)) messages.push('La imagen es pequeña y puede verse pixelada al ampliarla.');
   if (artwork.kind === 'JPG') messages.push('El fondo del JPG también se aplica. Para un logo sin fondo, usá PNG con transparencia.');
   if (artwork.width > 2048 || artwork.height > 2048) messages.push('Se redujo la resolución para cuidar el rendimiento del visor.');
-  showNotice(messages.length ? messages.join(' ') : privacyMessage, messages.length ? 'warning' : '');
+  showNotice(messages.length ? messages.map(message => t(message)).join(' ') : privacyMessage, messages.length ? 'warning' : '');
 }
 
 async function upload(file: File): Promise<void> {
@@ -288,7 +289,7 @@ async function upload(file: File): Promise<void> {
     studio?.showSide(false);
     releaseArtwork(previous);
     element('file-name').textContent = next.name;
-    element('file-meta').textContent = `${next.kind} · ${next.width} × ${next.height} px`;
+    element('file-meta').textContent = t(`${next.kind} · ${next.width} × ${next.height} px`);
     element('file-info').hidden = false;
     qualityNotice();
     announce('Tu diseño ya está sobre el vaso.');
@@ -367,7 +368,7 @@ try {
   studio = createStudio(viewer, (lost) => {
     lostContext = lost;
     element('stage-error').hidden = !lost;
-    element('stage-error-message').textContent = 'La vista 3D se interrumpió. Estamos intentando recuperarla; tu diseño sigue en esta pestaña.';
+    element('stage-error-message').textContent = t('La vista 3D se interrumpió. Estamos intentando recuperarla; tu diseño sigue en esta pestaña.');
     updateEnabled();
   });
   studio.setDimensions(initialShape);

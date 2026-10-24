@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, relative, sep } from 'node:path';
 import { inlineStudioMarkup, scopeStudioCSS, integrateStudioHome } from './inline-studio.mjs';
+import { translateMarkup, t } from '../integration/i18n.js';
 
 const demo = fileURLToPath(new URL('../', import.meta.url));
 const repository = resolve(demo, '../..');
@@ -10,13 +11,8 @@ const build = resolve(demo, 'dist');
 const production = process.argv.includes('--production');
 const preview = resolve(build, production ? 'website' : 'vista-integrada');
 const moduleOutput = resolve(preview, 'personaliza-tu-vaso');
-const rootSource = await readFile(resolve(repository, 'index.html'), 'utf8');
 const heroCard = /<div class="visual-card hero-product-card" data-tilt>[\s\S]*?<div class="visual-badge">[^<]*<\/div>\s*<\/div>/;
-if (!heroCard.test(rootSource)) throw new Error('No se encontró la tarjeta original del hero.');
-const previewSource = rootSource
-  .replace(heroCard, await readFile(resolve(demo, 'integration/hero.html'), 'utf8'))
-  .replace('class="hero-visual reveal"', 'class="hero-video-visual reveal"')
-  .replace('class="hero section-dark"', 'class="hero section-dark hero-video-hero"');
+const heroSource = await readFile(resolve(demo, 'integration/hero.html'), 'utf8');
 const moduleSource = await readFile(resolve(build, 'index.html'), 'utf8');
 await mkdir(production ? preview : moduleOutput, { recursive: true });
 
@@ -34,12 +30,12 @@ for (const file of files) {
 await cp(resolve(build, 'fonts'), resolve(preview, 'fonts'), { recursive: true });
 await copyFile(resolve(build, 'favicon.svg'), resolve(preview, 'favicon.svg'));
 if (production) {
-  for (const file of ['en.html', 'pt.html', 'robots.txt', 'sitemap.xml']) {
+  for (const file of ['robots.txt', 'sitemap.xml']) {
     await copyFile(resolve(repository, file), resolve(preview, file));
   }
   await writeFile(resolve(preview, '.nojekyll'), '');
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repository, encoding: 'utf8' }).trim();
-  await writeFile(resolve(preview, 'site-version.json'), JSON.stringify({ commit, heroVideo: true, configurator3d: true }) + '\n');
+  await writeFile(resolve(preview, 'site-version.json'), JSON.stringify({ commit, heroVideo: true, configurator3d: true, languages: ['es', 'en', 'pt'] }) + '\n');
 }
 const stylesPath = resolve(preview, 'css/styles.css');
 const styles = await readFile(stylesPath, 'utf8');
@@ -55,19 +51,26 @@ const inline = inlineStudioMarkup(moduleSource);
 const inlineOutput = resolve(preview, 'studio');
 for (const folder of ['assets', 'fonts']) await cp(resolve(build, folder), resolve(inlineOutput, folder), { recursive: true });
 await writeFile(resolve(inlineOutput, 'assets/scoped-studio.css'), scopeStudioCSS(await readFile(resolve(build, moduleCSS), 'utf8'), inline.ids), 'utf8');
-let home = integrateStudioHome(previewSource, inline.content)
-  .replace('data-studio="pending"', `data-studio="pending" data-studio-entry="./studio/${moduleEntry}"`)
-  .replace(/href="index\.html(#[\w-]+)"/g, 'href="$1"');
-home = home
-  .replace('</head>', (production ? '' : '<meta name="robots" content="noindex, nofollow">\n') + '<link rel="icon" href="favicon.svg" type="image/svg+xml">\n<link rel="stylesheet" href="studio/assets/scoped-studio.css">\n<link rel="stylesheet" href="integration.css">\n</head>')
-  .replaceAll('href="en.html"', 'href="https://bjjrage.github.io/niupack/en.html"')
-  .replaceAll('href="pt.html"', 'href="https://bjjrage.github.io/niupack/pt.html"')
-  .replace('</body>', (production ? '' : '<div class="integration-preview-tag">Vista local de integración</div>\n') + '<script type="module" src="integration.js"></script>\n</body>');
-await writeFile(resolve(preview, 'index.html'), home, 'utf8');
-await copyFile(resolve(demo, 'integration/entry.css'), resolve(preview, 'integration.css'));
-await copyFile(resolve(demo, 'integration/entry.js'), resolve(preview, 'integration.js'));
-await copyFile(resolve(demo, 'integration/selection.js'), resolve(preview, 'selection.js'));
-await copyFile(resolve(demo, 'integration/hero-video.js'), resolve(preview, 'hero-video.js'));
+// One composition pipeline for all languages: translated templates retain their
+// own existing site copy, while the hero and configurator share the same features.
+for (const [filename, locale] of [['index.html', 'es'], ['en.html', 'en'], ['pt.html', 'pt']]) {
+  const source = await readFile(resolve(repository, filename), 'utf8');
+  if (!heroCard.test(source)) throw new Error('No se encontró el hero en ' + filename);
+  const integratedSource = source
+    .replace(heroCard, translateMarkup(heroSource, locale))
+    .replace('class="hero-visual reveal"', 'class="hero-video-visual reveal"')
+    .replace('class="hero section-dark"', 'class="hero section-dark hero-video-hero"');
+  let home = integrateStudioHome(integratedSource, translateMarkup(inline.content, locale))
+    .replace('data-studio="pending"', `data-studio="pending" data-studio-entry="./studio/${moduleEntry}"`)
+    .replace(new RegExp('href="' + filename.replace('.', '\\.') + '(#[\\w-]+)"', 'g'), 'href="$1"');
+  home = home
+    .replace('</head>', (production ? '' : '<meta name="robots" content="noindex, nofollow">\n') + '<link rel="icon" href="favicon.svg" type="image/svg+xml">\n<link rel="stylesheet" href="studio/assets/scoped-studio.css">\n<link rel="stylesheet" href="integration.css">\n</head>')
+    .replace('</body>', (production ? '' : `<div class="integration-preview-tag">${t('Vista local de integración', locale)}</div>\n`) + '<script type="module" src="integration.js"></script>\n</body>');
+  await writeFile(resolve(preview, filename), home, 'utf8');
+}
+for (const filename of ['entry.css', 'entry.js', 'selection.js', 'hero-video.js', 'i18n.js']) {
+  await copyFile(resolve(demo, 'integration', filename), resolve(preview, filename.replace('entry.', 'integration.')));
+}
 await cp(resolve(demo, 'integration/media'), resolve(preview, 'media'), { recursive: true });
 
 if (!production) {

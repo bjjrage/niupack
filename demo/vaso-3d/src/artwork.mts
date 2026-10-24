@@ -1,3 +1,4 @@
+import { t } from '../integration/i18n.js';
 export const MAX_BYTES = 12 * 1024 * 1024;
 export const MAX_PIXELS = 16_000_000;
 export const MAX_EDGE = 8192;
@@ -143,18 +144,18 @@ export function exampleArtwork(): Artwork {
   ctx.fillStyle = '#cc1625';
   ctx.textAlign = 'center';
   ctx.font = '600 28px Arial, sans-serif';
-  ctx.fillText('HECHO PARA ACOMPAÑARTE', 500, 174);
+  ctx.fillText(t('HECHO PARA ACOMPAÑARTE'), 500, 174);
   ctx.font = '900 181px Arial, sans-serif';
-  ctx.fillText('TU', 500, 400);
-  ctx.fillText('MARCA.', 500, 594);
+  ctx.fillText(t('TU'), 500, 400);
+  ctx.fillText(t('MARCA.'), 500, 594);
   ctx.lineWidth = 5;
   ctx.strokeStyle = '#cc1625';
   ctx.beginPath(); ctx.moveTo(198, 665); ctx.lineTo(802, 665); ctx.stroke();
   ctx.font = '500 35px Arial, sans-serif';
-  ctx.fillText('EN CADA MOMENTO.', 500, 746);
+  ctx.fillText(t('EN CADA MOMENTO.'), 500, 746);
   ctx.font = '700 29px Arial, sans-serif';
   ctx.fillText('N I U P A C K', 500, 862);
-  return { canvas, name: 'Diseño de ejemplo', width: 1000, height: 1000, kind: 'example' };
+  return { canvas, name: t('Diseño de ejemplo'), width: 1000, height: 1000, kind: 'example' };
 }
 
 export function releaseArtwork(artwork: Artwork | null): void {

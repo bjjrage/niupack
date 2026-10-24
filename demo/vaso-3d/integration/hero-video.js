@@ -1,4 +1,5 @@
 // The original MP4 is preserved. Color enhancement is reversible in entry.css.
+import { t } from './i18n.js';
 export function initializeHeroVideo() {
   const video = document.getElementById('hero-video');
   const toggle = document.querySelector('.hero-video-toggle');
@@ -10,7 +11,7 @@ export function initializeHeroVideo() {
   video.muted = true;
 
   const updateLabel = () => {
-    toggle.textContent = video.paused ? 'Reproducir video' : 'Pausar video';
+    toggle.textContent = t(video.paused ? 'Reproducir video' : 'Pausar video');
   };
   const updatePlayback = () => {
     if (visible && !document.hidden && (userPlayback ?? !reducedMotion.matches)) {

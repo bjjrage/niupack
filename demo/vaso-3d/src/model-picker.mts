@@ -1,3 +1,4 @@
+import { t, pageLocale } from '../integration/i18n.js';
 export interface PickerOption { value: string; label: string }
 
 // A short, styled select-only combobox. Focus remains on the trigger so Tab
@@ -58,9 +59,9 @@ export function createModelPicker(trigger: HTMLButtonElement, menu: HTMLElement,
       event.preventDefault();
       if (menu.hidden) open();
       const now = performance.now();
-      search = (now - searchTime < 700 ? search : '') + event.key.toLocaleLowerCase('es');
+      search = (now - searchTime < 700 ? search : '') + event.key.toLocaleLowerCase(pageLocale());
       searchTime = now;
-      const index = options.findIndex(option => option.label.toLocaleLowerCase('es').startsWith(search));
+      const index = options.findIndex(option => option.label.toLocaleLowerCase(pageLocale()).startsWith(search));
       if (index >= 0) { active = index; highlight(); }
     }
   });
@@ -79,7 +80,7 @@ export function createModelPicker(trigger: HTMLButtonElement, menu: HTMLElement,
   return {
     setOptions(next: PickerOption[], value: string) {
       close(); options = next; selected = value;
-      valueLabel.textContent = options.find(option => option.value === value)?.label ?? 'Elegí una opción';
+      valueLabel.textContent = options.find(option => option.value === value)?.label ?? t('Elegí una opción');
       trigger.title = valueLabel.textContent;
       menu.replaceChildren(...options.map((option, index) => {
         const button = document.createElement('button');

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../dist/website/', import.meta.url));
 const base = new URL('https://bjjrage.github.io/niupack/');
-const allowed = new Set(['assets', 'css', 'fonts', 'js', 'media', 'studio', 'index.html', 'en.html', 'pt.html', 'robots.txt', 'sitemap.xml', 'favicon.svg', '.nojekyll', 'site-version.json', 'hero-video.js', 'integration.css', 'integration.js', 'selection.js']);
+const allowed = new Set(['assets', 'css', 'fonts', 'js', 'media', 'studio', 'index.html', 'en.html', 'pt.html', 'robots.txt', 'sitemap.xml', 'favicon.svg', '.nojekyll', 'site-version.json', 'hero-video.js', 'integration.css', 'integration.js', 'selection.js', 'i18n.js']);
 for (const entry of await readdir(root)) assert.ok(allowed.has(entry), 'Archivo ajeno al sitio: ' + entry);
 
 async function checkReference(reference, from) {
@@ -20,7 +20,6 @@ async function checkReference(reference, from) {
 for (const page of ['index.html', 'en.html', 'pt.html']) {
   const html = await readFile(resolve(root, page), 'utf8');
   for (const match of html.matchAll(/\b(?:src|href|poster|data-studio-entry)="([^"]+)"/g)) await checkReference(match[1], page);
-  if (page !== 'index.html') continue;
   assert.match(html, /id="hero-video"/);
   assert.match(html, /id="configurador-3d"/);
   assert.doesNotMatch(html, /Vista local de integración|noindex|hero-product-card|id="personalizacion"/);
@@ -28,6 +27,11 @@ for (const page of ['index.html', 'en.html', 'pt.html']) {
   assert.equal((html.match(/<h1\b/g) || []).length, 1);
   const sections = [...html.matchAll(/<section\b[^>]*id="([^"]+)"/g)].map(match => match[1]);
   assert.deepEqual(sections.slice(sections.indexOf('productos'), sections.indexOf('productos') + 3), ['productos', 'configurador-3d', 'termoformados']);
+  if (page !== 'index.html') {
+    assert.doesNotMatch(html, /Subí tu imagen|Duplicar en reverso|Pedí presupuesto|Restablecer|Diseño 360°/);
+    assert.ok(html.includes(page === 'en.html' ? 'Duplicate on back' : 'Duplicar no verso'));
+    assert.ok(html.includes(page === 'en.html' ? 'Request a quote' : 'Pedir orçamento'));
+  }
 }
 for (const css of ['css/styles.css', 'integration.css', 'studio/assets/scoped-studio.css']) {
   for (const match of (await readFile(resolve(root, css), 'utf8')).matchAll(/url\(["']?([^"')]+)["']?\)/g)) await checkReference(match[1], css);

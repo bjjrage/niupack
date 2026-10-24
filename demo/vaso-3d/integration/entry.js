@@ -1,9 +1,10 @@
 import { studioSelection } from './selection.js';
 import { initializeHeroVideo } from './hero-video.js';
+import { t } from './i18n.js';
 
 initializeHeroVideo();
 
-// Local integration only. The original website and its showroom are unchanged.
+// Shared integration for all three site languages.
 const section = document.getElementById('configurador-3d');
 const root = document.querySelector('[data-niu-studio]');
 const notice = document.getElementById('studio-product-notice');
@@ -14,11 +15,11 @@ let request = 0;
 function initialize() {
   if (!initialization) {
     initialization = import(root.dataset.studioEntry).then(() => {
-      if (root.dataset.studio !== 'ready') throw new Error('El visor no pudo iniciar.');
+      if (root.dataset.studio !== 'ready') throw new Error(t('El visor no pudo iniciar.'));
     }).catch(error => {
       root.dataset.studio = 'unavailable';
       notice.hidden = false;
-      notice.textContent = 'No pudimos iniciar el configurador. Recargá la página para volver a intentar.';
+      notice.textContent = t('No pudimos iniciar el configurador. Recargá la página para volver a intentar.');
       throw error;
     });
   }
@@ -46,7 +47,7 @@ function bindProductLinks() {
     link.href = '#configurador-3d';
     link.removeAttribute('target');
     link.removeAttribute('rel');
-    link.setAttribute('aria-label', 'Consultar este producto en el configurador 3D');
+    link.setAttribute('aria-label', t('Consultar este producto en el configurador 3D'));
   });
 }
 
@@ -66,7 +67,7 @@ document.addEventListener('click', event => {
     if (!selection) { notice.hidden = true; return; }
     const available = new Set([...root.querySelectorAll('#studio-cup-model option:not(:disabled)')].map(option => option.value));
     const result = studioSelection(selection, available);
-    notice.textContent = result.notice;
+    notice.textContent = t(result.notice);
     notice.hidden = !result.notice;
     if (result.modelId) root.dispatchEvent(new CustomEvent('niupack:select-model', { detail: { modelId: result.modelId } }));
   }).catch(() => {});

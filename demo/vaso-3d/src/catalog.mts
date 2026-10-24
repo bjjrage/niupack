@@ -1,4 +1,5 @@
 import { SUPPLIER_MODELS } from './catalog-data.mts';
+import { t, pageLocale } from '../integration/i18n.js';
 import type { CupShape } from './layout.mts';
 
 export interface SupplierModel {
@@ -35,7 +36,7 @@ export const PENDING_MODELS = [
   { id: 'cup-24oz', label: 'Vaso 24 oz — ficha pendiente' },
 ] as const;
 export function modelLabel(model: SupplierModel): string {
-  return (model.family === 'pot' ? 'Pote ' : 'Vaso ') + model.sizeOz + ' oz · ' + (model.wall === 'double' ? 'Pared doble' : 'Pared simple');
+  return t((model.family === 'pot' ? 'Pote ' : 'Vaso ') + model.sizeOz + ' oz · ' + (model.wall === 'double' ? 'Pared doble' : 'Pared simple'));
 }
 
 // Supplied drawing callouts define the foot, wall angle, finished height and
@@ -101,5 +102,5 @@ export function selectionStatus(id: string): { selectable: boolean; reasons: str
     : { selectable: false, reasons: ['Falta ficha completa del proveedor'] };
 }
 export function formatMm(value: number | null): string {
-  return value === null ? 'Pendiente' : new Intl.NumberFormat('es', { maximumFractionDigits: 2 }).format(value);
+  return value === null ? t('Pendiente') : new Intl.NumberFormat(pageLocale(), { maximumFractionDigits: 2 }).format(value);
 }

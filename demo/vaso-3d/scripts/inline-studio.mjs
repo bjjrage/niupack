@@ -62,6 +62,6 @@ export function integrateStudioHome(source, moduleMarkup) {
   </section>`;
   return source.replace(thermo, '').replace(personalization, '')
     .replace(products, products + '\n' + inserted + '\n' + thermo)
-    .replaceAll('index.html#personalizacion', '#configurador-3d')
+    .replace(/(?:index|en|pt)\.html#personalizacion/g, '#configurador-3d')
     .replaceAll('href="#personalizacion"', 'href="#configurador-3d"');
 }
