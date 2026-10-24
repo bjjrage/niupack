@@ -6,7 +6,7 @@ import { resolve, sep, extname } from 'node:path';
 // Deliberately serves only the compiled demo, never the repository or OS.
 const root = fileURLToPath(new URL('./dist/', import.meta.url));
 const mounts = ['/demo/vaso-3d/', '/niupack/demo/vaso-3d/'];
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
 const server = createServer(async (request, response) => {
   try {
     const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);

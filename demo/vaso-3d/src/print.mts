@@ -1,7 +1,8 @@
 import type { Artwork } from './artwork.mts';
-import { SHEET, SHEET_WIDTH, SHEET_HEIGHT, SECTOR_ANGLE, PRINT_MARGIN, WRAP, artworkPlacement, type DesignState } from './layout.mts';
+import { DEFAULT_SURFACE, artworkPlacement, type DesignState, type SurfaceLayout } from './layout.mts';
 
-function clipSector(ctx: CanvasRenderingContext2D, scale: number): void {
+function clipSector(ctx: CanvasRenderingContext2D, scale: number, layout: SurfaceLayout): void {
+  const { sheet: SHEET, sectorAngle: SECTOR_ANGLE, printMargin: PRINT_MARGIN } = layout;
   const start = -Math.PI / 2 - SECTOR_ANGLE / 2;
   const end = -Math.PI / 2 + SECTOR_ANGLE / 2;
   ctx.beginPath();
@@ -10,9 +11,10 @@ function clipSector(ctx: CanvasRenderingContext2D, scale: number): void {
   ctx.closePath(); ctx.clip();
 }
 
-function composeWrap(ctx: CanvasRenderingContext2D, artwork: Artwork, state: DesignState): void {
+function composeWrap(ctx: CanvasRenderingContext2D, artwork: Artwork, state: DesignState, layout: SurfaceLayout): void {
+  const { wrap: WRAP, printMargin: PRINT_MARGIN } = layout;
   const { width, height } = ctx.canvas;
-  const placement = artworkPlacement(artwork.canvas.width, artwork.canvas.height, state);
+  const placement = artworkPlacement(artwork.canvas.width, artwork.canvas.height, state, layout);
   const margin = PRINT_MARGIN / WRAP.height * height;
   const shift = state.x / 360 * width;
   ctx.save();
@@ -34,19 +36,20 @@ function composeWrap(ctx: CanvasRenderingContext2D, artwork: Artwork, state: Des
 }
 
 // The mesh and preview use the same composition and coordinate convention.
-export function composePrint(ctx: CanvasRenderingContext2D, artwork: Artwork | null, state: DesignState, paper: 'white' | 'kraft'): void {
+export function composePrint(ctx: CanvasRenderingContext2D, artwork: Artwork | null, state: DesignState, paper: 'white' | 'kraft', layout = DEFAULT_SURFACE): void {
+  const { sheet: SHEET, sheetWidth: SHEET_WIDTH, sectorAngle: SECTOR_ANGLE } = layout;
   const { width, height } = ctx.canvas;
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = paper === 'white' ? '#faf8f2' : '#be996e';
   ctx.fillRect(0, 0, width, height);
   if (!artwork) return;
-  if (state.mode === 'wrap') { composeWrap(ctx, artwork, state); return; }
+  if (state.mode === 'wrap') { composeWrap(ctx, artwork, state, layout); return; }
   // An isolated logo retains the metric annular projection.
   const scale = width / SHEET_WIDTH;
-  const placement = artworkPlacement(artwork.canvas.width, artwork.canvas.height, state);
+  const placement = artworkPlacement(artwork.canvas.width, artwork.canvas.height, state, layout);
   ctx.save();
   ctx.translate(width / 2, SHEET.maxY * scale);
-  clipSector(ctx, scale);
+  clipSector(ctx, scale, layout);
   for (const turn of [-1, 0, 1]) {
     const phi = placement.angle + turn * SECTOR_ANGLE;
     ctx.save();
@@ -59,12 +62,13 @@ export function composePrint(ctx: CanvasRenderingContext2D, artwork: Artwork | n
   ctx.restore();
 }
 
-export function drawPrintPreview(canvas: HTMLCanvasElement, artwork: Artwork | null, state: DesignState, paper: 'white' | 'kraft'): void {
+export function drawPrintPreview(canvas: HTMLCanvasElement, artwork: Artwork | null, state: DesignState, paper: 'white' | 'kraft', layout = DEFAULT_SURFACE): void {
+  const { sheet: SHEET, sheetWidth: SHEET_WIDTH, sheetHeight: SHEET_HEIGHT, sectorAngle: SECTOR_ANGLE, printMargin: PRINT_MARGIN, wrap: WRAP } = layout;
   const ratio = state.mode === 'wrap' ? WRAP.height / WRAP.width : SHEET_HEIGHT / SHEET_WIDTH;
   const height = Math.round(canvas.width * ratio);
   if (canvas.height !== height) canvas.height = height;
   const ctx = canvas.getContext('2d')!;
-  composePrint(ctx, artwork, state, paper);
+  composePrint(ctx, artwork, state, paper, layout);
   ctx.save();
   ctx.strokeStyle = '#7d8574'; ctx.lineWidth = 1.25;
   ctx.setLineDash([4, 4]);

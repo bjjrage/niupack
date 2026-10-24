@@ -7,8 +7,9 @@
   "scripts": {
     "dev": "vite --base /demo/vaso-3d/ --host 127.0.0.1 --port 4173 --strictPort",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test qa/*.test.mts",
-    "build": "npm run typecheck && vite build",
+    "catalog:import": "node scripts/import-catalog.mjs",
+    "test": "npm run catalog:import && node --experimental-strip-types --test qa/*.test.mts",
+    "build": "npm run catalog:import && npm run typecheck && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
     "serve": "node serve.mjs"
   },

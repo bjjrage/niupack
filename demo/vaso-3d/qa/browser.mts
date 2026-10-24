@@ -1,6 +1,7 @@
 import { createStudio } from '../src/studio.mts';
 import { loadArtwork, releaseArtwork, MAX_BYTES } from '../src/artwork.mts';
-import { DEFAULT_DESIGN, WRAP, textureUV } from '../src/layout.mts';
+import { CUP, DEFAULT_DESIGN, WRAP, textureUV, createSurfaceLayout } from '../src/layout.mts';
+import { CATALOG, catalogModel } from '../src/catalog.mts';
 import { composePrint } from '../src/print.mts';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#qa-viewer')!;
@@ -201,6 +202,72 @@ document.querySelector<HTMLButtonElement>('#run')!.addEventListener('click', asy
       assert(Math.abs(before[0] - after[0]) <= 1 && Math.abs(before[1] - after[1]) <= 1, `Altura o posición alteradas con rotación=${rotation}, y=${y}: ${before} → ${after}`);
     }
     source.width = 0; source.height = 0; texture.width = 0; texture.height = 0;
+  });
+  await check('Tamaños del catálogo: cambia la forma, conserva JPG/PNG y mantiene la cobertura 360°', async () => {
+    const jpg = await loadArtwork(await fixture('design-flat.jpg'));
+    const png = await loadArtwork(await fixture('logo-transparent.png'));
+    const state = { ...DEFAULT_DESIGN, mode: 'wrap' as const, fullWidth: true, size: 50, x: -137, y: 8, rotation: -9 };
+    const before = JSON.stringify(state);
+    const source = document.createElement('canvas'); source.width = 1200; source.height = 600;
+    const paint = source.getContext('2d')!; paint.fillStyle = '#d41128'; paint.fillRect(0, 0, 1200, 600);
+    const band = { canvas: source, width: 1200, height: 600, name: 'catalog-band.png', kind: 'PNG' as const };
+    const texture = document.createElement('canvas'); texture.width = 900;
+    const bounds: number[] = [];
+    try {
+      for (const cup of CATALOG) {
+        const model = catalogModel(cup)!;
+        const layout = createSurfaceLayout(model.shape);
+        studio.setDimensions(model.shape);
+        for (const art of [jpg, png]) {
+          studio.update(art, state, 'kraft');
+          assert((await studio.capture()).size > 10000, 'El arte se perdió al cambiar el tamaño');
+          assert(art.canvas.width > 0, 'El cambio liberó el archivo activo');
+        }
+        texture.height = Math.round(texture.width * layout.wrap.height / layout.wrap.width);
+        const ctx = texture.getContext('2d')!;
+        composePrint(ctx, band, { ...state, rotation: 0, y: 0 }, 'white', layout);
+        const row = ctx.getImageData(0, Math.floor(texture.height / 2), texture.width, 1).data;
+        for (let col = 0; col < texture.width; col++) assert(row[col * 4] > row[col * 4 + 1] * 1.4, 'Hueco radial en ' + cup.sizeOz + ' oz');
+        studio.update(band, { ...DEFAULT_DESIGN, mode: 'wrap', fullWidth: true }, 'white');
+        studio.showSide(false);
+        const bitmap = await createImageBitmap(await studio.capture());
+        const copy = document.createElement('canvas'); copy.width = bitmap.width; copy.height = bitmap.height;
+        const copyCtx = copy.getContext('2d')!; copyCtx.drawImage(bitmap, 0, 0); bitmap.close();
+        const pixels = copyCtx.getImageData(0, 0, copy.width, copy.height).data;
+        let x0 = copy.width, x1 = -1, y0 = copy.height, y1 = -1;
+        for (let y = 0; y < copy.height; y++) for (let x = 0; x < copy.width; x++) {
+          const i = (y * copy.width + x) * 4;
+          if (pixels[i] > pixels[i + 1] * 1.4 && pixels[i] > pixels[i + 2] * 1.4) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+        }
+        assert(x1 > x0 && y1 > y0, 'Vaso sin arte visible');
+        bounds.push((x1 - x0) / (y1 - y0));
+        copy.width = 0; copy.height = 0;
+      }
+      assert(bounds[0] > bounds[6] * 2, '4 oz y 24 oz conservaron la misma silueta');
+      assert(JSON.stringify(state) === before, 'Los ajustes se modificaron');
+      studio.setDimensions(CUP); studio.update(jpg, DEFAULT_DESIGN, 'white');
+    } finally {
+      releaseArtwork(jpg); releaseArtwork(png); source.width = 0; texture.width = 0;
+    }
+  });
+  await check('Cambiar entre Logo y 360° actualiza la textura y el frente después de redimensionar el vaso', async () => {
+    const source = document.createElement('canvas'); source.width = 1000; source.height = 1000;
+    const paint = source.getContext('2d')!; paint.fillStyle = '#d41128'; paint.fillRect(250, 250, 500, 500);
+    const art = { canvas: source, width: 1000, height: 1000, name: 'sparse-logo.png', kind: 'PNG' as const };
+    try {
+      for (const size of [4, 12, 24, 12]) {
+        studio.setDimensions(catalogModel(CATALOG.find((cup) => cup.sizeOz === size)!)!.shape);
+        studio.update(art, { ...DEFAULT_DESIGN, mode: 'wrap', x: -137, size: 90, fullWidth: true }, 'white');
+        await studio.capture();
+        studio.update(art, DEFAULT_DESIGN, 'white');
+        studio.showSide(false); const front = await capturedColors();
+        studio.showSide(true); const back = await capturedColors();
+        assert(front.red > 500, 'El logo desapareció del frente al cambiar de modo en ' + size + ' oz');
+        assert(back.red < front.red / 5, 'El logo dejó una textura anterior en el reverso');
+      }
+      studio.setDimensions(CUP); studio.update(art, DEFAULT_DESIGN, 'white');
+      studio.showSide(false);
+    } finally { source.width = 0; source.height = 0; }
   });
   await check('Pérdida y recuperación del contexto WebGL con diseño conservado', async () => {
     const gl = canvas.getContext('webgl2')!;

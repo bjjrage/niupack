@@ -1,13 +1,36 @@
 import { createStudio, type Paper, type Studio } from './studio.mts';
 import { loadArtwork, exampleArtwork, releaseArtwork, type Artwork } from './artwork.mts';
-import { DEFAULT_DESIGN, suggestedLayout, type LayoutMode } from './layout.mts';
+import { CUP, DEFAULT_SURFACE, createSurfaceLayout, DEFAULT_DESIGN, suggestedLayout, type LayoutMode } from './layout.mts';
 import { drawPrintPreview } from './print.mts';
+import { CATALOG, DEMO_MODEL_ID, catalogModel, selectionStatus, formatMm } from './catalog.mts';
 
 function element<T extends HTMLElement>(id: string): T {
   const value = document.getElementById(id);
   if (!value) throw new Error(`Missing element: ${id}`);
   return value as T;
 }
+const navToggle = element<HTMLButtonElement>('nav-toggle');
+const siteNav = element('site-nav');
+function closeNavigation(): void {
+  siteNav.classList.remove('is-open');
+  navToggle.setAttribute('aria-expanded', 'false');
+  navToggle.setAttribute('aria-label', 'Abrir menú');
+}
+navToggle.addEventListener('click', () => {
+  const open = siteNav.classList.toggle('is-open');
+  navToggle.setAttribute('aria-expanded', String(open));
+  navToggle.setAttribute('aria-label', open ? 'Cerrar menú' : 'Abrir menú');
+});
+siteNav.addEventListener('click', (event) => {
+  if ((event.target as HTMLElement).closest('a')) closeNavigation();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && navToggle.getAttribute('aria-expanded') === 'true') {
+    closeNavigation(); navToggle.focus();
+  }
+});
+window.matchMedia('(min-width: 961px)').addEventListener('change', closeNavigation);
+
 const viewer = element<HTMLCanvasElement>('viewer');
 const stage = element('stage');
 const downloadButton = element<HTMLButtonElement>('download');
@@ -18,6 +41,8 @@ const dropZone = element('drop-zone');
 const toast = element('toast');
 const printPreview = element<HTMLCanvasElement>('print-preview');
 const state = { ...DEFAULT_DESIGN };
+let selectedModel = DEMO_MODEL_ID;
+let surface = DEFAULT_SURFACE;
 let paper: Paper = 'white';
 let artwork: Artwork | null = exampleArtwork();
 let studio: Studio | null = null;
@@ -36,10 +61,63 @@ function announce(message: string): void {
   clearTimeout(toastTimer); toast.textContent = message; toast.hidden = false;
   toastTimer = window.setTimeout(() => { toast.hidden = true; }, 4500);
 }
+
+function initializeCatalog(): void {
+  const select = element<HTMLSelectElement>('cup-model');
+  const current = new Option('Modelo de prueba actual', DEMO_MODEL_ID, true, true);
+  const pending = document.createElement('optgroup');
+  pending.label = 'Catálogo · vista aproximada';
+  const rows = element('catalog-measurements');
+  rows.replaceChildren();
+  for (const cup of CATALOG) {
+    const availability = selectionStatus(cup.id);
+    const model = catalogModel(cup);
+    const option = new Option(`${cup.sizeOz} oz — ${availability.selectable ? 'aproximado' : 'pendiente'}`, cup.id);
+    option.disabled = !availability.selectable;
+    option.title = availability.reasons.join('. ');
+    pending.append(option);
+    const row = document.createElement('tr');
+    row.dataset.modelId = cup.id;
+    const values = [`${cup.sizeOz} oz${cup.approximate ? ' ≈' : cup.sourceWall === 'double' ? ' *' : ''}`, formatMm(cup.topDiameterMm), formatMm(cup.heightMm), model ? `${formatMm(model.baseDiameterMm)}${model.baseEstimated ? ' ≈' : ''}` : formatMm(cup.baseDiameterMm)];
+    values.forEach((value, index) => {
+      const cell = document.createElement(index === 0 ? 'th' : 'td');
+      if (index === 0) cell.setAttribute('scope', 'row');
+      cell.textContent = value; row.append(cell);
+    });
+    rows.append(row);
+  }
+  select.replaceChildren(current, pending);
+  const approximate = CATALOG.filter((cup) => cup.approximate).map((cup) => `${cup.sizeOz} oz`).join(', ');
+  const doubleWall = CATALOG.filter((cup) => cup.sourceWall === 'double').map((cup) => `${cup.sizeOz} oz`).join(', ');
+  element('catalog-notes').textContent = [
+    '≈ Bases estimadas como 2/3 de la boca, siguiendo la proporción del modelo de prueba. No son medidas de fabricación.',
+    approximate && `≈ ${approximate}: medidas aproximadas; falta ficha validada.`,
+    doubleWall && `* ${doubleWall}: medidas de fichas de pared doble; confirmar pared simple.`,
+  ].filter(Boolean).join(' ');
+  select.addEventListener('change', () => {
+    if (!selectionStatus(select.value).selectable || !studio || saving) { select.value = selectedModel; return; }
+    const cup = CATALOG.find((item) => item.id === select.value);
+    const model = cup ? catalogModel(cup) : null;
+    const shape = model?.shape ?? CUP;
+    studio.setDimensions(shape);
+    surface = createSurfaceLayout(shape);
+    selectedModel = select.value;
+    element('model-caption').textContent = cup ? `${cup.sizeOz} OZ · APROXIMADO` : 'MODELO DE PRUEBA';
+    element('model-caption-detail').textContent = cup && model
+      ? `Boca ${formatMm(cup.topDiameterMm)} mm · Altura ${formatMm(cup.heightMm)} mm · Base ${formatMm(model.baseDiameterMm)} mm${model.baseEstimated ? ' ≈' : ''}`
+      : 'Vista ilustrativa · Elegí un tamaño del catálogo';
+    element('model-notice').textContent = cup && model
+      ? `Vista aproximada de ${cup.sizeOz} oz. ${model.baseEstimated ? 'Base estimada; boca y altura tomadas del catálogo.' : 'Medidas tomadas del catálogo.'} Tu arte y ajustes 360° se conservan.${cup.sourceWall === 'double' ? ' La ficha de origen es de pared doble.' : ''}`
+      : 'Probá los tamaños del catálogo con bases estimadas para esta demo. Tu arte y ajustes 360° se conservan.';
+    redraw();
+    announce(cup ? `Vaso de ${cup.sizeOz} oz, vista aproximada. Conservamos tu arte y ajustes.` : 'Modelo de prueba. Conservamos tu arte y ajustes.');
+  });
+}
 function updateEnabled(): void {
   downloadButton.disabled = !studio || lostContext || loading || saving;
   controlsFieldset.disabled = !artwork || loading;
   input.disabled = loading;
+  element<HTMLSelectElement>('cup-model').disabled = !studio || lostContext || loading || saving;
   dropZone.classList.toggle('is-busy', loading);
   dropZone.setAttribute('aria-busy', String(loading));
   element<HTMLButtonElement>('reset-design').disabled = !artwork || loading;
@@ -57,7 +135,7 @@ function redraw(): void {
     ? `Ancho completo con altura al ${state.size}%. Pulsá de nuevo para deshacer. El tamaño ajusta ahora la altura.`
     : 'Conserva la altura elegida; adapta sólo el ancho y no repite el arte.';
   studio?.update(artwork, state, paper);
-  drawPrintPreview(printPreview, artwork, state, paper);
+  drawPrintPreview(printPreview, artwork, state, paper, surface);
 }
 function resetDesign(mode: LayoutMode = state.mode): void {
   Object.assign(state, DEFAULT_DESIGN, { mode });
@@ -200,7 +278,8 @@ downloadButton.addEventListener('click', async () => {
     const blob = await studio.capture();
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
-    anchor.href = url; anchor.download = `niupack-vaso-12oz-${paper}.png`;
+    const cup = CATALOG.find((item) => item.id === selectedModel);
+    anchor.href = url; anchor.download = `niupack-vaso-${cup ? `${cup.sizeOz}oz-aproximado` : 'demo'}-${paper}.png`;
     document.body.append(anchor); anchor.click(); anchor.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 60000);
     announce('PNG preparado. Revisá las descargas de tu navegador.');
@@ -210,6 +289,8 @@ downloadButton.addEventListener('click', async () => {
     saving = false; label.textContent = 'Descargar vista PNG'; updateEnabled();
   }
 });
+
+initializeCatalog();
 
 try {
   studio = createStudio(viewer, (lost) => {

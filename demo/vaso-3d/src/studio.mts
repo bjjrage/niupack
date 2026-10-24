@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { Artwork } from './artwork.mts';
-import { CUP, SHEET_WIDTH, SHEET_HEIGHT, textureUV, type DesignState, type LayoutMode } from './layout.mts';
+import { CUP, DEFAULT_SURFACE, createSurfaceLayout, textureUV, type CupShape, type DesignState, type LayoutMode } from './layout.mts';
 import { composePrint } from './print.mts';
 
 export type Paper = 'white' | 'kraft';
 export interface Studio {
+  setDimensions(shape: CupShape): void;
   update(artwork: Artwork | null, state: DesignState, paper: Paper): void;
   resetView(): void;
   showSide(back: boolean): void;
@@ -104,15 +105,24 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
 
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: '#e5e2da', roughness: 1 }));
   floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true;
-  scene.add(floor, contactShadow());
+  const shadow = contactShadow();
+  scene.add(floor, shadow);
+
+  let surface = DEFAULT_SURFACE;
+  let viewScale = 1;
+  let mappedMode: LayoutMode = 'logo';
 
   const textureCanvas = document.createElement('canvas');
   textureCanvas.width = Math.min(window.innerWidth < 780 ? 1024 : 2048, renderer.capabilities.maxTextureSize);
-  textureCanvas.height = Math.round(textureCanvas.width * SHEET_HEIGHT / SHEET_WIDTH);
+  textureCanvas.height = Math.round(textureCanvas.width * surface.sheetHeight / surface.sheetWidth);
   const ctx = textureCanvas.getContext('2d')!;
-  const printTexture = new THREE.CanvasTexture(textureCanvas);
-  printTexture.colorSpace = THREE.SRGBColorSpace;
-  printTexture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  function makePrintTexture(): THREE.CanvasTexture {
+    const texture = new THREE.CanvasTexture(textureCanvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    return texture;
+  }
+  let printTexture = makePrintTexture();
   const grain = noiseTexture();
   const exteriorMaterial = new THREE.MeshStandardMaterial({ color: '#ffffff', map: printTexture, bumpMap: grain, bumpScale: 0.0012, roughness: 0.87, metalness: 0 });
   const insideMaterial = new THREE.MeshStandardMaterial({ color: '#eee9dd', roughness: 0.78, side: THREE.BackSide, bumpMap: grain, bumpScale: 0.0006 });
@@ -120,9 +130,9 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
   const bottomMaterial = new THREE.MeshStandardMaterial({ color: '#ded8c9', roughness: 0.88 });
   const cup = new THREE.Group();
   cup.position.y = 0.025;
-  const bodyGeometry = new THREE.CylinderGeometry(CUP.top, CUP.bottom, CUP.height, 192, 32, true, Math.PI);
-  const uv = bodyGeometry.getAttribute('uv');
-  const nativeUV = Float32Array.from(uv.array);
+  let bodyGeometry = new THREE.CylinderGeometry(CUP.top, CUP.bottom, CUP.height, 192, 32, true, Math.PI);
+  let uv = bodyGeometry.getAttribute('uv');
+  let nativeUV = Float32Array.from(uv.array);
   for (let i = 0; i < uv.count; i++) {
     const [u, v] = textureUV(nativeUV[i * 2], nativeUV[i * 2 + 1], 'logo');
     uv.setXY(i, u, v);
@@ -152,7 +162,45 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
   let contextLost = false;
   let exportInProgress = false;
   let mobileLayout: boolean | null = null;
-  let mappedMode: LayoutMode = 'logo';
+  function defaultCamera(): void {
+    controls.target.set(0, 0.025 + surface.cup.height * (0.61 - 0.025) / CUP.height, 0);
+    controls.minDistance = 1.95 * viewScale;
+    controls.maxDistance = 5.4 * viewScale;
+    camera.position.set(0, controls.target.y + ((mobileLayout ? 1.62 : 1.54) - 0.61) * viewScale, (mobileLayout ? 3.65 : 3.35) * viewScale);
+    controls.update(); controls.saveState();
+  }
+  function replaceGeometry(mesh: THREE.Mesh, geometry: THREE.BufferGeometry): void {
+    mesh.geometry.dispose(); mesh.geometry = geometry;
+  }
+  function setDimensions(shape: CupShape): void {
+    if (shape.height === surface.cup.height && shape.top === surface.cup.top && shape.bottom === surface.cup.bottom) return;
+    const nextSurface = createSurfaceLayout(shape);
+    const oldScale = viewScale;
+    const offset = camera.position.clone().sub(controls.target);
+    const nextBody = new THREE.CylinderGeometry(shape.top, shape.bottom, shape.height, 192, 32, true, Math.PI);
+    replaceGeometry(exterior, nextBody); bodyGeometry = nextBody;
+    uv = bodyGeometry.getAttribute('uv'); nativeUV = Float32Array.from(uv.array);
+    surface = nextSurface;
+    for (let i = 0; i < uv.count; i++) {
+      const [u, v] = textureUV(nativeUV[i * 2], nativeUV[i * 2 + 1], mappedMode, surface);
+      uv.setXY(i, u, v);
+    }
+    uv.needsUpdate = true;
+    exterior.position.y = shape.height / 2;
+    replaceGeometry(interior, new THREE.CylinderGeometry(shape.top - 0.015, shape.bottom - 0.015, shape.height - 0.055, 160, 1, true));
+    interior.position.y = shape.height / 2 + 0.0275;
+    replaceGeometry(rim, new THREE.TorusGeometry(shape.top - 0.006, 0.019, 20, 192));
+    rim.position.y = shape.height;
+    replaceGeometry(bottomRim, new THREE.TorusGeometry(shape.bottom - 0.008, 0.012, 12, 160));
+    replaceGeometry(innerBase, new THREE.CircleGeometry(shape.bottom - 0.014, 160));
+    replaceGeometry(base, new THREE.CircleGeometry(shape.bottom - 0.01, 160));
+    shadow.scale.set(shape.bottom / CUP.bottom, shape.bottom / CUP.bottom, 1);
+    // Reframe the new size while retaining the user's current angle and zoom.
+    viewScale = Math.max(shape.height, shape.top * 2) / CUP.height;
+    defaultCamera();
+    camera.position.copy(controls.target).add(offset.multiplyScalar(viewScale / oldScale));
+    controls.update(); invalidate();
+  }
   function invalidate(): void {
     if (!frame && !disposed && !contextLost && !document.hidden && !exportInProgress) frame = requestAnimationFrame(render);
   }
@@ -169,8 +217,7 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
     const mobile = window.innerWidth < 780;
     if (mobile !== mobileLayout) {
       mobileLayout = mobile;
-      camera.position.set(0, mobile ? 1.62 : 1.54, mobile ? 3.65 : 3.35);
-      controls.update(); controls.saveState();
+      defaultCamera();
     }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 1.75));
     renderer.setSize(width, height, false);
@@ -198,10 +245,11 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
   resize();
 
   return {
+    setDimensions,
     update(artwork, state, paper) {
       if (mappedMode !== state.mode) {
         for (let i = 0; i < uv.count; i++) {
-          const [u, v] = textureUV(nativeUV[i * 2], nativeUV[i * 2 + 1], state.mode);
+          const [u, v] = textureUV(nativeUV[i * 2], nativeUV[i * 2 + 1], state.mode, surface);
           uv.setXY(i, u, v);
         }
         uv.needsUpdate = true;
@@ -210,7 +258,17 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
       const color = paper === 'white' ? '#f5f1e7' : '#b68d60';
       paperMaterial.color.set(color);
       bottomMaterial.color.set(paper === 'white' ? '#ddd7c9' : '#a57f53');
-      composePrint(ctx, artwork, state, paper);
+      const ratio = state.mode === 'wrap' ? surface.wrap.height / surface.wrap.width : surface.sheetHeight / surface.sheetWidth;
+      const textureHeight = Math.round(textureCanvas.width * ratio);
+      if (textureCanvas.height !== textureHeight) {
+        // Texture dimensions are immutable after GPU upload in Three.js.
+        // Recreate the resource instead of leaving an old-sized GPU image.
+        printTexture.dispose();
+        textureCanvas.height = textureHeight;
+        printTexture = makePrintTexture();
+        exteriorMaterial.map = printTexture;
+      }
+      composePrint(ctx, artwork, state, paper, surface);
       printTexture.needsUpdate = true;
       invalidate();
     },

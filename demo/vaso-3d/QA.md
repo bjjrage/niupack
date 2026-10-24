@@ -1,5 +1,37 @@
 # Evidencia de validación · 23 de octubre de 2026
 
+## Bases estimadas autorizadas y cambio de tamaño · 24 de octubre de 2026
+
+El usuario autorizó asumir las bases faltantes para la demo. Se habilitaron los siete tamaños como aproximados: base = 2/3 de la boca, redondeada a 0,1 mm, a partir de la proporción del prototipo anterior. La fuente importada mantiene sus null; las estimaciones no se escriben en el catálogo ni en el OS. La geometría del cuerpo, interior, bordes y fondo, el desarrollo Logo y la banda 360° ahora reciben las mismas dimensiones seleccionadas. Una base real sustituye la estimación; datos de boca/altura ausentes o medidas inválidas siguen bloqueando el modelo.
+
+**Node 20/20 PASS, build y typecheck PASS; navegador con WebGL real 14/14 PASS.** La nueva regresión recorre los siete modelos con JPG y PNG y comprueba capturas no vacías, conservación de fuentes y estado, cobertura sin huecos de una banda opaca y siluetas distintas de 4 y 24 oz. Una segunda regresión alterna Logo y 360° con un PNG disperso en 4/12/24/12 oz y coteja color visible de frente y reverso. Al cambiar la altura del canvas de textura se recrea el recurso GPU, como exige Three.js; se corrigió una textura anterior que podía permanecer en el vaso al cambiar de modo. Las regresiones existentes de ancho independiente, altura, rotación, unión posterior y recuperación del contexto también pasan.
+
+En la interfaz compilada se comprobaron los siete tamaños con el diseño de ejemplo, Diseño 360°, tamaño 90%, x=-137°, y=8%, rotación=-9° y ancho 360° activo: los valores no se reinician. Se inspeccionaron visualmente el vaso bajo de 4 oz y el alto de 24 oz, la tabla con bases estimadas y las notas de origen. Sin errores ni advertencias en consola. La pestaña anterior con Café Rojo se conservó; la versión nueva se abrió en otra pestaña para evitar perder ese estado.
+
+Evidencia en `qa/artifacts/`: `catalog-approx-4oz.png`, `catalog-approx-24oz.png`, `catalog-approx-ui-state.json` y `catalog-approx-webgl.txt`. La sección siguiente documenta el estado anterior a la autorización de estimar, ya reemplazado. Todo continúa limitado a la demo local.
+
+## Selector de tamaños del catálogo · 24 de octubre de 2026
+
+**18/18 pruebas de Node PASS; build y typecheck PASS.** Se importan 4/6/8/12/16/21/24 oz desde la tabla del showroom mediante análisis sintáctico, sin ejecutarla. Se cotejan los datos generados con la fuente y se rechazan tablas ambiguas, tamaños duplicados, expresiones calculadas y medidas inválidas.
+
+Los siete formatos no incluyen diámetro de base: sus opciones están deshabilitadas. Se conservan las notas de 4 oz aproximado y 16/21/24 oz con medidas de pared doble. La tabla desplegable muestra los números originales, incluido 12 oz con boca 83,8 mm y altura 110 mm; ninguna base fue estimada ni tomada de los seeds del OS. Solo se conserva disponible la geometría ilustrativa anterior, identificada como Modelo de prueba; la descarga también lleva `demo` en su nombre.
+
+En el build del puerto 4173 se cargó el archivo local Café Rojo (PNG 1800 × 1100), se seleccionó Diseño 360°, tamaño 90%, x=-180°, y=8%, rotación=-9° y ajuste de ancho completo activo. Se comparó ese estado antes y después de seleccionar la opción ilustrativa y recorrer el selector con teclado: archivo y todos los ajustes idénticos. Las siete opciones comerciales continúan deshabilitadas. Se inspeccionó visualmente el diseño en el vaso y las medidas de la tabla. Consola de esta comprobación: sin errores ni advertencias.
+
+Evidencia en `qa/artifacts/`: `catalog-state-preservation.json`, `catalog-options-and-measures.txt` y `catalog-selector-desktop.png`. El motor y el mapeo no fueron modificados. No se puede probar un cambio entre tamaños comerciales reales hasta contar con fichas completas y conectar sus geometrías; ese límite se muestra en la interfaz. Los cambios siguen restringidos al demo.
+
+## Adaptación a la identidad de NIU PACK · 24 de octubre de 2026
+
+Se comparó la página publicada `https://bjjrage.github.io/niupack/` con su hoja `css/styles.css`. La demo adopta Montserrat, el rojo de marca, la cabecera con logo blanco y navegación, la ubicación dentro del sitio, los botones de esquinas suaves y el pie de marca. El plan de accesos y publicación está en `INTEGRACION.md`; todavía no se ejecutó.
+
+Build y typecheck: PASS. La página y la fuente local responden HTTP 200; la fuente se sirve como `font/woff2`. La misma URL local se utiliza en la precarga y en el CSS. No se agregaron solicitudes a Google Fonts en tiempo de ejecución. Montserrat se distribuye con su licencia SIL OFL.
+
+Se inspeccionaron los viewports de Chromium de 390 × 844, 820 × 1024 y el escritorio de 1280 px de ancho. Sin desborde horizontal; el título no se superpone al vaso. En tablet y móvil los controles se disponen debajo del visor. En escritorio, su altura se adapta al espacio disponible para mantener visibles los controles de vista. El menú móvil abre, cierra con Escape y cierra al seleccionar el configurador.
+
+Se comprobó en la interfaz el modo Diseño 360°, tamaño 90% y Ajustar ancho a 360° activo. No se observaron errores ni advertencias en consola. Los archivos del motor, materiales, geometría, validación del arte, composición y mapeo no se modificaron; no se repitieron las suites de 13 casos de Node y 12 de WebGL de la validación funcional anterior.
+
+Evidencia local en `qa/artifacts/`: `brand-reference-site.png`, `brand-desktop.png`, `brand-desktop-controls.png`, `brand-mobile.png` y `brand-tablet.png`. Esto es una comprobación responsive en Chromium, no una prueba en teléfonos físicos ni una certificación de accesibilidad. Los cambios están limitados al demo; no se modificaron la web publicada ni el OS.
+
 ## Ajustar ancho a 360° · 24 de octubre de 2026
 
 Resultado actual: **build y typecheck PASS; Node 13/13 PASS; navegador con WebGL real 12/12 PASS**. La demo compilada responde HTTP 200 en el puerto 4173; el banco de QA se ejecutó por separado en 4181. Consola final del banco: sin errores ni advertencias.

@@ -4,25 +4,35 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
-    <meta name="description" content="Estudio de personalización NIUPACK. Probá tu diseño sobre un vaso 3D de 12 oz.">
+    <meta name="description" content="Configurador 3D de NIU PACK. Probá tu diseño en tamaños del catálogo con bases estimadas para esta demo.">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self' ws://127.0.0.1:*; object-src 'none'; base-uri 'none'">
     <link rel="icon" type="image/svg+xml" href="./favicon.svg">
-    <title>Tu marca, en tus manos · NIUPACK Studio</title>
+    <title>Configurador de vasos 3D | NIU PACK</title>
+    <link rel="preload" href="./fonts/montserrat-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="./src/style.css">
   </head>
   <body>
-    <header class="topbar">
-      <div class="brand"><img src="./logo-niupack.png" alt="NIUPACK" width="134" height="40"><span class="brand-divider"></span><span class="studio-word">ESTUDIO DE PERSONALIZACIÓN</span></div>
-      <span class="preview-badge"><span></span> Vista de prueba</span>
+    <a class="skip-link" href="#configurador">Ir al configurador</a>
+    <header class="site-header">
+      <a class="brand" href="https://bjjrage.github.io/niupack/index.html#inicio" aria-label="NIU PACK inicio"><img src="./logo-niupack.png" alt="NIU PACK" width="142" height="42"></a>
+      <button class="nav-toggle" id="nav-toggle" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="site-nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Menú</span></button>
+      <nav class="site-nav" id="site-nav" aria-label="Navegación principal">
+        <a href="https://bjjrage.github.io/niupack/index.html#inicio">Inicio</a>
+        <a href="https://bjjrage.github.io/niupack/index.html#productos">Productos</a>
+        <a href="https://bjjrage.github.io/niupack/index.html#personalizacion">Personalización</a>
+        <a href="#configurador" aria-current="page">Configurador 3D</a>
+      </nav>
+      <a class="header-quote" href="https://bjjrage.github.io/niupack/index.html#contacto" target="_blank" rel="noopener" aria-label="Solicitar cotización (abre en otra pestaña)">Solicitar cotización</a>
     </header>
-    <main class="workspace">
+    <nav class="breadcrumb" aria-label="Ubicación"><div><a href="https://bjjrage.github.io/niupack/index.html#inicio">Inicio</a><span aria-hidden="true">/</span><a href="https://bjjrage.github.io/niupack/index.html#productos">Vasos</a><span aria-hidden="true">/</span><span aria-current="page">Configurador 3D</span></div><span class="preview-badge"><span></span> Vista de prueba</span></nav>
+    <main class="workspace" id="configurador" tabindex="-1">
       <section class="viewer-column" aria-labelledby="studio-title">
-        <div class="intro"><p class="eyebrow">UN VASO. INFINITAS POSIBILIDADES.</p><h1 id="studio-title">Tu marca,<br><span>en tus manos.</span></h1><p class="intro-copy">Dale una vuelta a tu próxima idea.</p></div>
+        <div class="intro"><p class="eyebrow">VASOS PERSONALIZADOS</p><h1 id="studio-title">Tu marca,<br><span>en tus manos.</span></h1><p class="intro-copy">Subí tu diseño. Girá el vaso.<br>Visualizá tu próxima idea.</p></div>
         <div class="stage" id="stage" aria-busy="true">
           <canvas id="viewer" tabindex="0" aria-label="Vaso 3D. Arrastrá para girar. Flechas izquierda y derecha para rotar; arriba y abajo para inclinar; más y menos para acercar o alejar."></canvas>
           <div class="stage-loading" id="stage-loading" role="status"><span class="loading-dot"></span>Preparando tu vaso…</div>
           <div class="stage-error" id="stage-error" role="alert" hidden><strong>El visor necesita aceleración 3D.</strong><p id="stage-error-message">Probá abrirlo en un navegador actualizado con WebGL 2 habilitado.</p><button type="button" id="reload-viewer" class="secondary-button">Volver a cargar</button></div>
-          <div class="stage-caption"><span class="caption-line"></span><div><strong>POLIPAPEL · 12 OZ</strong><span>Pared simple / Personalización exterior</span></div></div>
+          <div class="stage-caption"><span class="caption-line"></span><div><strong id="model-caption">MODELO DE PRUEBA</strong><span id="model-caption-detail">Vista ilustrativa · Elegí un tamaño del catálogo</span></div></div>
           <div class="view-tools" aria-label="Controles de vista">
             <button type="button" id="zoom-in" aria-label="Acercar vaso" title="Acercar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
             <button type="button" id="zoom-out" aria-label="Alejar vaso" title="Alejar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
@@ -33,23 +43,30 @@
         <div class="viewer-bottom"><span class="gesture-hint"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7-4 4 4 4m10-8 4 4-4 4M3 11h18"/></svg>Arrastrá para girar · Usá dos dedos para acercar</span><div class="side-views" role="group" aria-label="Vistas del vaso"><button type="button" id="view-front">Ver frente</button><button type="button" id="view-back">Ver reverso</button></div><span class="live-badge"><i></i> Vista 3D en vivo</span></div>
       </section>
       <aside class="editor" aria-labelledby="editor-title">
-        <div class="editor-heading"><div><p class="eyebrow">HECHO A TU MANERA</p><h2 id="editor-title">Diseñá tu vaso</h2></div><span class="step-count">01 — 03</span></div>
+        <div class="editor-heading"><div><p class="eyebrow">HECHO A TU MANERA</p><h2 id="editor-title">Diseñá tu vaso</h2></div><span class="step-count">01 — 04</span></div>
+        <section class="editor-section model-section" aria-labelledby="model-title">
+          <h3 id="model-title"><span class="section-number">01</span>Elegí el tamaño</h3>
+          <label class="sr-only" for="cup-model">Tamaño del vaso</label>
+          <select id="cup-model" class="model-select" aria-describedby="model-notice"><option value="illustrative-demo">Modelo de prueba actual</option></select>
+          <p id="model-notice" class="model-notice">Probá los tamaños del catálogo con bases estimadas para esta demo. Tu arte y ajustes 360° se conservan.</p>
+          <details class="catalog-details"><summary>Ver medidas y estimaciones</summary><table class="catalog-table"><caption>Medidas para la demo en milímetros</caption><thead><tr><th scope="col">Tamaño</th><th scope="col">Boca</th><th scope="col">Altura</th><th scope="col">Base</th></tr></thead><tbody id="catalog-measurements"></tbody></table><p id="catalog-notes" class="small-note"></p></details>
+        </section>
         <section class="editor-section" aria-labelledby="material-title">
-          <h3 id="material-title"><span class="section-number">01</span>Elegí el papel</h3>
+          <h3 id="material-title"><span class="section-number">02</span>Elegí el papel</h3>
           <div class="material-options" role="group" aria-label="Color del vaso">
             <button type="button" class="material-option is-selected" data-material="white" aria-pressed="true"><span class="material-swatch swatch-white"></span><span>Blanco<small>Clásico y versátil</small></span><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></button>
             <button type="button" class="material-option" data-material="kraft" aria-pressed="false"><span class="material-swatch swatch-kraft"></span><span>Kraft<small>Textura natural</small></span><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></button>
           </div>
         </section>
         <section class="editor-section" aria-labelledby="upload-title">
-          <h3 id="upload-title"><span class="section-number">02</span>Sumá tu diseño</h3>
+          <h3 id="upload-title"><span class="section-number">03</span>Sumá tu diseño</h3>
           <label class="upload-zone" id="drop-zone" for="artwork-file"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 21V5m-6 6 6-6 6 6M6 20v5a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5"/></svg><strong>Subí tu imagen</strong><span>o arrastrala hasta acá</span><small>JPG y PNG · hasta 12 MB</small><input id="artwork-file" type="file" accept="image/jpeg,image/png,image/svg+xml,.jpg,.jpeg,.png,.svg"></label>
           <p class="format-note">También podés usar un SVG simple. Subí el diseño plano, sin un vaso de fondo.</p>
           <div class="file-info" id="file-info"><span class="file-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM4 16l5-5 4 4 3-3 4 4M14 8h.01"/></svg></span><div><strong id="file-name">Diseño de ejemplo</strong><span id="file-meta">Probá los controles o subí el tuyo</span></div><button type="button" id="remove-artwork" aria-label="Quitar diseño" title="Quitar diseño">×</button></div>
           <p class="notice" id="upload-notice" role="status" aria-live="polite">Tu archivo se procesa en este navegador. No se envía ni se guarda en un servidor.</p>
         </section>
         <section class="editor-section adjustments" aria-labelledby="adjust-title">
-          <div class="section-heading"><h3 id="adjust-title"><span class="section-number">03</span>Ajustá los detalles</h3><button type="button" id="reset-design" class="text-button">Restablecer</button></div>
+          <div class="section-heading"><h3 id="adjust-title"><span class="section-number">04</span>Ajustá los detalles</h3><button type="button" id="reset-design" class="text-button">Restablecer</button></div>
           <fieldset id="design-controls">
             <legend class="sr-only">Ajustes de diseño</legend>
             <div class="layout-options" role="group" aria-label="Aplicación del diseño"><button type="button" data-layout="logo" aria-pressed="true" class="is-selected">Logo</button><button type="button" data-layout="wrap" aria-pressed="false">Diseño 360°</button></div>
@@ -70,7 +87,7 @@
         <div class="editor-footer"><button type="button" id="download" class="primary-button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/></svg><span>Descargar vista PNG</span><span class="button-arrow">↗</span></button><p>Visualización ilustrativa.<br>Sujeta a revisión de arte final.</p></div>
       </aside>
     </main>
-    <footer class="page-footer"><span>NIUPACK <span class="footer-slash">/</span> Packaging que lleva tu marca.</span><span>Prototipo · Vaso 12 oz</span></footer>
+    <footer class="page-footer"><div class="footer-inner"><span class="footer-detail">Vasos de polipapel personalizados<br>Producción en Paraguay</span><a class="footer-brand" href="https://bjjrage.github.io/niupack/index.html#inicio" aria-label="NIU PACK inicio"><img src="./logo-niupack.png" alt="NIU PACK" width="118" height="35"><span>marca desde el packing</span></a><a class="footer-back" href="https://bjjrage.github.io/niupack/index.html#personalizacion">Volver a NIU PACK <span aria-hidden="true">↗</span></a></div></footer>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <noscript><p class="noscript">Activá JavaScript para usar el configurador 3D.</p></noscript>
     <script type="module" src="./src/main.mts"></script>

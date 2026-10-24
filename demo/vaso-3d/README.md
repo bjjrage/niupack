@@ -1,6 +1,8 @@
 # NIUPACK · Estudio de vasos 3D
 
-Prototipo local independiente para **un vaso de polipapel de 12 oz, pared simple**. No modifica ni integra la web pública, el showroom, el CRM o el OS. No contiene backend, almacenamiento, cuentas, cotizaciones ni generación de arte industrial.
+Prototipo local independiente con una **geometría ilustrativa de vaso de polipapel, pared simple**. El modelo inicial de la demo no equivale a una ficha comercial validada de 12 oz. No modifica ni integra la web pública, el showroom, el CRM o el OS. No contiene backend, almacenamiento, cuentas, cotizaciones ni generación de arte industrial.
+
+La interfaz adopta la identidad de la web de NIU PACK: Montserrat, cabecera roja con logo blanco, navegación de regreso al sitio, ubicación de la subpágina y pie de marca. La fuente y su licencia se incluyen localmente en `public/fonts/`; no se solicitan recursos a Google Fonts en tiempo de ejecución. Ver `INTEGRACION.md` para el recorrido y la publicación propuestos, todavía sin ejecutar.
 
 ## Abrir en Windows
 
@@ -25,6 +27,11 @@ npm.cmd run dev
 Usa el mismo puerto: detené el servidor anterior con Ctrl+C antes de iniciar otro. Los comandos `npm.cmd` evitan el bloqueo de `npm.ps1` por la política de PowerShell.
 
 ## Funciones
+
+- Selector de tamaños del catálogo web: **4, 6, 8, 12, 16, 21 y 24 oz**. Se importan en cada build desde `js/showroom.js`, sin ejecutar el código del showroom ni consultar el OS. `src/catalog-data.mts` es generado; no completar medidas faltantes en ese archivo.
+- Los siete tamaños están habilitados como **vistas aproximadas**, por autorización del usuario: faltan las bases y se estiman como **2/3 del diámetro de boca**, redondeadas a 0,1 mm, siguiendo la proporción del modelo de prueba original. El catálogo importado conserva sus bases nulas; la estimación se calcula aparte y no se escribe en el showroom ni en el OS. La tabla, el selector, el visor y el nombre del PNG señalan el carácter aproximado.
+- Cambiar el tamaño reconstruye el cuerpo, interior, bordes y bases usando boca/altura del catálogo y base estimada. Geometría, mapeo y vista plana usan las mismas dimensiones. Se conservan el archivo, papel, porcentaje de tamaño del arte, posición, rotación, modo y cobertura 360°. El visor reencuadra el nuevo vaso conservando ángulo y zoom relativo. También se puede volver al modelo de prueba original.
+- Una base real en el catálogo reemplaza la estimación; si faltan boca o altura, o hay medidas inválidas, el modelo continúa pendiente. Se conservan las notas de 4 oz aproximado y 16/21/24 oz de pared doble. Las medidas estimadas no definen capacidad certificada, un modelo de producción ni un molde de impresión.
 
 - Geometría WebGL 2 auténtica: cuerpo cónico, pared interior, borde enrollado, base y fondo interior. Órbita de 360°, inclinación limitada y zoom con mouse, teclado o gestos de OrbitControls.
 - JPG y PNG como formatos principales; SVG estático simple opcional. Carga mediante selector o arrastre.
@@ -64,6 +71,8 @@ npm.cmd run build
 ```
 
 La suite de Node comprueba cabeceras PNG/JPG, archivos inválidos, límites de píxeles, continuidad y escala del mapeo cónico y conservación de proporciones.
+
+También compara los datos importados con el catálogo web, comprueba que los siete tamaños permanezcan bloqueados por falta de base, conserva los indicadores de calidad de la fuente y rechaza medidas inválidas o fuentes ambiguas. Para reimportar únicamente el catálogo: `npm.cmd run catalog:import`.
 
 Para las pruebas de navegador, ejecutar `npm.cmd run dev` y abrir **http://127.0.0.1:4173/demo/vaso-3d/qa/browser.html**. Pulsar **Ejecutar pruebas**. Ese banco de pruebas no se incluye en el build de producción. Prueba carga de JPG/PNG/SVG, transparencia, rechazo de contenido peligroso/dañado, límite de peso, reemplazos, capturas repetidas y recuperación WebGL conservando el diseño.
 
