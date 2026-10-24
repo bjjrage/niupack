@@ -2,7 +2,9 @@
 
 ## Estado actual
 
-La adaptación está únicamente en `/demo/vaso-3d/`. No se agregó ningún acceso al sitio publicado ni se modificaron los fuentes originales del showroom o el OS. La demo independiente y la subpágina de revisión siguen disponibles; la portada integrada usa una sola cabecera y el pie del sitio.
+La publicación de la versión integrada en GitHub Pages está autorizada. `.github/workflows/niupack-pages.yml` compila este módulo y publica únicamente `dist/website/` en `https://bjjrage.github.io/niupack/`. El HTML de la raíz permanece como plantilla: el artefacto publicado incorpora el hero con video y el configurador bajo Productos. No se modifican fuentes, dependencias ni configuración del OS.
+
+`npm.cmd run build:website` genera ese artefacto y comprueba sus recursos bajo `/niupack/`, idiomas, fuentes, video y entrada 3D. Excluye código del OS, fuentes de desarrollo, dependencias y etiquetas de demo. Incluye `site-version.json` con el commit compilado para verificar qué versión sirve el dominio. El workflow ejecuta primero las 26 pruebas y publica con GitHub Actions, separado de Vercel.
 
 La **vista integrada local** se genera con `npm.cmd run preview:integrated`. Copia únicamente recursos públicos versionados a `dist/vista-integrada/`, reemplaza la antigua sección Personalización por el configurador completo y mueve Termoformado inmediatamente debajo. El orden visible es **Productos → Configurador 3D → Termoformado**. No utiliza iframe ni duplica encabezado, pie o título principal. El build normal borra esta copia: regenerarla después de compilar.
 
@@ -31,15 +33,15 @@ Modelo/tamaño se divide en dos bloques paralelos: Tipo de envase y Tamaño. Los
 
 `integration/entry.js` importa el motor cuando el visitante se aproxima al configurador, lo enfoca o usa el botón del catálogo. Hasta iniciar se bloquean carga de archivos, selector y ajustes. Los cambios de producto usan el evento local `niupack:select-model`; no reconstruyen la aplicación ni pierden el arte. La selección de modelos se resuelve en `integration/selection.js`. No hay API, almacenamiento ni acceso al OS.
 
-## Publicación cuando se apruebe
+## Proceso de publicación
 
-- Aprobar primero la portada integrada y probar archivos reales en teléfonos físicos.
-- Adaptar el generador de esta copia al artefacto estático del sitio, empaquetando HTML, CSS limitado al módulo y entrada diferida. Las rutas relativas permiten servir bajo el prefijo `/niupack/` de GitHub Pages, sin llevar fuentes ni dependencias de desarrollo al sitio.
-- Integrar ese paso en el proceso de publicación de la web, separado del build de Next.js del OS. No usar el checkout completo como raíz del servidor del configurador.
+- El usuario autorizó publicar la portada integrada. Mantener una prueba con archivos reales en teléfonos físicos como comprobación posterior.
+- Compilar con `npm.cmd run build:website`: HTML, CSS limitado al módulo y entrada diferida, con rutas relativas bajo `/niupack/`.
+- GitHub Pages usa GitHub Actions como origen y publica solo el artefacto del sitio, separado del build de Next.js del OS. No publicar el checkout completo.
 - Comprobar los botones del catálogo, navegación interna, rutas de fuente/JS/CSS, JPG/PNG, ajustes 360°, enlace comercial de presupuesto y vista móvil sobre el dominio publicado.
-- Retirar el indicador **Vista de prueba** y revisar `noindex` cuando se decida lanzar la versión pública. No cambiar esas opciones en la demo actual.
+- El build público retira el indicador local y `noindex`; la demo conserva esas opciones.
 
-El motor se carga al aproximarse al configurador, no al iniciar la portada. No se incorpora un iframe ni se crea una ruta del OS. Las imágenes continúan procesándose en memoria dentro del navegador. Esta publicación queda pendiente de autorización.
+El motor se carga al aproximarse al configurador, no al iniciar la portada. No se incorpora un iframe ni se crea una ruta del OS. Las imágenes continúan procesándose en memoria dentro del navegador.
 
 ## Datos de los tamaños
 

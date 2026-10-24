@@ -13,6 +13,7 @@
     "test": "npm run catalog:import && node --experimental-strip-types --test qa/*.test.mts",
     "build": "npm run catalog:import && npm run typecheck && vite build",
     "preview:integrated": "npm run build && node scripts/preview-integration.mjs",
+    "build:website": "npm run build && node scripts/preview-integration.mjs --production && node scripts/check-website.mjs",
     "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
     "serve": "node serve.mjs"
   },

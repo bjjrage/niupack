@@ -7,7 +7,8 @@ import { inlineStudioMarkup, scopeStudioCSS, integrateStudioHome } from './inlin
 const demo = fileURLToPath(new URL('../', import.meta.url));
 const repository = resolve(demo, '../..');
 const build = resolve(demo, 'dist');
-const preview = resolve(build, 'vista-integrada');
+const production = process.argv.includes('--production');
+const preview = resolve(build, production ? 'website' : 'vista-integrada');
 const moduleOutput = resolve(preview, 'personaliza-tu-vaso');
 const rootSource = await readFile(resolve(repository, 'index.html'), 'utf8');
 const heroCard = /<div class="visual-card hero-product-card" data-tilt>[\s\S]*?<div class="visual-badge">[^<]*<\/div>\s*<\/div>/;
@@ -17,7 +18,7 @@ const previewSource = rootSource
   .replace('class="hero-visual reveal"', 'class="hero-video-visual reveal"')
   .replace('class="hero section-dark"', 'class="hero section-dark hero-video-hero"');
 const moduleSource = await readFile(resolve(build, 'index.html'), 'utf8');
-await mkdir(moduleOutput, { recursive: true });
+await mkdir(production ? preview : moduleOutput, { recursive: true });
 
 // Copy only tracked public website resources. Never serve the repository root.
 const files = execFileSync('git', ['ls-files', '-z', '--', 'assets', 'css', 'js'], { cwd: repository, encoding: 'utf8' }).split('\0').filter(Boolean);
@@ -31,12 +32,21 @@ for (const file of files) {
   await copyFile(source, target);
 }
 await cp(resolve(build, 'fonts'), resolve(preview, 'fonts'), { recursive: true });
+await copyFile(resolve(build, 'favicon.svg'), resolve(preview, 'favicon.svg'));
+if (production) {
+  for (const file of ['en.html', 'pt.html', 'robots.txt', 'sitemap.xml']) {
+    await copyFile(resolve(repository, file), resolve(preview, file));
+  }
+  await writeFile(resolve(preview, '.nojekyll'), '');
+  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repository, encoding: 'utf8' }).trim();
+  await writeFile(resolve(preview, 'site-version.json'), JSON.stringify({ commit, heroVideo: true, configurator3d: true }) + '\n');
+}
 const stylesPath = resolve(preview, 'css/styles.css');
 const styles = await readFile(stylesPath, 'utf8');
 await writeFile(stylesPath, styles.replace(/^@import[^\n]*fonts\.googleapis\.com[^\n]*\n/, '@font-face { font-family: "Montserrat"; src: url("../fonts/montserrat-latin-variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }\n'), 'utf8');
 // The local hero replaces the old visual wrapper; keep its entrance animation in sync.
 const motionPath = resolve(preview, 'js/site-motion.js');
-await writeFile(motionPath, (await readFile(motionPath, 'utf8')).replace("document.querySelector('.hero-visual')", "document.querySelector('.hero-video-visual')"), 'utf8');
+await writeFile(motionPath, (await readFile(motionPath, 'utf8')).replace("document.querySelector('.hero-visual')", "document.querySelector('.hero-video-visual, .hero-visual')"), 'utf8');
 
 const moduleEntry = moduleSource.match(/<script type="module"[^>]*src="\.\/(assets\/[\w.-]+\.js)"/)?.[1];
 const moduleCSS = moduleSource.match(/<link rel="stylesheet"[^>]*href="\.\/(assets\/[\w.-]+\.css)"/)?.[1];
@@ -49,10 +59,10 @@ let home = integrateStudioHome(previewSource, inline.content)
   .replace('data-studio="pending"', `data-studio="pending" data-studio-entry="./studio/${moduleEntry}"`)
   .replace(/href="index\.html(#[\w-]+)"/g, 'href="$1"');
 home = home
-  .replace('</head>', '<meta name="robots" content="noindex, nofollow">\n<link rel="icon" href="../favicon.svg" type="image/svg+xml">\n<link rel="stylesheet" href="studio/assets/scoped-studio.css">\n<link rel="stylesheet" href="integration.css">\n</head>')
+  .replace('</head>', (production ? '' : '<meta name="robots" content="noindex, nofollow">\n') + '<link rel="icon" href="favicon.svg" type="image/svg+xml">\n<link rel="stylesheet" href="studio/assets/scoped-studio.css">\n<link rel="stylesheet" href="integration.css">\n</head>')
   .replaceAll('href="en.html"', 'href="https://bjjrage.github.io/niupack/en.html"')
   .replaceAll('href="pt.html"', 'href="https://bjjrage.github.io/niupack/pt.html"')
-  .replace('</body>', '<div class="integration-preview-tag">Vista local de integración</div>\n<script type="module" src="integration.js"></script>\n</body>');
+  .replace('</body>', (production ? '' : '<div class="integration-preview-tag">Vista local de integración</div>\n') + '<script type="module" src="integration.js"></script>\n</body>');
 await writeFile(resolve(preview, 'index.html'), home, 'utf8');
 await copyFile(resolve(demo, 'integration/entry.css'), resolve(preview, 'integration.css'));
 await copyFile(resolve(demo, 'integration/entry.js'), resolve(preview, 'integration.js'));
@@ -60,9 +70,10 @@ await copyFile(resolve(demo, 'integration/selection.js'), resolve(preview, 'sele
 await copyFile(resolve(demo, 'integration/hero-video.js'), resolve(preview, 'hero-video.js'));
 await cp(resolve(demo, 'integration/media'), resolve(preview, 'media'), { recursive: true });
 
-// Use the actual compiled module as a subpage with local return navigation.
-for (const folder of ['assets', 'fonts']) await cp(resolve(build, folder), resolve(moduleOutput, folder), { recursive: true });
-for (const file of ['logo-niupack.png', 'favicon.svg']) await copyFile(resolve(build, file), resolve(moduleOutput, file));
-await writeFile(resolve(moduleOutput, 'index.html'), moduleSource.replaceAll('https://bjjrage.github.io/niupack/index.html', '../index.html'), 'utf8');
-console.log('Vista integrada generada solo en demo/vaso-3d/dist/vista-integrada/.');
-console.log('Abrí /demo/vaso-3d/vista-integrada/index.html#configurador-3d en el servidor de la demo.');
+if (!production) {
+  // Keep the old review subpage available locally, outside the published artifact.
+  for (const folder of ['assets', 'fonts']) await cp(resolve(build, folder), resolve(moduleOutput, folder), { recursive: true });
+  for (const file of ['logo-niupack.png', 'favicon.svg']) await copyFile(resolve(build, file), resolve(moduleOutput, file));
+  await writeFile(resolve(moduleOutput, 'index.html'), moduleSource.replaceAll('https://bjjrage.github.io/niupack/index.html', '../index.html'), 'utf8');
+}
+console.log(production ? 'Sitio público compilado en demo/vaso-3d/dist/website/.' : 'Vista integrada generada solo en demo/vaso-3d/dist/vista-integrada/.');
