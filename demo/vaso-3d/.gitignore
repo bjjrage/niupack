@@ -2,3 +2,5 @@ node_modules/
 dist/
 .npm-cache/
 qa/artifacts/
+tools/showroom/textures/
+tools/showroom/output/

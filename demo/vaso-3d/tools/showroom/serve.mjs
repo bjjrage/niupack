@@ -1,0 +1,7 @@
+import {createServer} from 'vite';import {readFile,writeFile,mkdir} from 'node:fs/promises';import {fileURLToPath} from 'node:url';
+const root=fileURLToPath(new URL('../../',import.meta.url)),output=new URL('./output/',import.meta.url);await mkdir(output,{recursive:true});
+const port=Number(process.env.NIUPACK_RENDER_PORT||4175);
+if(!Number.isInteger(port)||port<1024||port>65535)throw Error('Puerto inválido');
+const allowed=new Set(JSON.parse(await readFile(new URL('./manifest.json',import.meta.url),'utf8')).flatMap(x=>[x.id+'.png',x.id+'.glb']));
+const server=await createServer({root,server:{host:'127.0.0.1',port,strictPort:true},plugins:[{name:'local-render-save',configureServer(server){server.middlewares.use('/render-output/',async(req,res)=>{if(req.method!=='POST'||req.headers.origin!=='http://127.0.0.1:'+port){res.writeHead(403).end();return}const name=req.url?.slice(1);if(!allowed.has(name)){res.writeHead(404).end();return}try{const glb=name.endsWith('.glb'),limit=(glb?32:8)*1024*1024,chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>limit)throw Error('Archivo demasiado grande');chunks.push(chunk)}const bytes=Buffer.concat(chunks);if(glb?bytes.subarray(0,4).toString()!=='glTF':bytes.subarray(0,8).toString('hex')!=='89504e470d0a1a0a')throw Error('Formato inválido');await writeFile(new URL(name,output),bytes);res.writeHead(200).end('Guardado')}catch{res.writeHead(400).end('Render inválido')}})}}]});
+await server.listen();console.log('Revisión: http://127.0.0.1:'+port+'/tools/showroom/');

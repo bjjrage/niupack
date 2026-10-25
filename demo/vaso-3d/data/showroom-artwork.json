@@ -1,0 +1,584 @@
+{
+  "version": 1,
+  "status": "Approved for publication by the user on 2026-10-25",
+  "authority": "User-approved artwork mapping; 4 oz espresso revised with the attached Heylife artwork, a shorter body and less taper. Original covers preserved.",
+  "items": [
+    {
+      "id": "cup-single-4oz",
+      "file": "Vaso 4oz heylife.pdf",
+      "brand": "Heylife",
+      "front": 0.5,
+      "approximate": true,
+      "sourceSHA256": "4b87bdbe0b922e8050534be72ce824b5038e24e57527903bc2e56f8cff11c2f1",
+      "sourcePage": 1,
+      "textureWidth": 2048,
+      "textureHeight": 1300,
+      "src": "showroom/cup-single-4oz.webp",
+      "imageAspect": 0.6666666666666666,
+      "measureBounds": {
+        "left": 6.640625,
+        "right": 6.640625,
+        "top": 18.880208333333336,
+        "bottom": 19.596354166666664
+      },
+      "bytes": 142096,
+      "renderSHA256": "031596feba9cae5e8621287d3ddaa7e8ff5bb94b1cb01301acf72f7d6b6fe14f",
+      "renderEngine": "Source 3D render with built-in imagegen photographic finish",
+      "photographic": {
+        "provider": "Built-in imagegen",
+        "promptFile": "tools/showroom/photo-prompts.json",
+        "rawOutput": "output/photos/cup-single-4oz-v2.png",
+        "rawSHA256": "d050728b3f2ecb7b93b4b30ebaf632eeec4b6164375c6ea42edd044e9f425354",
+        "sourceRender": {
+          "renderSHA256": "6e043eed3c27b8ed1edde57a18df1c57b7e270622163ee0aed66cb065cdc88b6",
+          "imageAspect": 0.6666666666666666,
+          "measureBounds": {
+            "left": 6.5,
+            "right": 6.5,
+            "top": 18.944444444444443,
+            "bottom": 19.72222222222222
+          }
+        }
+      },
+      "adaptedFrom": "PDF description: 8 oz; user-selected artwork for 4 oz espresso cup",
+      "visualShape": {
+        "top": 0.331,
+        "bottom": 0.269,
+        "height": 0.6,
+        "printMargin": 0
+      },
+      "visualNote": "User requested a shorter 4 oz espresso cup with less taper. Illustrative silhouette only; not supplier dimensions.",
+      "visualRevision": {
+        "reason": "User requested a compact 4 oz espresso cup, at least 10% shorter and with less taper; approved Heylife PDF artwork.",
+        "previousPhoto": {
+          "renderSHA256": "2e49af8f1a5970837df3fd757d4e4b5005a58017dabea7e686e66735e0d6c6c1",
+          "imageAspect": 0.6666666666666666,
+          "measureBounds": {
+            "left": 6.640625,
+            "right": 6.54296875,
+            "top": 14.908854166666666,
+            "bottom": 16.2109375
+          },
+          "displayScale": 0.62
+        },
+        "displayScale": 0.6
+      }
+    },
+    {
+      "id": "cup-single-6oz",
+      "file": "Vaso 6oz-coffe-shop.pdf",
+      "brand": "Coffee Shop",
+      "model": "cup-6oz",
+      "front": 0.27,
+      "sourceSHA256": "2ad2b3a0c3b0b40b6acdbe5b8f3e502b5ae4aedc9b292543b2482f64418bdb74",
+      "sourcePage": 1,
+      "textureWidth": 2048,
+      "textureHeight": 1300,
+      "src": "showroom/cup-single-6oz.webp",
+      "imageAspect": 0.6666666666666666,
+      "measureBounds": {
+        "left": 6.34765625,
+        "right": 6.34765625,
+        "top": 13.997395833333334,
+        "bottom": 15.494791666666666
+      },
+      "bytes": 159814,
+      "renderSHA256": "b34eeac6e3c190c2d5526411184f9d1162829d529295a5b06c7896b408427504",
+      "renderEngine": "Source 3D render with built-in imagegen photographic finish",
+      "photographic": {
+        "provider": "Built-in imagegen",
+        "promptFile": "tools/showroom/photo-prompts.json",
+        "rawOutput": "output/photos/cup-single-6oz-v1.png",
+        "rawSHA256": "7e43aeebf45e727d66b4535ed52a0aeb17005004e76f4e8e5c604b562bf6476c",
+        "sourceRender": {
+          "renderSHA256": "680e42ad51991764130935195827d668e0a6eb26059fcc56a007e9671fae09f9",
+          "imageAspect": 0.6666666666666666,
+          "measureBounds": {
+            "left": 6.5,
+            "right": 6.5,
+            "top": 14.22,
+            "bottom": 15.67
+          }
+        }
+      }
+    },
+    {
+      "id": "cup-single-9oz",
+      "file": "Vaso 8oz-Nescafe(1).pdf",
+      "brand": "Nescafé",
+      "model": "cup-9oz",
+      "front": 0.26,
+      "adaptedFrom": "8 oz",
+      "sourceSHA256": "e5378a6fc896ff109a2191d054a2db0e069fc9e367f03a7e8e0f228a3370d26f",
+      "sourcePage": 1,
+      "textureWidth": 2048,
+      "textureHeight": 1300,
+      "src": "showroom/cup-single-9oz.webp",
+      "imageAspect": 0.6666666666666666,
+      "measureBounds": {
+        "left": 6.34765625,
+        "right": 6.25,
+        "top": 12.369791666666668,
+        "bottom": 13.606770833333334
+      },
+      "bytes": 183886,
+      "renderSHA256": "8fe41530ec4356d6e42ec1edca5af2cc0e7f1ee9425931149fb2a00250c9b7d5",
+      "renderEngine": "Source 3D render with built-in imagegen photographic finish",
+      "photographic": {
+        "provider": "Built-in imagegen",
+        "promptFile": "tools/showroom/photo-prompts.json",
+        "rawOutput": "output/photos/cup-single-9oz-v1.png",
+        "rawSHA256": "b8bfe9a220f9407171704347963e6a0f281ffb4f93b9d380cac074e0e3aeb08d",
+        "sourceRender": {
+          "renderSHA256": "6df7187e6073488be4aac23c85af9603bc525eb9a16a4a2a1486d723d4a160e5",
+          "imageAspect": 0.6666666666666666,
+          "measureBounds": {
+            "left": 6.5,
+            "right": 6.5,
+            "top": 12.67,
+            "bottom": 13.94
+          }
+        }
+      }
+    },
+    {
+      "id": "cup-single-12oz",
+      "file": "Vaso 12oz-Mostaza_v2.pdf",
+      "brand": "Mostaza",
+      "model": "cup-12oz",
+      "front": 0.51,
+      "sourceSHA256": "ae6fb3d21b9922e3d48793ae14410abcad474166c12d06862cfaa2002f97c5ec",
+      "sourcePage": 1,
+      "textureWidth": 2048,
+      "textureHeight": 1300,
+      "src": "showroom/cup-single-12oz.webp",
+      "imageAspect": 0.6666666666666666,
+      "measureBounds": {
+        "left": 6.4453125,
+        "right": 6.34765625,
+        "top": 6.966145833333333,
+        "bottom": 8.658854166666668
+      },
+      "bytes": 203538,
+      "renderSHA256": "acdc593f57767058526cc32e0cefc6bfcf8ac7be1f62d9c715a63cede1886fd3",
+      "renderEngine": "Source 3D render with built-in imagegen photographic finish",
+      "photographic": {
+        "provider": "Built-in imagegen",
+        "promptFile": "tools/showroom/photo-prompts.json",
+        "rawOutput": "output/photos/cup-single-12oz-v1.png",
+        "rawSHA256": "c84c1eb6365a4afeb08af56b6248204d7e35d09dd0ec9b8ddf7405614f1ffa0c",
+        "sourceRender": {
+          "renderSHA256": "93e18867576c198799ef6c84ff7f6f1166ae3d6b31125abca1ca55f0e02deee6",
+          "imageAspect": 0.6666666666666666,
+          "measureBounds": {
+            "left": 6.5,
+            "right": 6.5,
+            "top": 7.17,
+            "bottom": 8.78
+          }
+        }
+      }
+    },
+    {
+      "id": "cup-single-16oz",
+      "file": "Vaso 16oz Bk.pdf",
+      "brand": "Burger King",
+      "model": "cup-16oz",
+      "front": 0.25,
+      "sourceSHA256": "6b29f5a2838d1ac977ce9f25300bf1877e8839a819e24913f7d2d4f69fb79806",
+      "sourcePage": 1,
+      "textureWidth": 2048,
+      "textureHeight": 1300,
+      "src": "showroom/cup-single-16oz.webp",
+      "imageAspect": 0.6666666666666666,
+      "measureBounds": {
+        "left": 8.0078125,
+        "right": 7.91015625,
+        "top": 6.640625,
+        "bottom": 8.138020833333332
+      },
+      "bytes": 139356,
+      "renderSHA256": "58b38c05055b0b48a79b606c1a66d616dd8068f9cff46d8c3d979dd0016d91ad",
+      "renderEngine": "Source 3D render with built-in imagegen photographic finish",
+      "photographic": {
+        "provider": "Built-in imagegen",
+        "promptFile": "tools/showroom/photo-prompts.json",
+        "rawOutput": "output/photos/cup-single-16oz-v1.png",
+        "rawSHA256": "1456e17052a66528a562e3b2452707fa8ad8b13e29b4154a2ac5ef6335cf1925",
+        "sourceRender": {
+          "renderSHA256": "3a6cabc6215bfee92c1f0a5f8209b874e551a4ea4ec5459f5ca470f5af261c4a",
+          "imageAspect": 0.6666666666666666,
+          "measureBounds": {
+            "left": 8.17,
+            "right": 8.17,
+            "top": 6.67,
+            "bottom": 8.22
+          }
+        }
+      }
+    },
+    {
+      "id": "cup-single-16oz-subway",
+      "file": "VASO 16OZ Subway - MUESTRA_01 (1).pdf",
+      "brand": "Subway",
+      "model": "cup-16oz",
+      "front": 0.5,
+      "alternative": true,
+      "sourceSHA256": "03d28e86f55ba8f600523101f29b6bf690605588c101dc6867d8b80b1e7954ef",
+      "sourcePage": 1,
+      "textureWidth": 2048,
+      "textureHeight": 1300,
+      "src": "showroom/cup-single-16oz-subway.webp",
+      "imageAspect": 0.6666666666666666,
+      "measureBounds": {
+        "left": 8.10546875,
+        "right": 8.0078125,
+        "top": 6.770833333333333,
+        "bottom": 8.0078125
+      },
+      "bytes": 216432,
+      "renderSHA256": "d3cc98a50819ecb932134d74694d70abfa8aa2d777fe1131fbcaa052a929a968",
+      "renderEngine": "Source 3D render with built-in imagegen photographic finish",
+      "photographic": {
+        "provider": "Built-in imagegen",
+        "promptFile": "tools/showroom/photo-prompts.json",
+        "rawOutput": "output/photos/cup-single-16oz-subway-v1.png",
+        "rawSHA256": "6c141f84ae0b2c887e988ec5fba94a0e1a5187990f71a4eb68315a36bef08c98",
+        "sourceRender": {
+          "renderSHA256": "04f50d8e6d9b56f1402bb445afbb246dd58f2e20171a7f0f43b869f0ed38e3e7",
+          "imageAspect": 0.6666666666666666,
+          "measureBounds": {
+            "left": 8.17,
+            "right": 8.17,
+            "top": 6.67,
+            "bottom": 8.22
+          }
+        }
+      }
+    },
+    {
+      "id": "cup-single-21oz",
+      "file": "Vaso 21oz MOSTAZA VASO ALBIRROJA.pdf",
+      "brand": "Mostaza Albirroja",
+      "model": "cup-21oz",
+      "front": 0.5,
+      "adaptedFrom": "The file is named 21 oz; its internal label says 24 oz.",
+      "sourceSHA256": "c93931fe324f44f2e71751a755dcee7973798c530b140871c8fb27e335f40575",
+      "sourcePage": 1,
+      "textureWidth": 2048,
+      "textureHeight": 1300,
+      "src": "showroom/cup-single-21oz.webp",
+      "imageAspect": 0.6666666666666666,
+      "measureBounds": {
+        "left": 17.3828125,
+        "right": 17.28515625,
+        "top": 6.705729166666667,
+        "bottom": 7.6171875
+      },
+      "bytes": 143212,
+      "renderSHA256": "13ed831612b364d5d2c52f118d8ca97f32dc96395f5ba38eeb38a5600e879b05",
+      "renderEngine": "Source 3D render with built-in imagegen photographic finish",
+      "photographic": {
+        "provider": "Built-in imagegen",
+        "promptFile": "tools/showroom/photo-prompts.json",
+        "rawOutput": "output/photos/cup-single-21oz-v1.png",
+        "rawSHA256": "d21731a18b993f8d00b1c31ff7865b5980a8b4cb530ac8e188aa5cad642a6672",
+        "sourceRender": {
+          "renderSHA256": "3afa413050bbc64849077784ac4c1f8a8aaf7a2115895e1170b3e40f3e2e7ade",
+          "imageAspect": 0.6666666666666666,
+          "measureBounds": {
+            "left": 17.58,
+            "right": 17.58,
+            "top": 6.61,
+            "bottom": 7.89
+          }
+        }
+      }
+    },
+    {
+      "id": "cup-single-24oz",
+      "file": "Vaso 24oz-cinemark(2)-1.pdf",
+      "brand": "Cinemark",
+      "front": 0.25,
+      "approximate": true,
+      "sourceSHA256": "2b6733ff1eed7a9f8580ec641f8c843ad32c8674ef8d70dd2dcc65a880ea25be",
+      "sourcePage": 1,
+      "textureWidth": 2048,
+      "textureHeight": 1300,
+      "src": "showroom/cup-single-24oz.webp",
+      "imageAspect": 0.6666666666666666,
+      "measureBounds": {
+        "left": 18.75,
+        "right": 18.65234375,
+        "top": 6.901041666666667,
+        "bottom": 7.942708333333333
+      },
+      "bytes": 117174,
+      "renderSHA256": "f1b4c307523b7ece6da6ce40dbeb28cda40358b2a6e779909576c21fe64caf0d",
+      "renderEngine": "Source 3D render with built-in imagegen photographic finish",
+      "photographic": {
+        "provider": "Built-in imagegen",
+        "promptFile": "tools/showroom/photo-prompts.json",
+        "rawOutput": "output/photos/cup-single-24oz-v1.png",
+        "rawSHA256": "9a2cef04fef24fd247262d3abb061555fcb82a04ffbc5e82ad6f91590cfd0139",
+        "sourceRender": {
+          "renderSHA256": "678743acf045e9292b23464c0830049017ac49dcc7a461b1cd7e29205fc266d1",
+          "imageAspect": 0.6666666666666666,
+          "measureBounds": {
+            "left": 18.67,
+            "right": 18.67,
+            "top": 6.67,
+            "bottom": 7.94
+          }
+        }
+      }
+    },
+    {
+      "id": "cup-double-9oz",
+      "file": "Vaso Doble pared 8oz-Alvica-cafe.pdf",
+      "brand": "Alvica Café",
+      "model": "cup-9oz-double",
+      "front": 0.5,
+      "adaptedFrom": "8 oz",
+      "sourceSHA256": "a184d588bc71e214468e5e2f97bb6d03e3bfe88327e84775f383590f2d3fc923",
+      "sourcePage": 1,
+      "textureWidth": 2048,
+      "textureHeight": 1300,
+      "src": "showroom/cup-double-9oz.webp",
+      "imageAspect": 0.6666666666666666,
+      "measureBounds": {
+        "left": 3.90625,
+        "right": 3.80859375,
+        "top": 15.169270833333334,
+        "bottom": 10.416666666666668
+      },
+      "bytes": 209446,
+      "renderSHA256": "5497e47384fc361987135eaddc97cc989fd9c9aefc29069705240c0c0557765f",
+      "renderEngine": "Source 3D render with built-in imagegen photographic finish",
+      "photographic": {
+        "provider": "Built-in imagegen",
+        "promptFile": "tools/showroom/photo-prompts.json",
+        "rawOutput": "output/photos/cup-double-9oz-v2.png",
+        "rawSHA256": "74cf6af204fd3b7271907083950d4b09858c446c7bbbca67f99e266a517e4c3f",
+        "sourceRender": {
+          "renderSHA256": "3cd9472869d276f1e2386eaf5b7ad6c72e5ed9a8a777bffefe033b81b7f53ac1",
+          "imageAspect": 0.6666666666666666,
+          "measureBounds": {
+            "left": 6.5,
+            "right": 6.5,
+            "top": 15.444444444444445,
+            "bottom": 16.055555555555557
+          }
+        }
+      },
+      "visualRevision": {
+        "reason": "User requested more balanced Alvica cup proportions. Re-render from a more frontal camera without changing the supplier model.",
+        "previousPhoto": {
+          "renderSHA256": "e9e970cbbeafdee818b561584c642ce482d8654a305ab21e6bac5aa3718ba7fa",
+          "imageAspect": 0.6666666666666666,
+          "measureBounds": {
+            "left": 6.4453125,
+            "right": 6.34765625,
+            "top": 12.630208333333334,
+            "bottom": 13.671875
+          }
+        },
+        "previousViewTiltRad": 0.2,
+        "viewTiltRad": 0.08
+      },
+      "viewTiltRad": 0.08
+    },
+    {
+      "id": "cup-double-12oz",
+      "file": "Vaso Doble pared 12oz-cafetero.pdf",
+      "brand": "Cafetero",
+      "model": "cup-12oz-double",
+      "front": 0.5,
+      "sourceSHA256": "922612c5daf41e315ee72b49cbee875d8b622511648a49ca0ba91f37c2c9ef1f",
+      "sourcePage": 1,
+      "textureWidth": 2048,
+      "textureHeight": 1300,
+      "src": "showroom/cup-double-12oz.webp",
+      "imageAspect": 0.6666666666666666,
+      "measureBounds": {
+        "left": 6.34765625,
+        "right": 6.25,
+        "top": 7.2265625,
+        "bottom": 8.658854166666668
+      },
+      "bytes": 193544,
+      "renderSHA256": "1b33863004c254e64d6d7b90d477b1f83920e4fb48c4118d5babc9df9c3ee7a5",
+      "renderEngine": "Source 3D render with built-in imagegen photographic finish",
+      "photographic": {
+        "provider": "Built-in imagegen",
+        "promptFile": "tools/showroom/photo-prompts.json",
+        "rawOutput": "output/photos/cup-double-12oz-v1.png",
+        "rawSHA256": "8b217a9106d9e7c23eb0ceb41362420ffe3605d7411856900d649cea1d52c1c0",
+        "sourceRender": {
+          "renderSHA256": "e7a554f30fe39945301b2cbe13a732a58b7dd7e683f89296113e6719108b6862",
+          "imageAspect": 0.6666666666666666,
+          "measureBounds": {
+            "left": 6.5,
+            "right": 6.5,
+            "top": 7.17,
+            "bottom": 8.94
+          }
+        }
+      }
+    },
+    {
+      "id": "pot-3oz",
+      "file": "Pote 3oz-best-acai.pdf",
+      "brand": "The Best Açaí · tropical",
+      "model": "pot-3oz",
+      "front": 0.24,
+      "sourceSHA256": "0d6cf6c8d4b1e79ac0723753beb73078eb6889cc1552019f9827ba71ec47b40e",
+      "sourcePage": 1,
+      "textureWidth": 2048,
+      "textureHeight": 600,
+      "src": "showroom/pot-3oz.webp",
+      "imageAspect": 1.5,
+      "measureBounds": {
+        "left": 16.341145833333336,
+        "right": 16.536458333333336,
+        "top": 6.93359375,
+        "bottom": 8.88671875
+      },
+      "bytes": 132898,
+      "renderSHA256": "708ce10bbde731ac4e1031dbe9caa9bc63c49a7562f7e0611ddf77b01d5b5420",
+      "renderEngine": "Source 3D render with built-in imagegen photographic finish",
+      "photographic": {
+        "provider": "Built-in imagegen",
+        "promptFile": "tools/showroom/photo-prompts.json",
+        "rawOutput": "output/photos/pot-3oz-v1.png",
+        "rawSHA256": "429a052cd6ffda734e3a60bfdac9db48da04fe174d988d1a386f3e23f03148c4",
+        "sourceRender": {
+          "renderSHA256": "6575fcf59ecb27ecff329a419dabb2625b0e93997fe7e0dabfb52359483b3e92",
+          "imageAspect": 1.5,
+          "measureBounds": {
+            "left": 16.32,
+            "right": 16.32,
+            "top": 6.98,
+            "bottom": 9.38
+          }
+        }
+      }
+    },
+    {
+      "id": "pot-5oz",
+      "file": "Pote 5oz-amandau.pdf",
+      "brand": "Amandau",
+      "model": "pot-5oz",
+      "front": 0.24,
+      "sourceSHA256": "9d4f660e718c3e93c380ba50c2001fd77ecb0dddd4c597b20e6a9ea847b6bc92",
+      "sourcePage": 1,
+      "textureWidth": 2048,
+      "textureHeight": 600,
+      "src": "showroom/pot-5oz.webp",
+      "imageAspect": 1.5,
+      "measureBounds": {
+        "left": 19.075520833333336,
+        "right": 19.010416666666664,
+        "top": 6.93359375,
+        "bottom": 9.27734375
+      },
+      "bytes": 105286,
+      "renderSHA256": "b218bba6ddb274e889de50604a6b53334fb336c9f4f758bb61e719ca2c237ae2",
+      "renderEngine": "Source 3D render with built-in imagegen photographic finish",
+      "photographic": {
+        "provider": "Built-in imagegen",
+        "promptFile": "tools/showroom/photo-prompts.json",
+        "rawOutput": "output/photos/pot-5oz-v1.png",
+        "rawSHA256": "8ca195b563263f7af7daeb81deaf5f55dfb0618325d442e4451600934ee8a5ac",
+        "sourceRender": {
+          "renderSHA256": "4472d28d3c4aa9fe5dabf4540ab4da8afeae3c42cb01250f9f702014178b6a5d",
+          "imageAspect": 1.5,
+          "measureBounds": {
+            "left": 18.89,
+            "right": 18.89,
+            "top": 6.98,
+            "bottom": 9.38
+          }
+        }
+      }
+    },
+    {
+      "id": "pot-8oz",
+      "file": "Pote 8oz-best acai.pdf",
+      "brand": "The Best Açaí · color",
+      "model": "pot-8oz",
+      "front": 0.24,
+      "sourceSHA256": "0f74c021a1fbb5d7e5a0f660a507343681be92feae8a1841d5141991560f14b0",
+      "sourcePage": 1,
+      "textureWidth": 2048,
+      "textureHeight": 600,
+      "src": "showroom/pot-8oz.webp",
+      "imageAspect": 1.5,
+      "measureBounds": {
+        "left": 15.8203125,
+        "right": 15.885416666666666,
+        "top": 7.12890625,
+        "bottom": 9.1796875
+      },
+      "bytes": 93050,
+      "renderSHA256": "b1e27d6d04e8428d19ff562a1c91c1ef40d852aefa918a694f6bc13f95b6d889",
+      "renderEngine": "Source 3D render with built-in imagegen photographic finish",
+      "photographic": {
+        "provider": "Built-in imagegen",
+        "promptFile": "tools/showroom/photo-prompts.json",
+        "rawOutput": "output/photos/pot-8oz-v1.png",
+        "rawSHA256": "38669f5bf71d1cbb6e96a2eb467fe44a350cb6e11a9db5d4b38bbc0b6d26501a",
+        "sourceRender": {
+          "renderSHA256": "66db3f06ea104679db7b2709a10d257c03a5b6a3ce502741820af6874922691a",
+          "imageAspect": 1.5,
+          "measureBounds": {
+            "left": 15.9,
+            "right": 15.9,
+            "top": 6.88,
+            "bottom": 9.69
+          }
+        }
+      }
+    },
+    {
+      "id": "pot-20oz",
+      "file": "Pote 600 ml the best acai model 1.pdf",
+      "brand": "The Best Açaí",
+      "front": 0.73,
+      "approximate": true,
+      "adaptedFrom": "600 ml",
+      "lid": true,
+      "sourceSHA256": "359710309644f750501c3796fe05cf4b1b493974c41542c9add863dbad2591f3",
+      "sourcePage": 1,
+      "textureWidth": 2048,
+      "textureHeight": 600,
+      "src": "showroom/pot-20oz.webp",
+      "imageAspect": 1.5,
+      "measureBounds": {
+        "left": 14.192708333333334,
+        "right": 14.127604166666666,
+        "top": 6.25,
+        "bottom": 9.08203125
+      },
+      "bytes": 90486,
+      "renderSHA256": "956ac339fe54dbdf2a29356ea56aadef917050b1a9cb4dc54e63a96497e0e560",
+      "renderEngine": "Source 3D render with built-in imagegen photographic finish",
+      "photographic": {
+        "provider": "Built-in imagegen",
+        "promptFile": "tools/showroom/photo-prompts.json",
+        "rawOutput": "output/photos/pot-20oz-v1.png",
+        "rawSHA256": "e8a8ebbb875ea28297e9d13ae2c818c07957e3a0c8c3ea16257654af1779cab9",
+        "sourceRender": {
+          "renderSHA256": "05b29b1131b69e45a33dd2c4ad7e530efb23f04536deedbf9eb81225642db82d",
+          "imageAspect": 1.5,
+          "measureBounds": {
+            "left": 14.24,
+            "right": 14.24,
+            "top": 6.35,
+            "bottom": 10
+          }
+        }
+      }
+    }
+  ]
+}

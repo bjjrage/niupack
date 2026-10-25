@@ -72,6 +72,7 @@ const rows = [
   ['Hola, quiero pedir presupuesto de envases personalizados NIU PACK.', 'Hello, I would like a quote for custom NIU PACK packaging.', 'Olá, gostaria de um orçamento de embalagens personalizadas NIU PACK.'],
   ['Vista ilustrativa · sujeta a revisión de arte final.', 'Illustrative preview · subject to final artwork review.', 'Visualização ilustrativa · sujeita à revisão da arte final.'],
   ['Vasos de NIU PACK en una cafetería', 'NIU PACK cups in a café', 'Copos NIU PACK em uma cafeteria'],
+  ['Productos de NIU PACK', 'NIU PACK products', 'Produtos NIU PACK'],
   ['Tu navegador no puede reproducir este video.', 'Your browser cannot play this video.', 'Seu navegador não consegue reproduzir este vídeo.'],
   ['Reproducir video', 'Play video', 'Reproduzir vídeo'], ['Pausar video', 'Pause video', 'Pausar vídeo'],
   ['Consultar este producto en el configurador 3D', 'View this product in the 3D configurator', 'Ver este produto no configurador 3D'],

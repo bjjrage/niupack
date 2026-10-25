@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../dist/website/', import.meta.url));
 const base = new URL('https://bjjrage.github.io/niupack/');
-const allowed = new Set(['assets', 'css', 'fonts', 'js', 'media', 'studio', 'index.html', 'en.html', 'pt.html', 'robots.txt', 'sitemap.xml', 'favicon.svg', '.nojekyll', 'site-version.json', 'hero-video.js', 'integration.css', 'integration.js', 'selection.js', 'i18n.js']);
+const allowed = new Set(['assets', 'css', 'fonts', 'js', 'media', 'studio', 'showroom', 'index.html', 'en.html', 'pt.html', 'robots.txt', 'sitemap.xml', 'favicon.svg', '.nojekyll', 'site-version.json', 'hero-video.js', 'integration.css', 'integration.js', 'selection.js', 'i18n.js']);
 for (const entry of await readdir(root)) assert.ok(allowed.has(entry), 'Archivo ajeno al sitio: ' + entry);
 
 async function checkReference(reference, from) {
@@ -33,6 +33,9 @@ for (const page of ['index.html', 'en.html', 'pt.html']) {
     assert.ok(html.includes(page === 'en.html' ? 'Request a quote' : 'Pedir orçamento'));
   }
 }
+const showroom = await readFile(resolve(root, 'js/showroom.js'), 'utf8');
+for (const match of showroom.matchAll(/"src":"(showroom\/[^"]+)"/g)) await checkReference(match[1], 'index.html');
+assert.doesNotMatch(showroom, /assets\/showroom\/(?:cup-single|cup-double|bowl-icecream)-/);
 for (const css of ['css/styles.css', 'integration.css', 'studio/assets/scoped-studio.css']) {
   for (const match of (await readFile(resolve(root, css), 'utf8')).matchAll(/url\(["']?([^"')]+)["']?\)/g)) await checkReference(match[1], css);
 }

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve, relative, sep } from 'node:path';
 import { inlineStudioMarkup, scopeStudioCSS, integrateStudioHome } from './inline-studio.mjs';
 import { translateMarkup, t } from '../integration/i18n.js';
+import { showroomMarkup, showroomScript, showroomControls } from './showroom-artwork.mjs';
 
 const demo = fileURLToPath(new URL('../', import.meta.url));
 const repository = resolve(demo, '../..');
@@ -43,6 +44,26 @@ await writeFile(stylesPath, styles.replace(/^@import[^\n]*fonts\.googleapis\.com
 // The local hero replaces the old visual wrapper; keep its entrance animation in sync.
 const motionPath = resolve(preview, 'js/site-motion.js');
 await writeFile(motionPath, (await readFile(motionPath, 'utf8')).replace("document.querySelector('.hero-visual')", "document.querySelector('.hero-video-visual, .hero-visual')"), 'utf8');
+const showroomArtwork = JSON.parse(await readFile(resolve(demo, 'data/showroom-artwork.json'), 'utf8'));
+const supplierModels = JSON.parse(await readFile(resolve(demo, 'data/supplier-models.json'), 'utf8')).models;
+await cp(resolve(demo, 'integration/showroom'), resolve(preview, 'showroom'), { recursive: true });
+const showroomPath = resolve(preview, 'js/showroom.js');
+await writeFile(showroomPath, showroomScript(await readFile(showroomPath, 'utf8'), showroomArtwork, supplierModels), 'utf8');
+const mainPath = resolve(preview, 'js/main.js');
+await writeFile(mainPath, showroomControls(await readFile(mainPath, 'utf8')), 'utf8');
+if (!production) {
+  const beforeDirectory=resolve(demo,'tools/showroom/output/realism-before');
+  let hasBefore=false;
+  try{hasBefore=(await lstat(beforeDirectory)).isDirectory()}catch(error){if(error.code!=='ENOENT')throw error}
+  if(hasBefore)await cp(beforeDirectory,resolve(preview,'showroom-before'),{recursive:true});
+  const cards=showroomArtwork.items.map(item=>{
+    const size=item.id.match(/-(\d+)oz/)?.[1];
+    const label=item.id.startsWith('pot-')?`Pote ${size} oz`:`Vaso ${size} oz · ${item.id.includes('-double-')?'Pared doble':'Pared simple'}`;
+    return `<article><img src="${item.src}" alt="${item.brand}"><h2>${label}</h2><p>${item.brand}${item.alternative?' · alternativa':''}</p>${hasBefore?`<details><summary>Ver versión anterior</summary><img src="showroom-before/${item.id}.webp" alt="Versión anterior · ${item.brand}"></details>`:''}</article>`;
+  }).join('');
+  await writeFile(resolve(preview, 'showroom-review.html'), `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Acabado fotográfico · NIU PACK</title><link rel="stylesheet" href="showroom-review.css"><header><a href="index.html#productos">← Ver el carrusel en la página</a><h1>Vasos y potes con acabado fotográfico</h1><p>Revisión local de los productos individuales. Las portadas originales se conservan. Heylife espresso en 4 oz; Burger King como principal y Subway como alternativa de 16 oz. ${hasBefore?'Abrí «Ver versión anterior» para comparar cada producto. ':''}Los modelos sin plano completo siguen siendo ilustrativos.</p></header><main>${cards}</main></html>`, 'utf8');
+  await writeFile(resolve(preview, 'showroom-review.css'), '@font-face{font-family:Montserrat;src:url(fonts/montserrat-latin-variable.woff2)}*{box-sizing:border-box}body{margin:0;padding:32px;font-family:Montserrat,Arial,sans-serif;color:#15191f;background:#f5f3ef}header{max-width:1100px;margin:0 auto 30px}header a{color:#dc2428}h1{font-size:32px}p{font-size:14px;line-height:1.7}main{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px}article{background:white;border:1px solid #ddd;border-radius:16px;padding:18px}article img{width:100%;height:330px;object-fit:contain}h2{font-size:15px;margin-bottom:0}summary{cursor:pointer;color:#dc2428;font-size:12px;font-weight:600;padding-block:12px}details img{border-top:1px solid #eee}@media(max-width:1000px){main{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:550px){body{padding:18px}main{grid-template-columns:1fr}}', 'utf8');
+}
 
 const moduleEntry = moduleSource.match(/<script type="module"[^>]*src="\.\/(assets\/[\w.-]+\.js)"/)?.[1];
 const moduleCSS = moduleSource.match(/<link rel="stylesheet"[^>]*href="\.\/(assets\/[\w.-]+\.css)"/)?.[1];
@@ -54,7 +75,7 @@ await writeFile(resolve(inlineOutput, 'assets/scoped-studio.css'), scopeStudioCS
 // One composition pipeline for all languages: translated templates retain their
 // own existing site copy, while the hero and configurator share the same features.
 for (const [filename, locale] of [['index.html', 'es'], ['en.html', 'en'], ['pt.html', 'pt']]) {
-  const source = await readFile(resolve(repository, filename), 'utf8');
+  const source = showroomMarkup(await readFile(resolve(repository, filename), 'utf8'));
   if (!heroCard.test(source)) throw new Error('No se encontró el hero en ' + filename);
   const integratedSource = source
     .replace(heroCard, translateMarkup(heroSource, locale))

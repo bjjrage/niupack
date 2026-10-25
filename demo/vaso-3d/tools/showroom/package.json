@@ -1,0 +1,7 @@
+{
+  "name": "niupack-offline-artwork-tools",
+  "private": true,
+  "type": "module",
+  "description": "Local PDF rectification and static showroom rendering. Never part of the public build.",
+  "dependencies": { "mupdf": "1.28.1", "sharp": "0.35.5" }
+}
