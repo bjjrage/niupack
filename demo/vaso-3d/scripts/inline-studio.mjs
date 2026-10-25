@@ -62,6 +62,7 @@ export function integrateStudioHome(source, moduleMarkup) {
   </section>`;
   return source.replace(thermo, '').replace(personalization, '')
     .replace(products, products + '\n' + inserted + '\n' + thermo)
+    .replace(/(<div class="hero-actions">\s*)<a\b[^>]*>/, '$1<a class="button" href="#configurador-3d">')
     .replace(/(?:index|en|pt)\.html#personalizacion/g, '#configurador-3d')
     .replaceAll('href="#personalizacion"', 'href="#configurador-3d"');
 }
