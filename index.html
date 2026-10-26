@@ -616,12 +616,14 @@
         const loader = document.querySelector('[data-site-loader]');
         if (!loader) return;
         const started = performance.now();
-        const minVisible = 420;
-        const maxVisible = 1800;
-        const hero = document.querySelector('.hero-product-image');
+        const minVisible = 500;
+        const maxVisible = 6500;
+        let pageLoaded = document.readyState === 'complete';
+        let studioSettled = false;
         let finished = false;
-        const hide = () => {
-          if (finished) return;
+
+        const maybeHide = () => {
+          if (finished || !pageLoaded || !studioSettled) return;
           finished = true;
           const wait = Math.max(0, minVisible - (performance.now() - started));
           window.setTimeout(() => {
@@ -630,13 +632,28 @@
             window.setTimeout(() => loader.remove(), 450);
           }, wait);
         };
-        if (!hero || hero.complete) hide();
-        else {
-          hero.addEventListener('load', hide, { once: true });
-          hero.addEventListener('error', hide, { once: true });
+
+        if (!pageLoaded) {
+          window.addEventListener('load', () => {
+            pageLoaded = true;
+            maybeHide();
+          }, { once: true });
         }
-        window.addEventListener('load', hide, { once: true });
-        window.setTimeout(hide, maxVisible);
+
+        window.addEventListener('niupack:studio-settled', () => {
+          studioSettled = true;
+          maybeHide();
+        }, { once: true });
+
+        // Safety valve: never trap the visitor behind the loader if WebGL,
+        // the module import or a resource fails unexpectedly.
+        window.setTimeout(() => {
+          if (finished) return;
+          finished = true;
+          loader.classList.add('is-hidden');
+          document.documentElement.classList.remove('site-loading');
+          window.setTimeout(() => loader.remove(), 450);
+        }, maxVisible);
       })();
     </script>
     <script src="js/showroom.js?v=30"></script>
