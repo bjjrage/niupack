@@ -75,21 +75,28 @@ document.addEventListener('click', event => {
 document.addEventListener('custom-select-change', () => queueMicrotask(bindProductLinks));
 bindProductLinks();
 
-// Load the 3D engine only when the visitor approaches or enters the module.
-const observer = new IntersectionObserver(entries => {
-  if (entries.some(entry => entry.isIntersecting)) {
-    observer.disconnect();
-    void initialize().catch(() => {});
-  }
-}, { rootMargin: '400px' });
-observer.observe(section);
-section.addEventListener('focusin', () => { void initialize().catch(() => {}); }, { once: true });
+// Warm the 3D engine immediately behind the branded loader so the public page
+// is already interactive when it becomes visible. Wait two paint frames after
+// initialization so the canvas has actually rendered before signalling ready.
+const nextPaint = () => new Promise(resolve => {
+  requestAnimationFrame(() => requestAnimationFrame(resolve));
+});
+const studioBoot = initialize()
+  .catch(() => {})
+  .then(nextPaint)
+  .finally(() => {
+    window.dispatchEvent(new CustomEvent('niupack:studio-settled', {
+      detail: { status: root.dataset.studio ?? 'unavailable' },
+    }));
+  });
 
 if (location.hash === '#personalizacion' || location.hash === '#configurador-3d') {
-  window.addEventListener('load', async () => {
-    await Promise.all([document.fonts.ready, initialize().catch(() => {})]);
+  const revealDirectLink = async () => {
+    await Promise.all([document.fonts?.ready ?? Promise.resolve(), studioBoot]);
     history.replaceState(null, '', '#configurador-3d');
     // Catalog initialization and local fonts can change layout on a direct link.
     requestAnimationFrame(() => section.scrollIntoView({ behavior: 'instant', block: 'start' }));
-  }, { once: true });
+  };
+  if (document.readyState === 'complete') void revealDirectLink();
+  else window.addEventListener('load', () => { void revealDirectLink(); }, { once: true });
 }
