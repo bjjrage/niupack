@@ -35,12 +35,32 @@
         "url": "https://bjjrage.github.io/niupack/"
       }
     </script>
+    <link rel="preload" href="assets/logo-niupack-web.png" as="image" fetchpriority="high">
+    <link rel="preload" href="assets/niu%20-%20hero%20vasos%20new.png" as="image" fetchpriority="high">
+    <style>
+      html.site-loading, html.site-loading body { overflow: hidden; }
+      .site-loader { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; background: #f53732; opacity: 1; visibility: visible; transition: opacity .38s ease, visibility .38s ease; }
+      .site-loader.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+      .site-loader-inner { display: grid; justify-items: center; gap: 18px; transform: translateY(-2vh); }
+      .site-loader img { width: min(260px, 54vw); height: auto; filter: brightness(0) invert(1); }
+      .site-loader-line { width: min(190px, 44vw); height: 3px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.28); }
+      .site-loader-line::after { content: ""; display: block; width: 42%; height: 100%; border-radius: inherit; background: #fff; animation: niuLoader 1s ease-in-out infinite; }
+      @keyframes niuLoader { 0% { transform: translateX(-120%); } 100% { transform: translateX(340%); } }
+      @media (prefers-reduced-motion: reduce) { .site-loader-line::after { animation: none; width: 100%; opacity: .8; } }
+    </style>
+    <script>document.documentElement.classList.add('site-loading');</script>
     <link rel="preload" href="css/styles.css?v=20" as="style">
     <link rel="stylesheet" href="css/styles.css?v=20">
     <link rel="stylesheet" href="css/showroom.css?v=25">
     <link rel="stylesheet" href="css/motion.css?v=1">
   </head>
   <body>
+    <div class="site-loader" data-site-loader aria-hidden="true">
+      <div class="site-loader-inner">
+        <img src="assets/logo-niupack-web.png" alt="">
+        <div class="site-loader-line" aria-hidden="true"></div>
+      </div>
+    </div>
     <header class="site-header" data-header>
       <a class="brand" href="en.html#inicio" aria-label="NIU PACK home">
         <img src="assets/logo-niupack-web.png" alt="NIU PACK">
@@ -95,7 +115,7 @@
 
           <div class="hero-visual reveal">
             <div class="visual-card hero-product-card" data-tilt>
-              <img class="hero-product-image" src="assets/niu - hero vasos new.png" alt="Custom NIU PACK cups">
+              <img class="hero-product-image" src="assets/niu - hero vasos new.png" fetchpriority="high" decoding="async" alt="Custom NIU PACK cups">
               <div class="visual-badge">Brand value through packaging</div>
             </div>
           </div>
@@ -571,6 +591,35 @@
       </div>
     </footer>
 
+
+    <script>
+      (() => {
+        const loader = document.querySelector('[data-site-loader]');
+        if (!loader) return;
+        const started = performance.now();
+        const minVisible = 420;
+        const maxVisible = 1800;
+        const hero = document.querySelector('.hero-product-image');
+        let finished = false;
+        const hide = () => {
+          if (finished) return;
+          finished = true;
+          const wait = Math.max(0, minVisible - (performance.now() - started));
+          window.setTimeout(() => {
+            loader.classList.add('is-hidden');
+            document.documentElement.classList.remove('site-loading');
+            window.setTimeout(() => loader.remove(), 450);
+          }, wait);
+        };
+        if (!hero || hero.complete) hide();
+        else {
+          hero.addEventListener('load', hide, { once: true });
+          hero.addEventListener('error', hide, { once: true });
+        }
+        window.addEventListener('load', hide, { once: true });
+        window.setTimeout(hide, maxVisible);
+      })();
+    </script>
     <script src="js/showroom.js?v=30"></script>
     <script src="js/vendor/motion-13.5.0.js"></script>
     <script src="js/site-motion.js?v=1"></script>
