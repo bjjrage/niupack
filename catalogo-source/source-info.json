@@ -1,0 +1,7 @@
+{
+  "source": "https://bjjrage.github.io/niupack/#productos",
+  "retrieved_on": "2026-10-27",
+  "scope": "Published product module, variant images, measurements and font",
+  "upstream_versions": {"showroom.js":30,"main.js":9,"showroom.css":25,"styles.css":20},
+  "adaptation": "Book layout, persistent family navigation; WhatsApp quote and external link to the live 3D configurator."
+}

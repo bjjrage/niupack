@@ -43,6 +43,7 @@ window.matchMedia('(min-width: 961px)').addEventListener('change', closeNavigati
 const viewer = element<HTMLCanvasElement>('viewer');
 const stage = element('stage');
 const quoteLink = element<HTMLAnchorElement>('request-quote');
+const downloadButton = element<HTMLButtonElement>('download-design');
 const controlsFieldset = element<HTMLFieldSetElement>('design-controls');
 const input = element<HTMLInputElement>('artwork-file');
 const notice = element('upload-notice');
@@ -58,6 +59,7 @@ let paper: Paper = 'white';
 let artwork: Artwork | null = exampleArtwork();
 let studio: Studio | null = null;
 let loading = false;
+let exporting = false;
 let lostContext = false;
 let toastTimer = 0;
 let generation = 0;
@@ -147,6 +149,7 @@ function updateModelInfo(cup: SupplierModel): void {
   element('model-source').textContent = t(`Fuente: ${cup.source.file} · ${cup.source.date}${cup.source.revision ? ' · Rev. ' + cup.source.revision : ''}`);
 }
 function updateEnabled(): void {
+  downloadButton.disabled = !studio || !artwork || lostContext || loading || exporting;
   controlsFieldset.disabled = !artwork || loading;
   element<HTMLFieldSetElement>('application-controls').disabled = !artwork || loading;
   input.disabled = loading;
@@ -337,22 +340,45 @@ element('remove-artwork').addEventListener('click', () => {
   element('file-info').hidden = true; showNotice(privacyMessage); updateEnabled(); redraw();
   announce('Diseño eliminado. Podés subir otra imagen.');
 });
-element('zoom-in').addEventListener('click', () => studio?.zoom(0.88));
-element('zoom-out').addEventListener('click', () => studio?.zoom(1.14));
 element('reset-view').addEventListener('click', () => studio?.resetView());
+downloadButton.addEventListener('click', async () => {
+  if (!studio || !artwork || lostContext || loading || exporting) return;
+  exporting = true;
+  downloadButton.setAttribute('aria-busy', 'true');
+  element('download-label').textContent = t('Preparando PNG…');
+  updateEnabled();
+  const filename = `niupack-${selectedModel}-${paper}.png`;
+  try {
+    const blob = await studio.capture();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    announce('Tu vista 3D se descargó en PNG.');
+  } catch (error) {
+    showNotice(error instanceof Error ? error.message : 'No se pudo descargar el PNG. Intentá de nuevo.', 'error');
+  } finally {
+    exporting = false;
+    downloadButton.setAttribute('aria-busy', 'false');
+    element('download-label').textContent = t('Descargar diseño');
+    updateEnabled();
+  }
+});
 element('view-front').addEventListener('click', () => studio?.showSide(false));
 element('view-back').addEventListener('click', () => studio?.showSide(true));
 element('reload-viewer').addEventListener('click', () => window.location.reload());
 viewer.addEventListener('keydown', (event) => {
-  const handled = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '+', '=', '-', 'Home'];
+  const handled = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home'];
   if (!handled.includes(event.key)) return;
   event.preventDefault();
   if (event.key === 'ArrowLeft') studio?.rotate(-0.12);
   if (event.key === 'ArrowRight') studio?.rotate(0.12);
   if (event.key === 'ArrowUp') studio?.rotate(0, -0.08);
   if (event.key === 'ArrowDown') studio?.rotate(0, 0.08);
-  if (event.key === '+' || event.key === '=') studio?.zoom(0.9);
-  if (event.key === '-') studio?.zoom(1.1);
   if (event.key === 'Home') studio?.resetView();
 });
 initializeCatalog();

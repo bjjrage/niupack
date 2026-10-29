@@ -1,0 +1,1013 @@
+// Enhance the existing catalogue: retain its fields, data and event listeners.
+window.setupProductShowroom = function (carousel) {
+  if (!carousel) return;
+  const cards = [...carousel.querySelectorAll('.product-card')];
+  if (!cards.length) return;
+  const isEnglish = document.documentElement.lang === 'en';
+  const isPortuguese = document.documentElement.lang === 'pt-BR';
+  const formatDimension = value => isEnglish ? String(value).replace(',', '.') : value;
+  const copy = isPortuguese
+    ? {
+        exploreLines: 'EXPLORE NOSSAS LINHAS',
+        stageLabel: 'Produtos em perspectiva',
+        previous: 'Produto anterior',
+        next: 'Próximo produto',
+        drag: 'ARRASTE PARA EXPLORAR',
+        productLines: 'Linhas de produtos',
+        explore: 'Explorar',
+        madeForBrand: 'FEITO PARA SUA MARCA',
+        inquire: 'Consultar este produto ↗',
+        inquireIntro: (name) => `Olá, gostaria de consultar sobre ${name}.`,
+      }
+    : isEnglish
+      ? {
+          exploreLines: 'EXPLORE OUR LINES',
+          stageLabel: 'Products in perspective',
+          previous: 'Previous product',
+          next: 'Next product',
+          drag: 'DRAG TO EXPLORE',
+          productLines: 'Product lines',
+          explore: 'Explore',
+          madeForBrand: 'MADE FOR YOUR BRAND',
+          inquire: 'Inquire about this product ↗',
+          inquireIntro: (name) => `Hello, I would like to inquire about ${name}.`,
+        }
+      : {
+          exploreLines: 'EXPLORÁ NUESTRAS LÍNEAS',
+          stageLabel: 'Productos en perspectiva',
+          previous: 'Producto anterior',
+          next: 'Producto siguiente',
+          drag: 'ARRASTRÁ PARA EXPLORAR',
+          productLines: 'Líneas de producto',
+          explore: 'Explorar',
+          madeForBrand: 'HECHO PARA TU MARCA',
+          inquire: 'Consultar este producto ↗',
+          inquireIntro: (name) => `Hola, quiero consultar por ${name}.`,
+        };
+  const names = cards.map(card => card.querySelector('h3').textContent);
+  carousel.className = 'showroom';
+  carousel.innerHTML = `<div class="showroom-top"><span>${copy.exploreLines}</span><span class="showroom-counter" aria-live="polite"></span></div>
+    <div class="showroom-layout"><div class="showroom-stage" aria-label="${copy.stageLabel}">
+      <div class="showroom-art"></div>
+      <div class="showroom-stage-controls"><button type="button" data-step="-1" aria-label="${copy.previous}">←</button><span>${copy.drag}</span><button type="button" data-step="1" aria-label="${copy.next}">→</button></div>
+    </div><div class="showroom-details"></div></div><div class="showroom-tabs" role="tablist" aria-label="${copy.productLines}"></div>`;
+  const stage = carousel.querySelector('.showroom-stage');
+  const art = carousel.querySelector('.showroom-art');
+  const details = carousel.querySelector('.showroom-details');
+  const tablist = carousel.querySelector('.showroom-tabs');
+  const counter = carousel.querySelector('.showroom-counter');
+  const stageHint = carousel.querySelector('.showroom-stage-controls span');
+  const dragSizesCopy = isPortuguese ? 'ARRASTE ENTRE TAMANHOS' : isEnglish ? 'DRAG THROUGH SIZES' : 'ARRASTR\u00c1 ENTRE TAMA\u00d1OS';
+  let active = 0;
+  let nestedCarousel = null;
+  const images = [], panels = [], tabs = [], visualResetters = [], measurementRefreshers = [];
+
+  function leaveNestedCarousel() {
+    if (!nestedCarousel) return;
+    nestedCarousel.deactivate();
+    nestedCarousel = null;
+    carousel.classList.remove('is-size-carousel');
+    stageHint.textContent = copy.drag;
+  }
+
+  function enterNestedCarousel(controller) {
+    if (nestedCarousel && nestedCarousel !== controller) nestedCarousel.deactivate();
+    nestedCarousel = controller;
+    carousel.classList.add('is-size-carousel');
+    stageHint.textContent = dragSizesCopy;
+    controller.activate();
+  }
+
+  function navigateStage(step) {
+    if (nestedCarousel) nestedCarousel.step(step);
+    else show(active + step);
+  }
+
+  function applyMeasurementLayout(figure, measures, variant, fallbackAspect) {
+    const aspect = variant.imageAspect || fallbackAspect;
+    const availableWidth = figure.clientWidth;
+    const availableHeight = figure.clientHeight;
+    if (!availableWidth || !availableHeight) return;
+    let boxWidth = availableWidth;
+    let boxHeight = boxWidth / aspect;
+    if (boxHeight > availableHeight) {
+      boxHeight = availableHeight;
+      boxWidth = boxHeight * aspect;
+    }
+    const bounds = variant.measureBounds;
+    measures.style.width = `${boxWidth}px`;
+    measures.style.height = `${boxHeight}px`;
+    measures.style.setProperty('--cup-display-scale', variant.scale);
+    measures.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+    measures.style.setProperty('--measure-object-left', `${bounds.left}%`);
+    measures.style.setProperty('--measure-object-right', `${bounds.right}%`);
+    measures.style.setProperty('--measure-object-top', `${bounds.top}%`);
+    measures.style.setProperty('--measure-object-bottom', `${bounds.bottom}%`);
+  }
+
+  function setVisualSelectValue(select, value) {
+    if (!select) return;
+    const options = [...select.querySelectorAll('.custom-select-option')];
+    const selectedOption = options.find(option => option.dataset.value === value);
+    if (!selectedOption) return;
+    select.dataset.value = value;
+    select.classList.remove('is-open');
+    const trigger = select.querySelector('.custom-select-trigger');
+    if (trigger) {
+      trigger.textContent = selectedOption.textContent;
+      trigger.setAttribute('aria-expanded', 'false');
+    }
+    options.forEach(option => {
+      const isSelected = option === selectedOption;
+      option.classList.toggle('active', isSelected);
+      option.setAttribute('aria-selected', String(isSelected));
+    });
+  }
+
+  cards.forEach((card, index) => {
+    visualResetters[index] = null;
+    const image = card.querySelector('.product-card-media img');
+    const isCupCard = card.hasAttribute('data-cup-card');
+    const isLidCard = card.hasAttribute('data-lid-card');
+    const isTrayCard = card.hasAttribute('data-tray-card');
+    const isBowlCard = Boolean(card.querySelector('[data-bowl-size]'));
+    const figure = document.createElement('button');
+    figure.type = 'button';
+    figure.className = 'showroom-product';
+    figure.setAttribute('aria-label', `${copy.explore} ${names[index]}`);
+    image.draggable = false;
+    figure.append(image);
+    if (isCupCard || isLidCard || isTrayCard) {
+      figure.dataset.cupVisual = '';
+      image.classList.add('showroom-cup-image', 'is-current');
+    }
+    figure.addEventListener('click', () => show(index));
+    art.append(figure);
+    images.push(figure);
+    const panel = document.createElement('div');
+    panel.className = 'showroom-panel';
+    panel.id = `showroom-panel-${index}`;
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', `showroom-tab-${index}`);
+    panel.innerHTML = `<p class="showroom-kicker">${copy.madeForBrand}</p>`;
+    panel.append(card.querySelector('h3'), card.querySelector('p'), card.querySelector('.product-fields'));
+    if (isCupCard) {
+      const typeSelect = panel.querySelector('[data-cup-type]');
+      const sizeSelect = panel.querySelector('[data-cup-size]');
+      const nextImage = document.createElement('img');
+      nextImage.className = 'showroom-cup-image';
+      nextImage.draggable = false;
+      nextImage.alt = '';
+      figure.append(nextImage);
+      const measures = document.createElement('span');
+      measures.className = 'showroom-cup-measures';
+      measures.setAttribute('aria-hidden', 'true');
+      measures.innerHTML = '<span class="cup-measure cup-measure-diameter"><span class="cup-measure-value"></span></span><span class="cup-measure cup-measure-height"><span class="cup-measure-value"></span></span>';
+      figure.append(measures);
+      const dimensionSource = document.createElement('p');
+      dimensionSource.className = 'showroom-dimension-source';
+      dimensionSource.hidden = true;
+      panel.querySelector('.product-fields').after(dimensionSource);
+
+      // Boca superior (A) y altura (B), en mm, de las fichas técnicas provistas.
+      const cupDimensions = {"simple":{"4 oz":{"diameter":"69,5","height":"44","approximate":true},"24 oz":{"diameter":"91,5","height":"177","approximate":true},"6 oz":{"diameter":"71,99","height":"76,5"},"9 oz":{"diameter":"77,8","height":"87"},"12 oz":{"diameter":"83,2","height":"109"},"16 oz":{"diameter":"89,7","height":"124,5"},"21 oz":{"diameter":"89,7","height":"166"}},"doble":{"9 oz":{"diameter":"77,83","height":"87"},"12 oz":{"diameter":"83,21","height":"109"}}};
+      const diameterValue = measures.querySelector('.cup-measure-diameter .cup-measure-value');
+      const heightValue = measures.querySelector('.cup-measure-height .cup-measure-value');
+      function showCupDimensions(type, size, variant) {
+        const dimensions = cupDimensions[type]?.[size];
+        figure.classList.toggle('has-cup-measures', Boolean(dimensions && variant));
+        dimensionSource.hidden = !dimensions?.sheetType && !dimensions?.approximate;
+        if (dimensions?.approximate) dimensionSource.textContent = isPortuguese
+          ? `Medidas aproximadas; ficha técnica específica do copo de ${size} pendente.`
+          : isEnglish
+            ? `Approximate dimensions; specific ${size} cup technical sheet pending.`
+            : `Medidas aproximadas; ficha técnica específica del vaso de ${size} pendiente.`;
+        else if (dimensions?.sheetType) dimensionSource.textContent = isPortuguese
+          ? 'Cotas da ficha de parede dupla; imagem ilustrativa de parede simples.'
+          : isEnglish
+            ? 'Dimensions from the double-wall sheet; single-wall image is illustrative.'
+            : 'Cotas de la ficha de pared doble; imagen ilustrativa de pared simple.';
+        if (!dimensions || !variant) return;
+        const approximateMark = dimensions.approximate ? '≈ ' : '';
+        diameterValue.textContent = `${approximateMark}Ø ${formatDimension(dimensions.diameter)} mm`;
+        heightValue.textContent = `${approximateMark}${formatDimension(dimensions.height)} mm`;
+        applyMeasurementLayout(figure, measures, variant, 2 / 3);
+      }
+
+      const cupImages = {simple:{all:{ src: image.getAttribute('src'), scale: '1' },"4 oz":{"src":"catalogo-source/showroom/cup-single-4oz.webp","scale":".60","imageAspect":0.6666666666666666,"measureBounds":{"left":6.640625,"right":6.640625,"top":18.880208333333336,"bottom":19.596354166666664},"brand":"Heylife"},"6 oz":{"src":"catalogo-source/showroom/cup-single-6oz.webp","scale":".7","imageAspect":0.6666666666666666,"measureBounds":{"left":6.34765625,"right":6.34765625,"top":13.997395833333334,"bottom":15.494791666666666},"brand":"Coffee Shop"},"9 oz":{"src":"catalogo-source/showroom/cup-single-9oz.webp","scale":".78","imageAspect":0.6666666666666666,"measureBounds":{"left":6.34765625,"right":6.25,"top":12.369791666666668,"bottom":13.606770833333334},"brand":"Nescafé"},"12 oz":{"src":"catalogo-source/showroom/cup-single-12oz.webp","scale":".88","imageAspect":0.6666666666666666,"measureBounds":{"left":6.4453125,"right":6.34765625,"top":6.966145833333333,"bottom":8.658854166666668},"brand":"Mostaza"},"16 oz":{"src":"catalogo-source/showroom/cup-single-16oz.webp","scale":".96","imageAspect":0.6666666666666666,"measureBounds":{"left":8.0078125,"right":7.91015625,"top":6.640625,"bottom":8.138020833333332},"brand":"Burger King"},"21 oz":{"src":"catalogo-source/showroom/cup-single-21oz.webp","scale":"1","imageAspect":0.6666666666666666,"measureBounds":{"left":17.3828125,"right":17.28515625,"top":6.705729166666667,"bottom":7.6171875},"brand":"Mostaza Albirroja"},"24 oz":{"src":"catalogo-source/showroom/cup-single-24oz.webp","scale":"1.04","imageAspect":0.6666666666666666,"measureBounds":{"left":18.75,"right":18.65234375,"top":6.901041666666667,"bottom":7.942708333333333},"brand":"Cinemark"}},doble:{all:{ src: 'catalogo-source/assets/showroom/cups-double-all-v3.png', scale: '1' },"9 oz":{"src":"catalogo-source/showroom/cup-double-9oz.webp","scale":".78","imageAspect":0.6666666666666666,"measureBounds":{"left":3.90625,"right":3.80859375,"top":15.169270833333334,"bottom":10.416666666666668},"brand":"Alvica Café"},"12 oz":{"src":"catalogo-source/showroom/cup-double-12oz.webp","scale":".96","imageAspect":0.6666666666666666,"measureBounds":{"left":6.34765625,"right":6.25,"top":7.2265625,"bottom":8.658854166666668},"brand":"Cafetero"}}};
+      let currentImage = image;
+      let requestedImage = 0;
+      let railType = '';
+      let railItems = [];
+
+      function availableSizes(type) {
+        return Object.keys(cupImages[type]).filter(size => size !== 'all');
+      }
+
+      function selectCupSize(size) {
+        setVisualSelectValue(sizeSelect, size);
+        sizeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
+      }
+
+      function buildSizeRail(type) {
+        if (railType === type && railItems.length) return;
+        railItems.forEach(item => item.button.remove());
+        railItems = availableSizes(type).map(size => {
+          const variant = cupImages[type][size];
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'showroom-size-product';
+          button.dataset.size = size;
+          button.setAttribute('aria-label', `${copy.explore} ${names[index]} ${size}`);
+          const railImage = document.createElement('img');
+          railImage.src = variant.src;
+          railImage.alt = '';
+          railImage.draggable = false;
+          railImage.style.setProperty('--cup-display-scale', variant.scale);
+          railImage.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+          button.append(railImage);
+          button.addEventListener('click', () => selectCupSize(size));
+          art.append(button);
+          return { button, image: railImage, size };
+        });
+        railType = type;
+      }
+
+      function positionSizeRail(type, size) {
+        buildSizeRail(type);
+        const sizes = availableSizes(type);
+        const selectedIndex = sizes.indexOf(size);
+        const selectedScale = Number(cupImages[type][size].scale) || 1;
+        railItems.forEach(item => {
+          const itemScale = Number(cupImages[type][item.size].scale) || 1;
+          const normalization = Math.pow(selectedScale / itemScale, .75);
+          item.orbitNormalization = normalization;
+          item.image.style.setProperty('--cup-orbit-normalize', normalization.toFixed(4));
+          let offset = sizes.indexOf(item.size) - selectedIndex;
+          if (offset > sizes.length / 2) offset -= sizes.length;
+          if (offset < -sizes.length / 2) offset += sizes.length;
+          const position = offset === 0 ? 'selected' : offset === -1 ? 'previous' : offset === 1 ? 'next' : 'hidden';
+          item.button.dataset.sizePosition = position;
+          item.button.tabIndex = Math.abs(offset) === 1 ? 0 : -1;
+          item.button.setAttribute('aria-hidden', String(Math.abs(offset) > 1 || offset === 0));
+        });
+        counter.textContent = `${String(selectedIndex + 1).padStart(2, '0')} / ${String(sizes.length).padStart(2, '0')}`;
+      }
+
+      const sizeCarouselController = {
+        activate() {
+          const type = typeSelect.dataset.value === 'doble' ? 'doble' : 'simple';
+          const size = sizeSelect.dataset.value;
+          if (availableSizes(type).includes(size)) positionSizeRail(type, size);
+        },
+        deactivate() {
+          railItems.forEach(item => {
+            item.button.dataset.sizePosition = 'hidden';
+            item.button.tabIndex = -1;
+            item.button.setAttribute('aria-hidden', 'true');
+          });
+        },
+        step(step) {
+          const type = typeSelect.dataset.value === 'doble' ? 'doble' : 'simple';
+          const sizes = availableSizes(type);
+          const current = Math.max(0, sizes.indexOf(sizeSelect.dataset.value));
+          selectCupSize(sizes[(current + step + sizes.length) % sizes.length]);
+        },
+        preview(progress) {
+          const amount = Math.abs(progress);
+          const advancing = progress < 0;
+          const targetPosition = advancing ? 'next' : 'previous';
+          const oppositePosition = advancing ? 'previous' : 'next';
+          const centerX = -50 + progress * 24;
+          const centerZ = 150 - amount * 310;
+          figure.style.transform = `translate(${centerX}%, -48%) translateZ(${centerZ}px) rotateY(${progress * 16}deg) scale(${1 - amount * .14})`;
+          figure.style.opacity = String(1 - amount * .28);
+          railItems.forEach(item => {
+            const position = item.button.dataset.sizePosition;
+            if (position === targetPosition) {
+              const startX = advancing ? -8 : -92;
+              const x = startX + ((-50 - startX) * amount);
+              const startRotate = advancing ? -18 : 18;
+              item.button.style.transform = `translate(${x}%, -50%) translateZ(${-220 + amount * 370}px) rotateY(${startRotate * (1 - amount)}deg) scale(${.78 + amount * .22})`;
+              item.button.style.opacity = String(.46 + amount * .5);
+              item.button.style.filter = `saturate(${.72 + amount * .28}) brightness(${.76 + amount * .24}) blur(${1 - amount}px)`;
+              item.button.style.zIndex = '4';
+              const normalization = item.orbitNormalization + (1 - item.orbitNormalization) * amount;
+              item.image.style.setProperty('--cup-orbit-normalize', normalization.toFixed(4));
+            } else if (position === oppositePosition) {
+              const startX = advancing ? -92 : -8;
+              const x = startX + (advancing ? -26 : 26) * amount;
+              item.button.style.transform = `translate(${x}%, -50%) translateZ(${-220 - amount * 180}px) rotateY(${advancing ? 18 : -18}deg) scale(${.78 - amount * .12})`;
+              item.button.style.opacity = String(.46 * (1 - amount * .72));
+            }
+          });
+        },
+        clearPreview() {
+          figure.style.removeProperty('transform');
+          figure.style.removeProperty('opacity');
+          railItems.forEach(item => {
+            item.button.style.removeProperty('transform');
+            item.button.style.removeProperty('opacity');
+            item.button.style.removeProperty('filter');
+            item.button.style.removeProperty('z-index');
+            item.image.style.setProperty('--cup-orbit-normalize', String(item.orbitNormalization || 1));
+          });
+        },
+      };
+
+      function updateCupVisual() {
+        const type = typeSelect.dataset.value === 'doble' ? 'doble' : 'simple';
+        const selectedSize = sizeSelect.dataset.value;
+        const size = selectedSize?.endsWith('oz') ? selectedSize : 'all';
+        const variant = cupImages[type][size];
+        const selection = `${typeSelect.querySelector('.custom-select-trigger').textContent}, ${sizeSelect.querySelector('.custom-select-trigger').textContent}`;
+        const dimensions = cupDimensions[type]?.[size];
+        const dimensionLabel = dimensions ? `, Ø ${formatDimension(dimensions.diameter)} mm, ${formatDimension(dimensions.height)} mm` : '';
+        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}${dimensionLabel}`);
+        const request = ++requestedImage;
+        if (size !== 'all' && variant && active === index) {
+          enterNestedCarousel(sizeCarouselController);
+          positionSizeRail(type, size);
+        } else if (nestedCarousel === sizeCarouselController) {
+          leaveNestedCarousel();
+          counter.textContent = `${String(active + 1).padStart(2, '0')} / ${String(cards.length).padStart(2, '0')}`;
+        }
+        // Unmocked sizes remain selectable without swapping the displayed product.
+        if (!variant) { showCupDimensions(type, size, null); return; }
+        if (carousel.classList.contains('is-drag-commit')) {
+          const inactive = currentImage === image ? nextImage : image;
+          inactive.classList.remove('is-current', 'is-exiting');
+          currentImage.src = variant.src;
+          currentImage.alt = variant.brand ? selection + ' · ' + variant.brand : selection;
+          currentImage.style.setProperty('--cup-display-scale', variant.scale);
+          currentImage.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+          currentImage.classList.remove('is-exiting');
+          currentImage.classList.add('is-current');
+          showCupDimensions(type, size, variant);
+          return;
+        }
+        if (currentImage.getAttribute('src') === variant.src) { showCupDimensions(type, size, variant); return; }
+        showCupDimensions(type, size, null);
+
+        const preload = new Image();
+        preload.onload = () => {
+          if (request !== requestedImage) return;
+          const incoming = currentImage === image ? nextImage : image;
+          incoming.classList.remove('is-current', 'is-exiting');
+          incoming.src = variant.src;
+          incoming.alt = variant.brand ? selection + ' · ' + variant.brand : selection;
+          incoming.style.setProperty('--cup-display-scale', variant.scale);
+          incoming.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+          void incoming.offsetWidth;
+          currentImage.classList.remove('is-current');
+          currentImage.classList.add('is-exiting');
+          incoming.classList.add('is-current');
+          currentImage = incoming;
+          showCupDimensions(type, size, variant);
+        };
+        preload.src = variant.src;
+      }
+
+      panel.addEventListener('custom-select-change', () => queueMicrotask(updateCupVisual));
+      measurementRefreshers.push(() => {
+        const type = typeSelect.dataset.value === 'doble' ? 'doble' : 'simple';
+        const selectedSize = sizeSelect.dataset.value;
+        const size = selectedSize?.endsWith('oz') ? selectedSize : 'all';
+        const variant = cupImages[type][size];
+        if (cupDimensions[type]?.[size] && variant) applyMeasurementLayout(figure, measures, variant, 2 / 3);
+      });
+      visualResetters[index] = () => {
+        const allSizesLabel = isEnglish ? 'All' : 'Todos';
+        setVisualSelectValue(typeSelect, 'simple');
+        typeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
+        setVisualSelectValue(sizeSelect, allSizesLabel);
+        sizeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
+      };
+      image.style.setProperty('--cup-display-scale', '1');
+      queueMicrotask(updateCupVisual);
+    } else if (isLidCard) {
+      const typeSelect = panel.querySelector('[data-lid-type]');
+      const sizeSelect = panel.querySelector('[data-lid-size]');
+      const nextImage = document.createElement('img');
+      nextImage.className = 'showroom-cup-image';
+      nextImage.draggable = false;
+      nextImage.alt = '';
+      figure.append(nextImage);
+      const measures = document.createElement('span');
+      measures.className = 'showroom-cup-measures showroom-lid-measures';
+      measures.setAttribute('aria-hidden', 'true');
+      measures.innerHTML = '<span class="cup-measure cup-measure-diameter"><span class="cup-measure-value"></span></span>';
+      figure.append(measures);
+      const lidDimensions = {
+        '6 oz': { diameter: '70,5' },
+        '8 oz': { diameter: '78,12' },
+        '12 oz': { diameter: '83,8' },
+        '16 oz': { diameter: '89,4' },
+        '21 oz': { diameter: '89,65' },
+        '24 oz': { diameter: '91,5' },
+      };
+      const spoutBounds = { left: 12.6, right: 12.4, top: 17.7, bottom: 17.1 };
+      const travelerBounds = { left: 9.6, right: 9.2, top: 18.2, bottom: 11.4 };
+      const lidImages = {
+        pico: {
+          all: { src: image.getAttribute('src'), scale: '1' },
+          '6 oz': { src: 'catalogo-source/assets/showroom/lid-spout-6oz-v1.png', scale: '.716', measureBounds: spoutBounds, imageAspect: 1 },
+          '8 oz': { src: 'catalogo-source/assets/showroom/lid-spout-8oz-v1.png', scale: '.794', measureBounds: spoutBounds, imageAspect: 1 },
+          '12 oz': { src: 'catalogo-source/assets/showroom/lid-spout-12oz-v1.png', scale: '.852', measureBounds: spoutBounds, imageAspect: 1 },
+          '16 oz': { src: 'catalogo-source/assets/showroom/lid-spout-16oz-v1.png', scale: '.909', measureBounds: spoutBounds, imageAspect: 1 },
+          '21 oz': { src: 'catalogo-source/assets/showroom/lid-spout-21oz-v1.png', scale: '.912', measureBounds: spoutBounds, imageAspect: 1 },
+          '24 oz': { src: 'catalogo-source/assets/showroom/lid-spout-24oz-v1.png', scale: '.93', measureBounds: spoutBounds, imageAspect: 1 },
+        },
+        viajera: {
+          all: { src: 'catalogo-source/assets/showroom/lids-traveler-all-v1.png', scale: '1' },
+          '8 oz': { src: 'catalogo-source/assets/showroom/lid-traveler-8oz-v1.png', scale: '.734', measureBounds: travelerBounds, imageAspect: 1 },
+          '12 oz': { src: 'catalogo-source/assets/showroom/lid-traveler-12oz-v1.png', scale: '.787', measureBounds: travelerBounds, imageAspect: 1 },
+          '16 oz': { src: 'catalogo-source/assets/showroom/lid-traveler-16oz-v1.png', scale: '.840', measureBounds: travelerBounds, imageAspect: 1 },
+        },
+      };
+      let currentImage = image;
+      let requestedImage = 0;
+      const diameterValue = measures.querySelector('.cup-measure-value');
+
+      function showLidDimension(size, variant) {
+        const dimensions = lidDimensions[size];
+        figure.classList.toggle('has-cup-measures', Boolean(dimensions && variant));
+        if (!dimensions || !variant) return;
+        diameterValue.textContent = `Ø ${formatDimension(dimensions.diameter)} mm`;
+        applyMeasurementLayout(figure, measures, variant, 1);
+      }
+
+      function updateLidVisual() {
+        const type = typeSelect.dataset.value || 'pico';
+        const selectedSize = sizeSelect.dataset.value;
+        const size = selectedSize?.endsWith('oz') ? selectedSize : 'all';
+        const variant = lidImages[type]?.[size] || lidImages[type]?.all || lidImages.pico.all;
+        const selection = `${typeSelect.querySelector('.custom-select-trigger').textContent}, ${sizeSelect.querySelector('.custom-select-trigger').textContent}`;
+        const dimensions = lidDimensions[size];
+        const dimensionLabel = dimensions ? `, Ø ${formatDimension(dimensions.diameter)} mm` : '';
+        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}${dimensionLabel}`);
+        const request = ++requestedImage;
+        if (currentImage.getAttribute('src') === variant.src) { showLidDimension(size, variant); return; }
+        showLidDimension(size, null);
+        const preload = new Image();
+        preload.onload = () => {
+          if (request !== requestedImage) return;
+          const incoming = currentImage === image ? nextImage : image;
+          incoming.classList.remove('is-current', 'is-exiting');
+          incoming.src = variant.src;
+          incoming.alt = variant.brand ? selection + ' · ' + variant.brand : selection;
+          incoming.style.setProperty('--cup-display-scale', variant.scale);
+          void incoming.offsetWidth;
+          currentImage.classList.remove('is-current');
+          currentImage.classList.add('is-exiting');
+          incoming.classList.add('is-current');
+          currentImage = incoming;
+          showLidDimension(size, variant);
+        };
+        preload.src = variant.src;
+      }
+
+      panel.addEventListener('custom-select-change', () => queueMicrotask(updateLidVisual));
+      measurementRefreshers.push(() => {
+        const type = typeSelect.dataset.value || 'pico';
+        const selectedSize = sizeSelect.dataset.value;
+        const size = selectedSize?.endsWith('oz') ? selectedSize : 'all';
+        const variant = lidImages[type]?.[size];
+        if (lidDimensions[size] && variant) applyMeasurementLayout(figure, measures, variant, 1);
+      });
+      visualResetters[index] = () => {
+        setVisualSelectValue(typeSelect, 'pico');
+        typeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
+      };
+      image.style.setProperty('--cup-display-scale', '1');
+      queueMicrotask(updateLidVisual);
+    } else if (isTrayCard) {
+      const sizeSelect = panel.querySelector('[data-tray-size]');
+      const nextImage = document.createElement('img');
+      nextImage.className = 'showroom-cup-image';
+      nextImage.draggable = false;
+      nextImage.alt = '';
+      figure.append(nextImage);
+      const measures = document.createElement('span');
+      measures.className = 'showroom-cup-measures showroom-tray-measures';
+      measures.setAttribute('aria-hidden', 'true');
+      measures.innerHTML = '<span class="cup-measure cup-measure-diameter"><span class="cup-measure-value"></span></span><span class="cup-measure cup-measure-height"><span class="cup-measure-value"></span></span>';
+      figure.append(measures);
+      const trayDimensions = {
+        '13.6x14.6': { width: '13.6', depth: '14.6' },
+        '18.5x15.5': { width: '18.5', depth: '15.5' },
+        '22.5x19.5': { width: '22.5', depth: '19.5' },
+      };
+      const trayImages = {
+        all: { src: image.getAttribute('src'), scale: '1' },
+        '13.6x14.6': { src: 'catalogo-source/assets/showroom/tray-13.6x14.6-v1.png', scale: '.651', imageAspect: 1, measureBounds: { left: 9.9, right: 3.6, top: 16.7, bottom: 9.2 } },
+        '18.5x15.5': { src: 'catalogo-source/assets/showroom/tray-18.5x15.5-v1.png', scale: '.754', imageAspect: 1, measureBounds: { left: 5.1, right: 4.5, top: 16.9, bottom: 11.7 } },
+        '22.5x19.5': { src: 'catalogo-source/assets/showroom/tray-22.5x19.5-v1.png', scale: '.93', imageAspect: 1, measureBounds: { left: 5.1, right: 4.5, top: 16.9, bottom: 11.7 } },
+      };
+      let currentImage = image;
+      let requestedImage = 0;
+      const widthValue = measures.querySelector('.cup-measure-diameter .cup-measure-value');
+      const depthValue = measures.querySelector('.cup-measure-height .cup-measure-value');
+      const localizedNumber = value => isEnglish ? value : value.replace('.', ',');
+      const traySizeKey = () => {
+        const value = sizeSelect.dataset.value || '';
+        return value === 'Todos' || value === 'All' ? 'all' : value.replaceAll(',', '.').replaceAll(' ', '');
+      };
+
+      function showTrayDimensions(size, variant) {
+        const dimensions = trayDimensions[size];
+        figure.classList.toggle('has-cup-measures', Boolean(dimensions && variant));
+        if (!dimensions || !variant) return;
+        widthValue.textContent = `${localizedNumber(dimensions.width)} cm`;
+        depthValue.textContent = `${localizedNumber(dimensions.depth)} cm`;
+        applyMeasurementLayout(figure, measures, variant, 1);
+      }
+
+      function updateTrayVisual() {
+        const size = traySizeKey();
+        const variant = trayImages[size] || trayImages.all;
+        const selection = sizeSelect.querySelector('.custom-select-trigger').textContent;
+        const dimensions = trayDimensions[size];
+        const dimensionLabel = dimensions ? `, ${localizedNumber(dimensions.width)} × ${localizedNumber(dimensions.depth)} cm` : '';
+        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}${dimensionLabel}`);
+        const request = ++requestedImage;
+        if (currentImage.getAttribute('src') === variant.src) { showTrayDimensions(size, variant); return; }
+        showTrayDimensions(size, null);
+        const preload = new Image();
+        preload.onload = () => {
+          if (request !== requestedImage) return;
+          const incoming = currentImage === image ? nextImage : image;
+          incoming.classList.remove('is-current', 'is-exiting');
+          incoming.src = variant.src;
+          incoming.alt = variant.brand ? selection + ' · ' + variant.brand : selection;
+          incoming.style.setProperty('--cup-display-scale', variant.scale);
+          void incoming.offsetWidth;
+          currentImage.classList.remove('is-current');
+          currentImage.classList.add('is-exiting');
+          incoming.classList.add('is-current');
+          currentImage = incoming;
+          showTrayDimensions(size, variant);
+        };
+        preload.src = variant.src;
+      }
+
+      panel.addEventListener('custom-select-change', () => queueMicrotask(updateTrayVisual));
+      measurementRefreshers.push(() => {
+        const size = traySizeKey();
+        const variant = trayImages[size];
+        if (trayDimensions[size] && variant) applyMeasurementLayout(figure, measures, variant, 1);
+      });
+      visualResetters[index] = () => {
+        setVisualSelectValue(sizeSelect, isEnglish ? 'All' : 'Todos');
+        sizeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
+      };
+      image.style.setProperty('--cup-display-scale', '1');
+      queueMicrotask(updateTrayVisual);
+    } else if (isBowlCard) {
+      const sizeSelect = panel.querySelector('[data-bowl-size]');
+      const nextImage = document.createElement('img');
+      nextImage.className = 'showroom-cup-image';
+      nextImage.draggable = false;
+      nextImage.alt = '';
+      figure.dataset.cupVisual = '';
+      image.classList.add('showroom-cup-image', 'is-current');
+      figure.append(nextImage);
+      const measures = document.createElement('span');
+      measures.className = 'showroom-cup-measures';
+      measures.setAttribute('aria-hidden', 'true');
+      measures.innerHTML = '<span class="cup-measure cup-measure-diameter"><span class="cup-measure-value"></span></span><span class="cup-measure cup-measure-height"><span class="cup-measure-value"></span></span>';
+      figure.append(measures);
+      const dimensionSource = document.createElement('p');
+      dimensionSource.className = 'showroom-dimension-source';
+      dimensionSource.hidden = true;
+      panel.querySelector('.product-fields').after(dimensionSource);
+
+      // Boca superior (A) y altura (B), en mm, de las fichas técnicas provistas.
+      const bowlDimensions = {"20 oz":{"diameter":"149","height":"78","approximate":true},"3 oz":{"diameter":"70,4","height":"40"},"5 oz":{"diameter":"71,6","height":"46"},"8 oz":{"diameter":"97,01","height":"54"}};
+      const diameterValue = measures.querySelector('.cup-measure-diameter .cup-measure-value');
+      const heightValue = measures.querySelector('.cup-measure-height .cup-measure-value');
+
+      function showBowlDimensions(size, variant) {
+        const dimensions = bowlDimensions[size];
+        figure.classList.toggle('has-cup-measures', Boolean(dimensions && variant));
+        dimensionSource.hidden = !dimensions?.approximate;
+        if (dimensions?.approximate) dimensionSource.textContent = isPortuguese
+          ? 'Medidas aproximadas do mockup; ficha técnica de 20 oz pendente.'
+          : isEnglish
+            ? 'Approximate mockup dimensions; 20 oz technical sheet pending.'
+            : 'Medidas aproximadas del mockup; ficha técnica de 20 oz pendiente.';
+        if (!dimensions || !variant) return;
+        const approximateMark = dimensions.approximate ? '≈ ' : '';
+        diameterValue.textContent = `${approximateMark}Ø ${formatDimension(dimensions.diameter)} mm`;
+        heightValue.textContent = `${approximateMark}${formatDimension(dimensions.height)} mm`;
+        applyMeasurementLayout(figure, measures, variant, 3 / 2);
+      }
+
+      const bowlImages = {all:{ src: image.getAttribute('src'), scale: '.7' },"3 oz":{"src":"catalogo-source/showroom/pot-3oz.webp","scale":".483","imageAspect":1.5,"measureBounds":{"left":16.341145833333336,"right":16.536458333333336,"top":6.93359375,"bottom":8.88671875},"brand":"The Best Açaí · tropical"},"5 oz":{"src":"catalogo-source/showroom/pot-5oz.webp","scale":".483","imageAspect":1.5,"measureBounds":{"left":19.075520833333336,"right":19.010416666666664,"top":6.93359375,"bottom":9.27734375},"brand":"Amandau"},"8 oz":{"src":"catalogo-source/showroom/pot-8oz.webp","scale":".574","imageAspect":1.5,"measureBounds":{"left":15.8203125,"right":15.885416666666666,"top":7.12890625,"bottom":9.1796875},"brand":"The Best Açaí · color"},"20 oz":{"src":"catalogo-source/showroom/pot-20oz.webp","scale":".658","imageAspect":1.5,"measureBounds":{"left":14.192708333333334,"right":14.127604166666666,"top":6.25,"bottom":9.08203125},"brand":"The Best Açaí"}};
+      let currentImage = image;
+      let requestedImage = 0;
+
+      const bowlSizes = Object.keys(bowlImages).filter(size => size !== 'all');
+      let bowlRailItems = [];
+
+      function selectBowlSize(size) {
+        setVisualSelectValue(sizeSelect, size);
+        sizeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
+      }
+
+      function buildBowlRail() {
+        if (bowlRailItems.length) return;
+        bowlRailItems = bowlSizes.map(size => {
+          const variant = bowlImages[size];
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'showroom-size-product';
+          button.dataset.size = size;
+          button.setAttribute('aria-label', `${copy.explore} ${names[index]} ${size}`);
+          const railImage = document.createElement('img');
+          railImage.src = variant.src;
+          railImage.alt = '';
+          railImage.draggable = false;
+          railImage.style.setProperty('--cup-display-scale', variant.scale);
+          railImage.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+          button.append(railImage);
+          button.addEventListener('click', () => selectBowlSize(size));
+          art.append(button);
+          return { button, image: railImage, size };
+        });
+      }
+
+      function positionBowlRail(size) {
+        buildBowlRail();
+        const selectedIndex = bowlSizes.indexOf(size);
+        const selectedScale = Number(bowlImages[size].scale) || 1;
+        bowlRailItems.forEach(item => {
+          const itemScale = Number(bowlImages[item.size].scale) || 1;
+          const normalization = Math.pow(selectedScale / itemScale, .75);
+          item.orbitNormalization = normalization;
+          item.image.style.setProperty('--cup-orbit-normalize', normalization.toFixed(4));
+          let offset = bowlSizes.indexOf(item.size) - selectedIndex;
+          if (offset > bowlSizes.length / 2) offset -= bowlSizes.length;
+          if (offset < -bowlSizes.length / 2) offset += bowlSizes.length;
+          const position = offset === 0 ? 'selected' : offset === -1 ? 'previous' : offset === 1 ? 'next' : 'hidden';
+          item.button.dataset.sizePosition = position;
+          item.button.tabIndex = Math.abs(offset) === 1 ? 0 : -1;
+          item.button.setAttribute('aria-hidden', String(Math.abs(offset) > 1 || offset === 0));
+        });
+        counter.textContent = `${String(selectedIndex + 1).padStart(2, '0')} / ${String(bowlSizes.length).padStart(2, '0')}`;
+      }
+
+      const bowlCarouselController = {
+        activate() {
+          const size = sizeSelect.dataset.value;
+          if (bowlSizes.includes(size)) positionBowlRail(size);
+        },
+        deactivate() {
+          bowlRailItems.forEach(item => {
+            item.button.dataset.sizePosition = 'hidden';
+            item.button.tabIndex = -1;
+            item.button.setAttribute('aria-hidden', 'true');
+          });
+        },
+        step(step) {
+          const current = Math.max(0, bowlSizes.indexOf(sizeSelect.dataset.value));
+          selectBowlSize(bowlSizes[(current + step + bowlSizes.length) % bowlSizes.length]);
+        },
+        preview(progress) {
+          const amount = Math.abs(progress);
+          const advancing = progress < 0;
+          const targetPosition = advancing ? 'next' : 'previous';
+          const oppositePosition = advancing ? 'previous' : 'next';
+          const centerX = -50 + progress * 24;
+          const centerZ = 150 - amount * 310;
+          figure.style.transform = `translate(${centerX}%, -48%) translateZ(${centerZ}px) rotateY(${progress * 16}deg) scale(${1 - amount * .14})`;
+          figure.style.opacity = String(1 - amount * .28);
+          bowlRailItems.forEach(item => {
+            const position = item.button.dataset.sizePosition;
+            if (position === targetPosition) {
+              const startX = advancing ? -8 : -92;
+              const x = startX + ((-50 - startX) * amount);
+              const startRotate = advancing ? -18 : 18;
+              item.button.style.transform = `translate(${x}%, -50%) translateZ(${-220 + amount * 370}px) rotateY(${startRotate * (1 - amount)}deg) scale(${.78 + amount * .22})`;
+              item.button.style.opacity = String(.46 + amount * .5);
+              item.button.style.filter = `saturate(${.72 + amount * .28}) brightness(${.76 + amount * .24}) blur(${1 - amount}px)`;
+              item.button.style.zIndex = '4';
+              const normalization = item.orbitNormalization + (1 - item.orbitNormalization) * amount;
+              item.image.style.setProperty('--cup-orbit-normalize', normalization.toFixed(4));
+            } else if (position === oppositePosition) {
+              const startX = advancing ? -92 : -8;
+              const x = startX + (advancing ? -26 : 26) * amount;
+              item.button.style.transform = `translate(${x}%, -50%) translateZ(${-220 - amount * 180}px) rotateY(${advancing ? 18 : -18}deg) scale(${.78 - amount * .12})`;
+              item.button.style.opacity = String(.46 * (1 - amount * .72));
+            }
+          });
+        },
+        clearPreview() {
+          figure.style.removeProperty('transform');
+          figure.style.removeProperty('opacity');
+          bowlRailItems.forEach(item => {
+            item.button.style.removeProperty('transform');
+            item.button.style.removeProperty('opacity');
+            item.button.style.removeProperty('filter');
+            item.button.style.removeProperty('z-index');
+            item.image.style.setProperty('--cup-orbit-normalize', String(item.orbitNormalization || 1));
+          });
+        },
+      };
+
+      function updateBowlVisual() {
+        const selectedSize = sizeSelect.dataset.value;
+        const size = selectedSize === 'Todos' || selectedSize === 'All' ? 'all' : selectedSize;
+        const variant = bowlImages[size];
+        const selection = sizeSelect.querySelector('.custom-select-trigger').textContent;
+        const dimensions = bowlDimensions[size];
+        const dimensionLabel = dimensions ? `, Ø ${formatDimension(dimensions.diameter)} mm, ${formatDimension(dimensions.height)} mm` : '';
+        figure.setAttribute('aria-label', `${copy.explore} ${names[index]}: ${selection}${dimensionLabel}`);
+        const request = ++requestedImage;
+        if (size !== 'all' && variant && active === index) {
+          enterNestedCarousel(bowlCarouselController);
+          positionBowlRail(size);
+        } else if (nestedCarousel === bowlCarouselController) {
+          leaveNestedCarousel();
+          counter.textContent = `${String(active + 1).padStart(2, '0')} / ${String(cards.length).padStart(2, '0')}`;
+        }
+        if (!variant) { showBowlDimensions(size, null); return; }
+        if (carousel.classList.contains('is-drag-commit')) {
+          const inactive = currentImage === image ? nextImage : image;
+          inactive.classList.remove('is-current', 'is-exiting');
+          currentImage.src = variant.src;
+          currentImage.alt = variant.brand ? selection + ' · ' + variant.brand : selection;
+          currentImage.style.setProperty('--cup-display-scale', variant.scale);
+          currentImage.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+          currentImage.classList.remove('is-exiting');
+          currentImage.classList.add('is-current');
+          showBowlDimensions(size, variant);
+          return;
+        }
+        if (currentImage.getAttribute('src') === variant.src) { showBowlDimensions(size, variant); return; }
+        showBowlDimensions(size, null);
+
+        const preload = new Image();
+        preload.onload = () => {
+          if (request !== requestedImage) return;
+          const incoming = currentImage === image ? nextImage : image;
+          incoming.classList.remove('is-current', 'is-exiting');
+          incoming.src = variant.src;
+          incoming.alt = variant.brand ? selection + ' · ' + variant.brand : selection;
+          incoming.style.setProperty('--cup-display-scale', variant.scale);
+          incoming.style.setProperty('--cup-display-width-scale', variant.widthScale || '1');
+          void incoming.offsetWidth;
+          currentImage.classList.remove('is-current');
+          currentImage.classList.add('is-exiting');
+          incoming.classList.add('is-current');
+          currentImage = incoming;
+          showBowlDimensions(size, variant);
+        };
+        preload.src = variant.src;
+      }
+
+      panel.addEventListener('custom-select-change', () => queueMicrotask(updateBowlVisual));
+      measurementRefreshers.push(() => {
+        const selectedSize = sizeSelect.dataset.value;
+        const size = selectedSize === 'Todos' || selectedSize === 'All' ? 'all' : selectedSize;
+        const variant = bowlImages[size];
+        if (bowlDimensions[size] && variant) applyMeasurementLayout(figure, measures, variant, 3 / 2);
+      });
+      visualResetters[index] = () => {
+        setVisualSelectValue(sizeSelect, isEnglish ? 'All' : 'Todos');
+        sizeSelect.dispatchEvent(new CustomEvent('custom-select-change', { bubbles: true }));
+      };
+      image.style.setProperty('--cup-display-scale', '1');
+      queueMicrotask(updateBowlVisual);
+    }
+    const link = document.createElement('a');
+    link.className = 'button showroom-consult';
+    link.textContent = copy.inquire;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    function updateLink() {
+      const selection = [...panel.querySelectorAll('.product-fields label')].map(label => {
+        const title = label.firstChild.textContent.trim();
+        const value = label.querySelector('.custom-select-trigger, .product-static-select')?.textContent.trim();
+        return `${title}: ${value || '-'}`;
+      });
+      const intro = copy.inquireIntro(names[index]);
+      link.href = `https://wa.me/595971350619?text=${encodeURIComponent([intro, ...selection].join('\n'))}`;
+    }
+    panel.addEventListener('custom-select-change', updateLink);
+    link.addEventListener('click', updateLink);
+    // Size menus are initialized by main.js later in this same task.
+    queueMicrotask(updateLink);
+    panel.append(link);
+    details.append(panel);
+    panels.push(panel);
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.id = `showroom-tab-${index}`;
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-controls', panel.id);
+    tab.append(document.createTextNode(names[index]));
+    tab.addEventListener('click', () => show(index));
+    tab.addEventListener('keydown', event => {
+      let target;
+      if (event.key === 'ArrowRight') target = (index + 1) % cards.length;
+      if (event.key === 'ArrowLeft') target = (index - 1 + cards.length) % cards.length;
+      if (event.key === 'Home') target = 0;
+      if (event.key === 'End') target = cards.length - 1;
+      if (target === undefined) return;
+      event.preventDefault(); show(target); tabs[target].focus();
+    });
+    tabs.push(tab); tablist.append(tab);
+  });
+  window.addEventListener('resize', () => measurementRefreshers.forEach(refresh => refresh()), { passive: true });
+  function show(index) {
+    const previousActive = active;
+    const nextActive = (index + cards.length) % cards.length;
+    if (nextActive !== active) {
+      leaveNestedCarousel();
+      visualResetters.forEach(reset => reset?.());
+    }
+    active = nextActive;
+    counter.textContent = `${String(active + 1).padStart(2, '0')} / ${String(cards.length).padStart(2, '0')}`;
+    images.forEach((image, i) => {
+      let offset = (i - active + cards.length) % cards.length;
+      if (offset > cards.length / 2) offset -= cards.length;
+      image.dataset.position = offset === 0 ? 'active' : offset === -1 ? 'previous' : offset === 1 ? 'next' : 'hidden';
+      image.tabIndex = Math.abs(offset) === 1 ? 0 : -1;
+      image.setAttribute('aria-hidden', String(Math.abs(offset) > 1));
+      panels[i].hidden = i !== active;
+      tabs[i].setAttribute('aria-selected', String(i === active));
+      tabs[i].tabIndex = i === active ? 0 : -1;
+    });
+    carousel.querySelectorAll('.custom-select.is-open').forEach(select => {
+      select.classList.remove('is-open');
+      select.querySelector('button').setAttribute('aria-expanded', 'false');
+    });
+    if (active !== previousActive) window.NiuMotion?.productChange(panels[active]);
+  }
+  carousel.querySelectorAll('[data-step]').forEach(button => button.addEventListener('click', () => navigateStage(Number(button.dataset.step))));
+  let start = null;
+  let settlingFrame = 0;
+  function relativeOffset(index) {
+    let offset = (index - active + cards.length) % cards.length;
+    if (offset > cards.length / 2) offset -= cards.length;
+    return offset;
+  }
+  function clearDragStyles() {
+    carousel.classList.remove('is-dragging');
+    requestAnimationFrame(() => {
+      nestedCarousel?.clearPreview?.();
+      images.forEach(image => {
+        image.style.removeProperty('transform');
+        image.style.removeProperty('opacity');
+      });
+    });
+  }
+  function previewDrag(dx) {
+    const travel = Math.max(240, stage.getBoundingClientRect().width * .42);
+    const progress = Math.max(-1, Math.min(1, dx / travel));
+    const amount = Math.abs(progress);
+    if (nestedCarousel) {
+      nestedCarousel.preview(progress);
+      return { progress, travel };
+    }
+    images.forEach((image, index) => {
+      const offset = relativeOffset(index);
+      let x;
+      let z;
+      let rotate;
+      let scale;
+      let opacity;
+      if (offset === 0) {
+        x = progress < 0 ? -50 - 62 * amount : -50 + 62 * amount;
+        z = 60 - 360 * amount;
+        rotate = progress < 0 ? -32 * amount : 32 * amount;
+        scale = 1 - .32 * amount;
+        opacity = 1 - .42 * amount;
+      } else if (progress < 0 && offset === 1) {
+        x = 12 - 62 * amount;
+        z = -300 + 360 * amount;
+        rotate = -32 * (1 - amount);
+        scale = .68 + .32 * amount;
+        opacity = .58 + .42 * amount;
+      } else if (progress > 0 && offset === -1) {
+        x = -112 + 62 * amount;
+        z = -300 + 360 * amount;
+        rotate = 32 * (1 - amount);
+        scale = .68 + .32 * amount;
+        opacity = .58 + .42 * amount;
+      } else {
+        image.style.removeProperty('transform');
+        image.style.removeProperty('opacity');
+        return;
+      }
+      image.style.transform = `translate(${x}%, ${-48 - 3 * amount}%) translateZ(${z}px) rotateY(${rotate}deg) scale(${scale})`;
+      image.style.opacity = String(opacity);
+    });
+    return { progress, travel };
+  }
+  function resetDrag() {
+    clearDragStyles();
+  }
+  function settleNestedDrag(fromProgress, targetProgress, step = 0) {
+    const duration = targetProgress === 0 ? 220 : 280;
+    const startedAt = performance.now();
+    const animate = now => {
+      const elapsed = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - elapsed, 3);
+      const progress = fromProgress + (targetProgress - fromProgress) * eased;
+      nestedCarousel?.preview(progress);
+      if (elapsed < 1) {
+        settlingFrame = requestAnimationFrame(animate);
+        return;
+      }
+      settlingFrame = 0;
+      if (step) {
+        carousel.classList.add('is-drag-commit');
+        navigateStage(step);
+      }
+      nestedCarousel?.clearPreview?.();
+      images.forEach(image => {
+        image.style.removeProperty('transform');
+        image.style.removeProperty('opacity');
+      });
+      requestAnimationFrame(() => {
+        void carousel.offsetWidth;
+        carousel.classList.remove('is-dragging');
+        requestAnimationFrame(() => carousel.classList.remove('is-drag-commit'));
+      });
+    };
+    settlingFrame = requestAnimationFrame(animate);
+  }
+  stage.addEventListener('pointerdown', event => {
+    if (settlingFrame || event.target.closest('.showroom-stage-controls') || event.button !== 0) return;
+    start = { x: event.clientX, y: event.clientY, index: images.indexOf(event.target.closest('.showroom-product')) };
+    carousel.classList.add('is-dragging');
+    stage.setPointerCapture(event.pointerId);
+  });
+  stage.addEventListener('pointerup', event => {
+    if (!start) return;
+    const dx = event.clientX - start.x, dy = event.clientY - start.y;
+    const clicked = start.index;
+    start = null;
+    const horizontal = Math.abs(dx) > Math.abs(dy);
+    const { progress, travel } = previewDrag(horizontal ? dx : 0);
+    const advances = horizontal && Math.abs(dx) > Math.max(45, travel * .18);
+    if (nestedCarousel) {
+      if (advances) settleNestedDrag(progress, dx < 0 ? -1 : 1, dx < 0 ? 1 : -1);
+      else {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8 && clicked >= 0) show(clicked);
+        settleNestedDrag(progress, 0);
+      }
+    } else {
+      if (advances) navigateStage(dx < 0 ? 1 : -1);
+      else if (Math.abs(dx) < 8 && Math.abs(dy) < 8 && clicked >= 0) show(clicked);
+      requestAnimationFrame(resetDrag);
+    }
+    if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId);
+  });
+  stage.addEventListener('pointercancel', () => { start = null; resetDrag(); });
+  stage.addEventListener('pointermove', event => {
+    if (start) {
+      const dx = event.clientX - start.x;
+      const dy = event.clientY - start.y;
+      previewDrag(Math.abs(dx) > Math.abs(dy) ? dx : 0);
+      return;
+    }
+    if (event.pointerType !== 'mouse' || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const box = stage.getBoundingClientRect();
+    const x = (event.clientX - box.left) / box.width - .5;
+    const y = (event.clientY - box.top) / box.height - .5;
+    art.style.setProperty('--look-x', `${x * 13}deg`);
+    art.style.setProperty('--look-y', `${-y * 9}deg`);
+    art.style.setProperty('--scene-x', `${x * 18}px`);
+    art.style.setProperty('--scene-y', `${y * 12}px`);
+    stage.style.setProperty('--spot-x', `${(x + .5) * 100}%`);
+    stage.style.setProperty('--spot-y', `${(y + .5) * 100}%`);
+  });
+  stage.addEventListener('pointerleave', () => {
+    art.style.setProperty('--look-x', '0deg');
+    art.style.setProperty('--look-y', '0deg');
+    art.style.setProperty('--scene-x', '0px');
+    art.style.setProperty('--scene-y', '0px');
+    stage.style.setProperty('--spot-x', '50%');
+    stage.style.setProperty('--spot-y', '42%');
+  });
+  carousel.addEventListener('keydown', event => {
+    const select = event.target.closest('[data-custom-select]');
+    if (!select) return;
+    const options = [...select.querySelectorAll('[role="option"]')];
+    if (event.key === 'Escape') {
+      select.classList.remove('is-open');
+      const trigger = select.querySelector('.custom-select-trigger');
+      trigger.setAttribute('aria-expanded', 'false'); trigger.focus();
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault(); select.classList.add('is-open');
+      select.querySelector('.custom-select-trigger').setAttribute('aria-expanded', 'true');
+      const current = options.indexOf(document.activeElement);
+      options[(current + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length]?.focus();
+    }
+  });
+  show(0);
+};

@@ -242,3 +242,21 @@ La validación del mapeo angular está en `band-browser-results.txt`; se guardar
 Probar con archivos reales de clientes y teléfonos físicos, especialmente Safari en iPhone y Android de gama baja. Los viewports de Chromium no certifican gestos de un dispositivo real, FPS, consumo de batería ni límites térmicos. Falta aprobación visual/comercial del usuario y cualquier integración o publicación está fuera de esta entrega.
 
 No se promete compatibilidad con SVG arbitrarios, eliminación de fondo, recuperación de detalle inexistente, colores de imprenta ni arte final industrial. Son límites explícitos del prototipo.
+
+## 2026-10-29 — Escala común y cámara sin zoom
+
+Se eliminó el ajuste de distancia por modelo. Los diez modelos conservan las cotas de sus planos y comparten cámara, punto de referencia y escala; el cambio de producto conserva el ángulo actual. La distancia inicial es la antigua referencia multiplicada por 1,14², equivalente a dos clics de alejar. Se retiraron botones, atajos y mensajes de zoom en los tres idiomas, y se desactivó el zoom de OrbitControls. La rueda sigue desplazando la página; uno o dos dedos permiten girar sin cambiar la distancia.
+
+- `npm test`: **40/40 PASS**, con regresiones de tamaño proyectado para los diez modelos en vistas de 980×600, 640×600 y 340×540. El pote de 8 oz se ve más ancho y alto que el de 5 oz; el de 5 oz más alto que el de 3 oz. Los vasos de 9, 12, 16 y 21 oz se ven progresivamente más altos.
+- `npm run build:website`: **PASS**, incluyendo TypeScript y comprobación de recursos del artefacto publicado bajo `/niupack/`.
+- Edge/WebGL: **18/18 PASS**, incluida rueda/Ctrl sin cambios de cámara y recuperación del contexto con el diseño conservado.
+- Interfaz compilada: selección de ocho modelos, giro con mouse y teclado, restablecer, frente/reverso, ausencia de botones y atajos de zoom, celular de 390×844 y traducciones ES/EN/PT: **PASS**, sin errores de página.
+- Capturas y resultados: `qa/artifacts/fixed-view-*.png` y `fixed-view-browser-results.txt` (ignorados por Git). Cambios preparados y verificados en local; no publicados.
+
+## 2026-10-29 — Ajuste final, descarga y cabecera local
+
+- Vista acercada un clic respecto de la revisión anterior (factor de distancia `1.14² × 0.88`), manteniendo cámara común y zoom bloqueado. El punto de referencia común subió a 0,72 para que entre también el vaso de 21 oz. **40/40 pruebas de Node y build público: PASS.**
+- Botón **Descargar diseño** sobre **Pedí presupuesto**, traducido en ES/EN/PT. Descarga real comprobada: PNG de 1600 px de ancho en escritorio y 1200 px en celular, con el diseño visible y nombre de archivo por modelo/papel. Se verificaron descarga repetida, recuperación tras error del encoder y deshabilitación sin diseño.
+- El logo gigante provenía del loader sin estilos: la política CSP del servidor local bloqueaba los bloques inline del sitio público. `serve.mjs` ahora autoriza sus contenidos exactos con hashes SHA-256. En ES/EN/PT se verificaron la desaparición del loader, el tamaño normal del logo y ausencia de infracciones CSP.
+- Menú móvil con tres líneas blancas, fondo transparente, sin borde ni sombra; apertura y cierre comprobados. Navegación de escritorio conservada.
+- Edge, escritorio 1440×1000 y celular 390×844: **PASS**, sin errores de página. Evidencias ignoradas por Git: `header-fixed-*.png`, `one-click-closer-*.png`, `download-footer.png` y `download-*.png` en `qa/artifacts/`.

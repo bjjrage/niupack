@@ -5,6 +5,7 @@ import type { Artwork } from './artwork.mts';
 import { CUP, DEFAULT_SURFACE, createSurfaceLayout, textureUV, type CupShape, type DesignState, type LayoutMode } from './layout.mts';
 import { composePrint } from './print.mts';
 import { createCupParts } from './cup-geometry.mts';
+import { studioView } from './view.mts';
 
 export type Paper = 'white' | 'kraft';
 export interface Studio {
@@ -12,7 +13,6 @@ export interface Studio {
   update(artwork: Artwork | null, state: DesignState, paper: Paper): void;
   resetView(): void;
   showSide(back: boolean): void;
-  zoom(factor: number): void;
   rotate(horizontal: number, vertical?: number): void;
   capture(): Promise<Blob>;
   dispose(): void;
@@ -65,26 +65,21 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
   scene.background = new THREE.Color('#eeede8');
   scene.fog = new THREE.Fog('#eeede8', 6, 15);
   const camera = new THREE.PerspectiveCamera(31, 1, 0.05, 40);
-  // Keep ordinary wheel scrolling on the page, including when over the cup.
-  // Ctrl/trackpad pinch, touch gestures and explicit zoom buttons still zoom.
+  // The wheel belongs to the page/browser, never to the product camera.
   const pageWheel = (event: WheelEvent): void => {
-    if (!event.ctrlKey && !event.metaKey) event.stopImmediatePropagation();
+    event.stopImmediatePropagation();
   };
   canvas.addEventListener('wheel', pageWheel, { capture: true, passive: true });
   const controls = new OrbitControls(camera, canvas);
   controls.target.set(0, 0.61, 0);
   controls.enablePan = false;
+  controls.enableZoom = false;
+  controls.touches.TWO = THREE.TOUCH.DOLLY_ROTATE;
   controls.enableDamping = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   controls.dampingFactor = 0.1;
   controls.rotateSpeed = 0.65;
-  controls.zoomSpeed = 0.65;
   controls.minPolarAngle = 0.55;
   controls.maxPolarAngle = Math.PI / 2 + 0.09;
-  controls.minDistance = 1.95;
-  controls.maxDistance = 5.4;
-  camera.position.set(0, 1.54, 3.35);
-  controls.update();
-  controls.saveState();
 
   function makeEnvironment() {
     const environment = new RoomEnvironment();
@@ -116,7 +111,6 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
   scene.add(floor, shadow);
 
   let surface = DEFAULT_SURFACE;
-  let viewScale = 1;
   let mappedMode: LayoutMode = 'logo';
 
   const textureCanvas = document.createElement('canvas');
@@ -152,18 +146,14 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
   let exportInProgress = false;
   let mobileLayout: boolean | null = null;
   function defaultCamera(): void {
-    const totalHeight = surface.cup.details?.fullHeight ?? surface.cup.height;
-    controls.target.set(0, 0.025 + totalHeight * (0.61 - 0.025) / CUP.height, 0);
-    controls.minDistance = 1.95 * viewScale;
-    controls.maxDistance = 5.4 * viewScale;
-    camera.position.set(0, controls.target.y + ((mobileLayout ? 1.62 : 1.54) - 0.61) * viewScale, (mobileLayout ? 3.65 : 3.35) * viewScale);
+    const view = studioView(Boolean(mobileLayout));
+    controls.target.set(...view.target);
+    camera.position.set(...view.position);
     controls.update(); controls.saveState();
   }
   function setDimensions(shape: CupShape): void {
     if (JSON.stringify(shape) === JSON.stringify(surface.cup)) return;
     const nextSurface = createSurfaceLayout(shape);
-    const oldScale = viewScale;
-    const offset = camera.position.clone().sub(controls.target);
     const nextParts = createCupParts(shape, cupMaterials);
     scene.remove(parts.group); parts.disposeGeometry();
     parts = nextParts; scene.add(parts.group);
@@ -177,10 +167,7 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
     uv.needsUpdate = true;
     const foot = shape.details?.foot ?? shape.bottom;
     shadow.scale.set(foot / CUP.bottom, foot / CUP.bottom, 1);
-    // Reframe the new size while retaining the user's current angle and zoom.
-    viewScale = Math.max(shape.details?.fullHeight ?? shape.height, (shape.details?.rimOuter ?? shape.top) * 2) / CUP.height;
-    defaultCamera();
-    camera.position.copy(controls.target).add(offset.multiplyScalar(viewScale / oldScale));
+    // Geometry changes in physical units; the camera and viewing angle stay put.
     controls.update(); invalidate();
   }
   function invalidate(): void {
@@ -266,11 +253,6 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
         controls.update();
       }
       invalidate();
-    },
-    zoom(factor) {
-      const offset = camera.position.clone().sub(controls.target);
-      offset.setLength(THREE.MathUtils.clamp(offset.length() * factor, controls.minDistance, controls.maxDistance));
-      camera.position.copy(controls.target).add(offset); controls.update(); invalidate();
     },
     rotate(horizontal, vertical = 0) {
       const offset = camera.position.clone().sub(controls.target);

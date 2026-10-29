@@ -256,9 +256,11 @@ a { color: inherit; text-decoration: none; }
   display: none;
   width: 42px;
   height: 42px;
-  border: 1px solid var(--white);
-  border-radius: var(--radius);
-  background: var(--white);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
 }
 
 .nav-toggle span {
@@ -266,7 +268,7 @@ a { color: inherit; text-decoration: none; }
   width: 18px;
   height: 2px;
   margin: 4px auto;
-  background: var(--niu-red);
+  background: var(--white);
 }
 
 .section { padding: clamp(76px, 9vw, 126px) 0; }
@@ -2415,7 +2417,7 @@ h3 {
     top: 14px;
     right: 14px;
     z-index: 80;
-    box-shadow: 0 10px 24px rgba(21, 25, 31, 0.12);
+    box-shadow: none;
   }
   .nav {
     position: fixed;

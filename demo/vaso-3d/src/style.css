@@ -120,7 +120,6 @@ h1 span { color: var(--red); }
 .view-tools button { width: 34px; height: 36px; display: grid; place-items: center; background: transparent; border: 0; border-radius: 7px; }
 .view-tools button:hover { background: #fff1f0; color: var(--brand-dark); }
 .view-tools svg { width: 18px; height: 18px; }
-.tool-divider { height: 16px; width: 1px; background: var(--line); margin: 0 3px; }
 .viewer-bottom { display: flex; align-items: center; justify-content: space-between; padding: 17px 2px; gap: 12px; flex-wrap: wrap; }
 .gesture-hint { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 10px; }
 .gesture-hint svg { width: 17px; height: 17px; }
@@ -210,6 +209,8 @@ input[type=range]::-moz-range-thumb { width: 10px; height: 10px; border-radius: 
 .secondary-button { background: white; border: 1px solid var(--line); border-radius: 9px; padding: 11px 14px; font-size: 11px; font-weight: 700; }
 .wrap-width-controls .secondary-button { width: 100%; margin-top: 5px; }
 .secondary-button:hover { border-color: var(--red); color: var(--brand-dark); }
+.download-button { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; margin-bottom: 8px; color: var(--brand-dark); }
+.download-button svg { width: 17px; height: 17px; }
 .wrap-width-controls .secondary-button.is-selected { background: #fff1f0; border-color: var(--red); color: var(--brand-dark); }
 .adjustments { margin-bottom: 16px; }
 

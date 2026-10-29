@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve, sep, extname } from 'node:path';
+import { createHash } from 'node:crypto';
 
 // Deliberately serves only the compiled demo, never the repository or OS.
 const root = fileURLToPath(new URL('./dist/', import.meta.url));
@@ -25,13 +26,21 @@ const server = createServer(async (request, response) => {
       response.writeHead(404).end('No encontrado');
       return;
     }
+    const content = await readFile(filename);
+    // The public pages contain the branded loader's own inline styles/scripts.
+    // Authorize their exact contents, so the local preview behaves like Pages
+    // without broadly permitting arbitrary inline code.
+    const html = extname(filename) === '.html' ? content.toString('utf8') : '';
+    const hashes = tag => [...html.matchAll(new RegExp(`<${tag}\\b([^>]*)>([\\s\\S]*?)<\\/${tag}>`, 'gi'))]
+      .filter(match => !/\bsrc\s*=/.test(match[1]))
+      .map(match => `'sha256-${createHash('sha256').update(match[2]).digest('base64')}'`).join(' ');
     response.writeHead(200, {
       'Content-Type': types[extname(filename)] || 'application/octet-stream',
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'no-store',
-      'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      'Content-Security-Policy': `default-src 'self'; script-src 'self' ${hashes('script')}; style-src 'self' ${hashes('style')}; img-src 'self' blob: data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
     });
-    response.end(request.method === 'HEAD' ? undefined : await readFile(filename));
+    response.end(request.method === 'HEAD' ? undefined : content);
   } catch {
     response.writeHead(404).end('No encontrado');
   }

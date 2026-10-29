@@ -388,13 +388,17 @@ document.querySelector<HTMLButtonElement>('#run')!.addEventListener('click', asy
       studio.setDimensions(CUP); studio.update(art, { ...DEFAULT_DESIGN, duplicateBack: true }, 'white'); studio.showSide(false);
     } finally { source.width = 0; texture.width = 0; }
   });
-  await check('La rueda normal permite desplazar la página; Ctrl o gesto de trackpad conserva el zoom 3D', async () => {
+  await check('La rueda y Ctrl/trackpad no cambian el tamaño del producto ni bloquean la página', async () => {
+    studio.resetView();
+    const before = new Uint8Array(await (await studio.capture()).arrayBuffer());
     const pageWheel = new WheelEvent('wheel', { deltaY: 120, bubbles: true, cancelable: true });
     canvas.dispatchEvent(pageWheel);
     assert(!pageWheel.defaultPrevented, 'El visor bloqueó el scroll normal de la página');
     const pinch = new WheelEvent('wheel', { deltaY: -25, ctrlKey: true, bubbles: true, cancelable: true });
     canvas.dispatchEvent(pinch);
-    assert(pinch.defaultPrevented, 'El gesto de zoom no llegó a los controles 3D');
+    assert(!pinch.defaultPrevented, 'El visor consumió un gesto de zoom del navegador');
+    const after = new Uint8Array(await (await studio.capture()).arrayBuffer());
+    assert(before.length === after.length && before.every((value, index) => value === after[index]), 'La rueda cambió la cámara del producto');
     studio.resetView();
   });
   await check('Pérdida y recuperación del contexto WebGL con diseño conservado', async () => {
