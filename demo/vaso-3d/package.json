@@ -19,6 +19,7 @@
     "serve": "node serve.mjs"
   },
   "dependencies": {
+    "mediabunny": "1.65.0",
     "pdfjs-dist": "6.4.299",
     "three": "0.186.1"
   },

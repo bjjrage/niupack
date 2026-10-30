@@ -38,7 +38,7 @@ const server = createServer(async (request, response) => {
       'Content-Type': types[extname(filename)] || 'application/octet-stream',
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'no-store',
-      'Content-Security-Policy': `default-src 'self'; script-src 'self' 'wasm-unsafe-eval' ${hashes('script')}; style-src 'self' ${hashes('style')}; worker-src 'self'; font-src 'self' blob: data:; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
+      'Content-Security-Policy': `default-src 'self'; script-src 'self' 'wasm-unsafe-eval' ${hashes('script')}; style-src 'self' ${hashes('style')}; worker-src 'self'; font-src 'self' blob: data:; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
     });
     response.end(request.method === 'HEAD' ? undefined : content);
   } catch {

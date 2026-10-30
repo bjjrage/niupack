@@ -16,6 +16,7 @@ export interface Studio {
   rotate(horizontal: number, vertical?: number): void;
   capture(): Promise<Blob>;
   exportModel(name?: string): Promise<Blob>;
+  exportVideo(onProgress?: (percent: number) => void): Promise<Blob>;
   dispose(): void;
 }
 
@@ -242,8 +243,9 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
       printTexture.needsUpdate = true;
       invalidate();
     },
-    resetView() { controls.reset(); invalidate(); },
+    resetView() { if (!exportInProgress) { controls.reset(); invalidate(); } },
     showSide(back) {
+      if (exportInProgress) return;
       // Reset first to clear any damping left from a drag, then choose a known
       // front/back angle. Loading a new image always returns to its front.
       controls.reset();
@@ -256,6 +258,7 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
       invalidate();
     },
     rotate(horizontal, vertical = 0) {
+      if (exportInProgress) return;
       const offset = camera.position.clone().sub(controls.target);
       const spherical = new THREE.Spherical().setFromVector3(offset);
       spherical.theta += horizontal;
@@ -301,6 +304,55 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
         return await exportCupModel(parts.group, name);
       } finally {
         exportInProgress = false; invalidate();
+      }
+    },
+    async exportVideo(onProgress = () => {}) {
+      if (contextLost || disposed) throw new Error('El visor no está disponible. Esperá a que se recupere o volvé a cargar la página.');
+      if (exportInProgress) throw new Error('Ya hay una descarga en preparación.');
+      exportInProgress = true;
+      controls.enabled = false;
+      cancelAnimationFrame(frame); frame = 0;
+      const size = renderer.getSize(new THREE.Vector2());
+      const ratio = renderer.getPixelRatio();
+      const rotation = parts.group.quaternion.clone();
+      const output = document.createElement('canvas');
+      try {
+        const { VIDEO, exportTurntable } = await import('./video-export.mts');
+        output.width = VIDEO.width; output.height = VIDEO.height;
+        const context = output.getContext('2d', { alpha: false });
+        if (!context) throw new Error('No se pudo generar el video. Intentá de nuevo.');
+        const bounds = new THREE.Box3().setFromObject(parts.group);
+        const center = bounds.getCenter(new THREE.Vector3());
+        const dimensions = bounds.getSize(new THREE.Vector3());
+        const videoCamera = new THREE.PerspectiveCamera(31, VIDEO.width / VIDEO.height, 0.05, 40);
+        const tangent = Math.tan(THREE.MathUtils.degToRad(videoCamera.fov / 2));
+        const distance = Math.max(dimensions.y / (2 * tangent), Math.max(dimensions.x, dimensions.z) / (2 * tangent * videoCamera.aspect)) * 1.35;
+        videoCamera.position.copy(center).add(new THREE.Vector3(0, distance * 0.18, distance));
+        videoCamera.lookAt(center);
+        renderer.setPixelRatio(1); renderer.setSize(VIDEO.width, VIDEO.height, false);
+        return await exportTurntable({
+          canvas: output, onProgress,
+          checkActive() {
+            if (contextLost || disposed) throw new Error('El visor no está disponible. Esperá a que se recupere o volvé a cargar la página.');
+            if (document.hidden) throw new Error('Mantené esta pestaña abierta mientras se prepara el video. Volvé a intentarlo.');
+          },
+          draw(turn) {
+            parts.group.quaternion.copy(rotation);
+            parts.group.rotateY(turn * Math.PI * 2);
+            renderer.render(scene, videoCamera);
+            context.drawImage(canvas, 0, 0);
+          },
+        });
+      } finally {
+        output.width = 0; output.height = 0;
+        output.remove();
+        parts.group.quaternion.copy(rotation);
+        if (!disposed) {
+          renderer.setPixelRatio(ratio); renderer.setSize(size.x, size.y, false);
+          controls.enabled = true;
+        }
+        exportInProgress = false;
+        if (!disposed) { resize(); invalidate(); }
       }
     },
     dispose() {

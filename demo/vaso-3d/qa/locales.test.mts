@@ -22,6 +22,9 @@ for (const [file, language, duplicate, quote] of [
     assert.match(home, /application\/pdf/);
     assert.ok(home.includes('JPG / PNG / PDF'));
     assert.match(home, /id="studio-download-model"/);
+    assert.match(home, /id="studio-download-video"/);
+    assert.match(home, /id="studio-save-video"/);
+    assert.ok(home.includes(language === 'es' ? 'Descargar video 360°' : language === 'en' ? 'Download 360° video' : 'Baixar vídeo 360°'));
     assert.ok(home.includes(language === 'es' ? 'Descargar 3D' : language === 'en' ? 'Download 3D' : 'Baixar 3D'));
     assert.ok(home.includes(language === 'es' ? 'primera página' : language === 'en' ? 'first page' : 'primeira página'));
     assert.doesNotMatch(home, /id="personalizacion"/);

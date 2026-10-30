@@ -213,6 +213,11 @@ input[type=range]::-moz-range-thumb { width: 10px; height: 10px; border-radius: 
 .download-button svg { width: 17px; height: 17px; }
 .download-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
 .download-actions .download-button { margin: 0; padding-inline: 8px; font-size: 11px; }
+.download-actions .video-download-button { grid-column: 1 / -1; font-size: 12px; }
+.video-download-help { text-align: center; font-size: 10px; line-height: 1.5; color: var(--muted); margin: 0 0 12px; }
+.video-result { margin-bottom: 12px; }
+.video-result video { display: block; width: 100%; max-height: 300px; border-radius: 10px; background: #eeede8; margin-bottom: 8px; }
+.video-result #save-video { display: flex; width: 100%; }
 .wrap-width-controls .secondary-button.is-selected { background: #fff1f0; border-color: var(--red); color: var(--brand-dark); }
 .adjustments { margin-bottom: 16px; }
 

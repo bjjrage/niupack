@@ -45,6 +45,8 @@ const stage = element('stage');
 const quoteLink = element<HTMLAnchorElement>('request-quote');
 const downloadButton = element<HTMLButtonElement>('download-design');
 const modelDownloadButton = element<HTMLButtonElement>('download-model');
+const videoDownloadButton = element<HTMLButtonElement>('download-video');
+let videoURL: string | null = null;
 const controlsFieldset = element<HTMLFieldSetElement>('design-controls');
 const input = element<HTMLInputElement>('artwork-file');
 const notice = element('upload-notice');
@@ -153,6 +155,8 @@ function updateEnabled(): void {
   const busy = loading || exporting;
   downloadButton.disabled = !studio || !artwork || lostContext || busy;
   modelDownloadButton.disabled = !studio || lostContext || busy;
+  videoDownloadButton.disabled = !studio || lostContext || busy;
+  for (const id of ['reset-view', 'view-front', 'view-back']) element<HTMLButtonElement>(id).disabled = busy;
   controlsFieldset.disabled = !artwork || busy;
   element<HTMLFieldSetElement>('application-controls').disabled = !artwork || busy;
   input.disabled = busy;
@@ -346,37 +350,51 @@ element('remove-artwork').addEventListener('click', () => {
   announce('Diseño eliminado. Podés subir otra imagen.');
 });
 element('reset-view').addEventListener('click', () => studio?.resetView());
-async function downloadDesign(format: 'png' | 'glb'): Promise<void> {
+async function downloadDesign(format: 'png' | 'glb' | 'mp4'): Promise<void> {
   if (!studio || (format === 'png' && !artwork) || lostContext || loading || exporting) return;
-  const button = format === 'png' ? downloadButton : modelDownloadButton;
-  const label = element(format === 'png' ? 'download-label' : 'download-model-label');
+  const button = format === 'mp4' ? videoDownloadButton : format === 'png' ? downloadButton : modelDownloadButton;
+  const label = element(format === 'mp4' ? 'download-video-label' : format === 'png' ? 'download-label' : 'download-model-label');
   exporting = true;
   button.setAttribute('aria-busy', 'true');
-  label.textContent = t(format === 'png' ? 'Preparando PNG…' : 'Preparando 3D…');
+  label.textContent = t(format === 'mp4' ? 'Preparando video…' : format === 'png' ? 'Preparando PNG…' : 'Preparando 3D…');
   updateEnabled();
   const filename = `niupack-${selectedModel}-${paper}.${format}`;
   try {
-    const blob = format === 'png' ? await studio.capture() : await studio.exportModel(selectedModel);
+    const blob = format === 'mp4'
+      ? await studio.exportVideo(percent => { label.textContent = `${t('Preparando video…')} ${percent}%`; })
+      : format === 'png' ? await studio.capture() : await studio.exportModel(selectedModel);
     const url = URL.createObjectURL(blob);
+    if (format === 'mp4') {
+      const previousURL = videoURL;
+      videoURL = url;
+      const preview = element<HTMLVideoElement>('video-preview');
+      preview.src = url;
+      const save = element<HTMLAnchorElement>('save-video');
+      save.href = url; save.download = filename;
+      element('video-result').hidden = false;
+      if (previousURL) URL.revokeObjectURL(previousURL);
+    }
     const link = document.createElement('a');
     link.href = url;
     link.download = filename;
     document.body.append(link);
     link.click();
     link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
-    announce(format === 'png' ? 'Tu vista 3D se descargó en PNG.' : 'Tu modelo 3D se descargó en GLB.');
+    // Keep the video URL for playback and a second, direct save gesture on iOS.
+    if (format !== 'mp4') window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    announce(format === 'mp4' ? 'Tu video 360° está listo. Podés reproducirlo o guardar el MP4.' : format === 'png' ? 'Tu vista 3D se descargó en PNG.' : 'Tu modelo 3D se descargó en GLB.');
   } catch (error) {
     showNotice(error instanceof Error ? error.message : 'No se pudo descargar el archivo. Intentá de nuevo.', 'error');
   } finally {
     exporting = false;
     button.setAttribute('aria-busy', 'false');
-    label.textContent = t(format === 'png' ? 'Descargar PNG' : 'Descargar 3D');
+    label.textContent = t(format === 'mp4' ? 'Descargar video 360°' : format === 'png' ? 'Descargar PNG' : 'Descargar 3D');
     updateEnabled();
   }
 }
 downloadButton.addEventListener('click', () => { void downloadDesign('png'); });
 modelDownloadButton.addEventListener('click', () => { void downloadDesign('glb'); });
+videoDownloadButton.addEventListener('click', () => { void downloadDesign('mp4'); });
 element('view-front').addEventListener('click', () => studio?.showSide(false));
 element('view-back').addEventListener('click', () => studio?.showSide(true));
 element('reload-viewer').addEventListener('click', () => window.location.reload());

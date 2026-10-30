@@ -1,5 +1,5 @@
 import { createStudio } from '../src/studio.mts';
-import { loadArtwork, releaseArtwork, MAX_BYTES } from '../src/artwork.mts';
+import { loadArtwork, releaseArtwork, exampleArtwork, MAX_BYTES } from '../src/artwork.mts';
 import { CUP, DEFAULT_DESIGN, WRAP, textureUV, createSurfaceLayout } from '../src/layout.mts';
 import { CATALOG, catalogModel, previewModel } from '../src/catalog.mts';
 import { composePrint } from '../src/print.mts';
@@ -19,7 +19,8 @@ async function fixture(name: string) {
   return new File([await response.blob()], name);
 }
 async function check(name: string, action: () => void | Promise<void>) {
-  if (new URLSearchParams(location.search).get('only') === 'glb' && !name.startsWith('GLB:')) return;
+  const only = new URLSearchParams(location.search).get('only');
+  if (only && !name.startsWith(only.toUpperCase() + ':')) return;
   const row = document.createElement('li');
   try { await action(); row.textContent = `PASS · ${name}`; }
   catch (error) { row.textContent = `FAIL · ${name}: ${error instanceof Error ? error.message : String(error)}`; }
@@ -507,6 +508,81 @@ document.querySelector<HTMLButtonElement>('#run')!.addEventListener('click', asy
     await new Promise((resolve) => setTimeout(resolve, 250));
     extension.restoreContext(); await until(() => !contextLost);
     await captureHasDesign();
+  });
+  await check('MP4: recupera controles y permite reintentar después de ocultar la pestaña', async () => {
+    const art = exampleArtwork();
+    studio.update(art, { ...DEFAULT_DESIGN }, 'white');
+    const hidden = Object.getOwnPropertyDescriptor(document, 'hidden');
+    let interrupted = false;
+    let rejected = false;
+    try {
+      await studio.exportVideo(percent => {
+        if (percent < 5 || interrupted) return;
+        interrupted = true;
+        Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+    } catch (error) {
+      rejected = error instanceof Error && error.message.includes('Mantené esta pestaña');
+    } finally {
+      if (hidden) Object.defineProperty(document, 'hidden', hidden);
+      else Reflect.deleteProperty(document, 'hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+    }
+    assert(interrupted && rejected, 'La exportación no se canceló al ocultar la pestaña');
+    await captureHasDesign();
+    releaseArtwork(art);
+  });
+  await check('MP4: vuelta completa H.264, diseño visible, reproducción y visor restaurado', async () => {
+    const art = exampleArtwork();
+    const shape = previewModel(CATALOG.find(model => model.id === 'cup-21oz')!)!.shape;
+    studio.setDimensions(shape);
+    studio.update(art, { ...DEFAULT_DESIGN }, 'white');
+    studio.resetView();
+    const before = new Uint8Array(await (await studio.capture()).arrayBuffer());
+    const progress: number[] = [];
+    const blob = await studio.exportVideo(percent => progress.push(percent));
+    assert(blob.type === 'video/mp4' && blob.size > 30_000, 'MP4 vacío o tipo incorrecto');
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    assert(new TextDecoder().decode(bytes.slice(4, 8)) === 'ftyp', 'No es un contenedor MP4');
+    assert(new TextDecoder('latin1').decode(bytes).includes('avc1'), 'El video no utiliza H.264');
+    assert(progress[0] === 0 && progress.at(-1)! >= 99, 'El progreso no cubre el giro completo');
+    const url = URL.createObjectURL(blob);
+    const video = document.createElement('video');
+    video.controls = true; video.playsInline = true; video.style.width = '360px';
+    video.id = 'mp4-result'; document.body.append(video);
+    await new Promise<void>((resolve, reject) => {
+      video.onloadeddata = () => resolve(); video.onerror = () => reject(new Error('No se pudo reproducir el MP4'));
+      video.src = url;
+    });
+    assert(video.videoWidth === 720 && video.videoHeight === 900, 'Resolución inesperada');
+    assert(Math.abs(video.duration - 8) < 0.8, `Duración incorrecta: ${video.duration}`);
+    const sample = document.createElement('canvas'); sample.width = 360; sample.height = 450;
+    const context = sample.getContext('2d')!;
+    const frames: Uint8ClampedArray[] = [];
+    for (const time of [0.1, 2, 4, 6, 7.8]) {
+      // seeked can fire before the decoded frame reaches the compositor.
+      // Wait for both events before inspecting its actual pixels.
+      const seeked = new Promise<void>(resolve => { video.onseeked = () => resolve(); });
+      const presented = new Promise<void>(resolve => { video.requestVideoFrameCallback(() => resolve()); });
+      video.currentTime = time;
+      await Promise.all([seeked, presented]);
+      context.drawImage(video, 0, 0, sample.width, sample.height);
+      frames.push(context.getImageData(0, 0, sample.width, sample.height).data);
+      const image = document.createElement('img'); image.src = sample.toDataURL(); image.width = 180;
+      image.id = 'mp4-frame-' + time; document.body.append(image);
+    }
+    function redCount(pixels: Uint8ClampedArray): number {
+      let count = 0;
+      for (let i = 0; i < pixels.length; i += 4) if (pixels[i] > pixels[i + 1] * 1.5 && pixels[i] > pixels[i + 2] * 1.5) count++;
+      return count;
+    }
+    assert(redCount(frames[0]) > 500 && redCount(frames[4]) > 500, 'El frente no conserva el diseño al inicio y final');
+    assert(redCount(frames[2]) < redCount(frames[0]) / 2, 'El video no muestra el reverso a mitad del giro');
+    const after = new Uint8Array(await (await studio.capture()).arrayBuffer());
+    assert(before.length === after.length && before.every((value, index) => value === after[index]), 'La exportación alteró la cámara o el modelo');
+    const save = document.createElement('a'); save.href = url; save.download = 'qa-360.mp4'; save.textContent = 'Guardar video de prueba'; save.id = 'mp4-save'; document.body.append(save);
+    releaseArtwork(art);
   });
   document.body.dataset.result = results.textContent?.includes('FAIL') ? 'failed' : 'passed';
   const done = document.createElement('p'); done.id = 'done'; done.textContent = `Finalizado: ${document.body.dataset.result}`; document.body.append(done);
