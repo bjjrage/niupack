@@ -40,6 +40,11 @@ for (const css of ['css/styles.css', 'integration.css', 'studio/assets/scoped-st
   for (const match of (await readFile(resolve(root, css), 'utf8')).matchAll(/url\(["']?([^"')]+)["']?\)/g)) await checkReference(match[1], css);
 }
 assert.match(await readFile(resolve(root, 'js/site-motion.js'), 'utf8'), /hero-video-visual, \.hero-visual/);
+const studioAssets = await readdir(resolve(root, 'studio/assets'));
+assert.ok(studioAssets.some(file => /^pdf\.worker\.min-.*\.mjs$/.test(file)), 'Falta el worker local de PDF');
+for (const resource of ['cmaps/Adobe-Japan1-UCS2.bcmap', 'standard_fonts/FoxitSerif.pfb', 'wasm/openjpeg.wasm', 'iccs/CGATS001Compat-v2-micro.icc', 'LICENSE']) {
+  assert.ok((await stat(resolve(root, 'studio/pdf', resource))).size > 0, 'Falta recurso PDF: ' + resource);
+}
 assert.ok((await stat(resolve(root, 'media/hero-niupack.mp4'))).size > 1_000_000);
 assert.match(JSON.parse(await readFile(resolve(root, 'site-version.json'), 'utf8')).commit, /^[0-9a-f]{40}$/);
 console.log('Publicación verificada: recursos resueltos bajo /niupack/, video y 3D integrados; artefacto separado del OS.');

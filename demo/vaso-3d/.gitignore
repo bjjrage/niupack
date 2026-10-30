@@ -1,4 +1,5 @@
 node_modules/
+public/pdf/
 dist/
 .npm-cache/
 qa/artifacts/

@@ -8,7 +8,7 @@ Para ver el recorrido integrado sin modificar la web pública: `npm.cmd run prev
 
 ## Abrir en Windows
 
-Requisito: Node.js **22.12 o superior** (probado con 24.20.0). Doble clic en `ABRIR_DEMO.bat` desde esta carpeta. La ventana debe permanecer abierta mientras probás.
+Requisito: Node.js **22.13 o superior** (probado con 24.20.0). Doble clic en `ABRIR_DEMO.bat` desde esta carpeta. La ventana debe permanecer abierta mientras probás.
 
 Desde PowerShell, dentro de `demo/vaso-3d`:
 
@@ -36,7 +36,7 @@ Usa el mismo puerto: detené el servidor anterior con Ctrl+C antes de iniciar ot
 - Se distinguen boca exterior, abertura interior, apoyo del pie y diámetro de formado del fondo. No se usa la proporción estimada de 2/3 ni se ofrece el antiguo modelo genérico. Las medidas inválidas o incompletas impiden habilitar un modelo. La vista 360° y el PNG siguen siendo previsualizaciones comerciales, no troqueles industriales.
 
 - Geometría WebGL 2 auténtica: cuerpo cónico, pared interior, borde enrollado, base y fondo interior. Órbita de 360° e inclinación con mouse, teclado o gestos de OrbitControls. La vista inicial equivale a dos clics de alejar y uno de acercar sobre la antigua referencia, con un punto de referencia común que deja entrar el vaso de 21 oz; el zoom del producto está desactivado.
-- JPG y PNG como formatos principales; SVG estático simple opcional. Carga mediante selector o arrastre.
+- JPG, PNG y PDF mediante selector o arrastre; SVG estático simple opcional. Los PDF de hasta 12 MB se procesan localmente con PDF.js: se aplica la primera página, respetando su orientación y proporciones, y se rasteriza a un máximo de 2048 px por lado para el visor. Las páginas adicionales se ignoran con una indicación visible; los PDF dañados o con contraseña muestran un error y conservan el diseño anterior. La descarga del resultado sigue siendo PNG.
 - Tamaño, posición horizontal, altura y rotación independientes. Restablecer ajustes, quitar diseño, cambiar blanco/kraft y restablecer cámara.
 - Barra horizontal con modelo/tamaño, papel y aplicación 180°/360°. El panel derecho reúne carga, vista plana, ajuste proporcional, cuatro sliders, duplicación o ancho 360° y **Pedí presupuesto**. Medidas y ayuda se despliegan bajo demanda. Ningún panel tiene scroll propio: la rueda sobre el visor desplaza la página. La vista permite girar, inclinar, restablecer y ver frente/reverso; botones, teclado, rueda y pellizcos no acercan ni alejan el producto. El zoom de página del navegador sigue disponible.
 - **Frente 180°** es la aplicación inicial para todas las cargas, incluidas las imágenes anchas. Agrandar, mover y rotar conservan las proporciones y se recortan dentro de esa mitad fija. La posición horizontal es local al frente, de -90° a +90°; no lleva el arte al reverso.

@@ -3,7 +3,7 @@ export const MAX_BYTES = 12 * 1024 * 1024;
 export const MAX_PIXELS = 16_000_000;
 export const MAX_EDGE = 8192;
 export const MAX_ARTWORK_EDGE = 2048;
-export type ImageKind = 'PNG' | 'JPG' | 'SVG';
+export type ImageKind = 'PNG' | 'JPG' | 'SVG' | 'PDF';
 export interface Artwork { canvas: HTMLCanvasElement; name: string; width: number; height: number; kind: ImageKind | 'example' }
 
 export function rasterMetadata(bytes: Uint8Array): { kind: 'PNG' | 'JPG'; width: number; height: number } {
@@ -108,8 +108,14 @@ async function decodeImage(blob: Blob): Promise<HTMLImageElement> {
 export async function loadArtwork(file: File): Promise<Artwork> {
   if (!file.size || file.size > MAX_BYTES) throw new Error('Elegí una imagen de hasta 12 MB.');
   const extension = file.name.split('.').pop()?.toLowerCase();
-  if (!['jpg', 'jpeg', 'png', 'svg'].includes(extension || '')) throw new Error('Formatos admitidos: JPG, PNG y SVG simple.');
+  if (!['jpg', 'jpeg', 'png', 'svg', 'pdf'].includes(extension || '')) throw new Error('Formatos admitidos: JPG, PNG, PDF y SVG simple.');
   const bytes = new Uint8Array(await file.arrayBuffer());
+  if (extension === 'pdf') {
+    if (!/%PDF-\d\.\d/.test(new TextDecoder().decode(bytes.subarray(0, 1024)))) throw new Error('El archivo no contiene un PDF válido.');
+    // Load the PDF parser only when a customer actually uploads a PDF.
+    const { loadPDFArtwork } = await import('./pdf-artwork.mts');
+    return loadPDFArtwork(bytes, file.name);
+  }
   let blob: Blob;
   let kind: ImageKind;
   if (extension === 'svg') {

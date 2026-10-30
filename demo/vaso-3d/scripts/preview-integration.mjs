@@ -70,7 +70,7 @@ const moduleCSS = moduleSource.match(/<link rel="stylesheet"[^>]*href="\.\/(asse
 if (!moduleEntry || !moduleCSS) throw new Error('No se encontraron los recursos compilados del configurador.');
 const inline = inlineStudioMarkup(moduleSource);
 const inlineOutput = resolve(preview, 'studio');
-for (const folder of ['assets', 'fonts']) await cp(resolve(build, folder), resolve(inlineOutput, folder), { recursive: true });
+for (const folder of ['assets', 'fonts', 'pdf']) await cp(resolve(build, folder), resolve(inlineOutput, folder), { recursive: true });
 await writeFile(resolve(inlineOutput, 'assets/scoped-studio.css'), scopeStudioCSS(await readFile(resolve(build, moduleCSS), 'utf8'), inline.ids), 'utf8');
 // One composition pipeline for all languages: translated templates retain their
 // own existing site copy, while the hero and configurator share the same features.
@@ -96,7 +96,7 @@ await cp(resolve(demo, 'integration/media'), resolve(preview, 'media'), { recurs
 
 if (!production) {
   // Keep the old review subpage available locally, outside the published artifact.
-  for (const folder of ['assets', 'fonts']) await cp(resolve(build, folder), resolve(moduleOutput, folder), { recursive: true });
+  for (const folder of ['assets', 'fonts', 'pdf']) await cp(resolve(build, folder), resolve(moduleOutput, folder), { recursive: true });
   for (const file of ['logo-niupack.png', 'favicon.svg']) await copyFile(resolve(build, file), resolve(moduleOutput, file));
   await writeFile(resolve(moduleOutput, 'index.html'), moduleSource.replaceAll('https://bjjrage.github.io/niupack/index.html', '../index.html'), 'utf8');
 }

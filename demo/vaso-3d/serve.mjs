@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 const root = fileURLToPath(new URL('./dist/', import.meta.url));
 const port = Number(process.env.NIUPACK_DEMO_PORT || 4173);
 const mounts = ['/demo/vaso-3d/', '/niupack/demo/vaso-3d/'];
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.mp4': 'video/mp4', '.pdf': 'application/pdf', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.wasm': 'application/wasm', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.mp4': 'video/mp4', '.pdf': 'application/pdf', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
 const server = createServer(async (request, response) => {
   try {
     const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
@@ -38,7 +38,7 @@ const server = createServer(async (request, response) => {
       'Content-Type': types[extname(filename)] || 'application/octet-stream',
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'no-store',
-      'Content-Security-Policy': `default-src 'self'; script-src 'self' ${hashes('script')}; style-src 'self' ${hashes('style')}; img-src 'self' blob: data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
+      'Content-Security-Policy': `default-src 'self'; script-src 'self' 'wasm-unsafe-eval' ${hashes('script')}; style-src 'self' ${hashes('style')}; worker-src 'self'; font-src 'self' blob: data:; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
     });
     response.end(request.method === 'HEAD' ? undefined : content);
   } catch {

@@ -19,6 +19,9 @@ for (const [file, language, duplicate, quote] of [
     assert.ok(home.includes(quote));
     assert.match(home, /id="studio-duplicate-back"/);
     assert.match(home, /data-layout="wrap"/);
+    assert.match(home, /application\/pdf/);
+    assert.ok(home.includes('JPG / PNG / PDF'));
+    assert.ok(home.includes(language === 'es' ? 'primera página' : language === 'en' ? 'first page' : 'primeira página'));
     assert.doesNotMatch(home, /id="personalizacion"/);
     assert.ok(integrateStudioHome(original + `<a href="${file}#personalizacion">link</a>`, localized).includes('href="#configurador-3d"'));
     if (language !== 'es') assert.doesNotMatch(localized, /Subí tu imagen|Duplicar en reverso|Pedí presupuesto|Restablecer/);

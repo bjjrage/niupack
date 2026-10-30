@@ -5,7 +5,7 @@ title NIUPACK - Estudio de vasos 3D
 cd /d "%~dp0"
 where node >nul 2>nul
 if errorlevel 1 (
-  echo Instala Node.js 22.12 o superior para abrir este prototipo.
+  echo Instala Node.js 22.13 o superior para abrir este prototipo.
   pause
   exit /b 1
 )

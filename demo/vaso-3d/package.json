@@ -4,20 +4,22 @@
   "version": "0.1.0",
   "type": "module",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "vite --base /demo/vaso-3d/ --host 127.0.0.1 --port 4173 --strictPort",
+    "dev": "npm run pdf:assets && vite --base /demo/vaso-3d/ --host 127.0.0.1 --port 4173 --strictPort",
+    "pdf:assets": "node scripts/prepare-pdf-assets.mjs",
     "typecheck": "tsc --noEmit",
     "catalog:import": "node scripts/import-catalog.mjs",
     "test": "npm run catalog:import && node --experimental-strip-types --test qa/*.test.mts",
-    "build": "npm run catalog:import && npm run typecheck && vite build",
+    "build": "npm run catalog:import && npm run pdf:assets && npm run typecheck && vite build",
     "preview:integrated": "npm run build && node scripts/preview-integration.mjs",
     "build:website": "npm run build && node scripts/preview-integration.mjs --production && node scripts/check-website.mjs",
     "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
     "serve": "node serve.mjs"
   },
   "dependencies": {
+    "pdfjs-dist": "6.4.299",
     "three": "0.186.1"
   },
   "devDependencies": {

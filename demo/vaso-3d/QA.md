@@ -260,3 +260,12 @@ Se eliminó el ajuste de distancia por modelo. Los diez modelos conservan las co
 - El logo gigante provenía del loader sin estilos: la política CSP del servidor local bloqueaba los bloques inline del sitio público. `serve.mjs` ahora autoriza sus contenidos exactos con hashes SHA-256. En ES/EN/PT se verificaron la desaparición del loader, el tamaño normal del logo y ausencia de infracciones CSP.
 - Menú móvil con tres líneas blancas, fondo transparente, sin borde ni sombra; apertura y cierre comprobados. Navegación de escritorio conservada.
 - Edge, escritorio 1440×1000 y celular 390×844: **PASS**, sin errores de página. Evidencias ignoradas por Git: `header-fixed-*.png`, `one-click-closer-*.png`, `download-footer.png` y `download-*.png` en `qa/artifacts/`.
+
+## 2026-10-30 — Carga de PDF
+
+- PDF.js 6.4.299 se carga bajo demanda cuando se selecciona un PDF. Parser, worker, fuentes, CMaps y decodificadores se sirven desde el propio sitio; el documento se procesa en la pestaña. Se aplica la primera página, con su rotación y proporciones, a un máximo de 2048 px por lado. La interfaz ES/EN/PT indica la primera página y el límite de 12 MB.
+- `npm test`: **42/42 PASS**. Nuevas regresiones de PDF falso, archivo vacío y límite de peso; selector y ayuda PDF localizados en los tres idiomas.
+- `npm run build:website`: **PASS**, con TypeScript y comprobación del worker y los recursos PDF en el artefacto de GitHub Pages.
+- Sitio compilado en Edge: PDF de dos páginas (roja primero y azul después), PDF rotado, archivo corrupto, contenido falso, conservación del diseño anterior y retorno a PNG: **PASS**. PDF real `ARCHIVO ACT.pdf` de 9,9 MB aplicado correctamente. Descargas PNG con el diseño verificado en ES/EN/PT, escritorio y celular, sin recursos faltantes, errores de página ni infracciones CSP.
+- Evidencia local ignorada por Git: `qa/artifacts/pdf-*.png`, `test-multipage.pdf` y `test-rotated.pdf`. El script de desarrollo prepara los recursos y precarga la dependencia para evitar una recarga al seleccionar el primer PDF.
+- Banco WebGL de desarrollo: **22/22 PASS**, con primera página PDF, orientación, rechazo de documentos inválidos, JPG/PNG/SVG, ajuste 180°/360°, cambios de modelo y recuperación del contexto. Resultados en `qa/artifacts/pdf-browser-results.txt`.

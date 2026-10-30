@@ -3,6 +3,7 @@ import { loadArtwork, releaseArtwork, MAX_BYTES } from '../src/artwork.mts';
 import { CUP, DEFAULT_DESIGN, WRAP, textureUV, createSurfaceLayout } from '../src/layout.mts';
 import { CATALOG, catalogModel } from '../src/catalog.mts';
 import { composePrint } from '../src/print.mts';
+import { pdfFixture } from './pdf-fixture.mjs';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#qa-viewer')!;
 canvas.style.width = '640px'; canvas.style.height = '600px';
@@ -69,6 +70,29 @@ document.querySelector<HTMLButtonElement>('#run')!.addEventListener('click', asy
     const art = await loadArtwork(await fixture('simple.svg'));
     assert(art.kind === 'SVG', 'SVG no detectado');
     studio.update(art, DEFAULT_DESIGN, 'white'); await captureHasDesign(); releaseArtwork(art);
+  });
+  await check('PDF: primera página, texto y color, proporciones y aplicación 3D', async () => {
+    const art = await loadArtwork(new File([pdfFixture()], 'design.pdf', { type: 'application/pdf' }));
+    try {
+      assert(art.kind === 'PDF' && art.width === 1536 && art.height === 2048, 'PDF con dimensiones incorrectas');
+      const pixels = art.canvas.getContext('2d')!.getImageData(0, 0, art.width, art.height).data;
+      let red = 0, blue = 0;
+      for (let i = 0; i < pixels.length; i += 16) {
+        if (pixels[i] > pixels[i + 1] * 1.4 && pixels[i] > pixels[i + 2] * 1.4) red++;
+        if (pixels[i + 2] > pixels[i] * 1.4) blue++;
+      }
+      assert(red > 1000 && blue === 0, 'Se usó una página distinta de la primera');
+      studio.update(art, DEFAULT_DESIGN, 'white'); await captureHasDesign();
+    } finally { releaseArtwork(art); }
+  });
+  await check('PDF: respeta la rotación del documento', async () => {
+    const art = await loadArtwork(new File([pdfFixture(90)], 'rotated.pdf', { type: 'application/pdf' }));
+    assert(art.width === 2048 && art.height === 1536, 'Rotación del PDF perdida'); releaseArtwork(art);
+  });
+  for (const content of ['not a PDF', '%PDF-1.7\ninvalid document']) await check('Rechazo de PDF inválido', async () => {
+    let rejected = false;
+    try { releaseArtwork(await loadArtwork(new File([content], 'broken.pdf'))); } catch { rejected = true; }
+    assert(rejected, 'Se aceptó un PDF inválido');
   });
   for (const name of ['unsafe.svg', 'broken.jpg']) await check(`Rechazo seguro de ${name}`, async () => {
     let rejected = false;
