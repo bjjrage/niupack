@@ -1,0 +1,6 @@
+# This public website needs the shared repository's assets, CSS and JS.
+# Override the OS-only ignore file at the repository root.
+node_modules/
+dist/
+qa/artifacts/
+public/pdf/

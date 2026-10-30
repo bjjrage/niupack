@@ -6,6 +6,10 @@ La interfaz adopta la identidad de la web de NIU PACK: Montserrat, cabecera roja
 
 Para ver el recorrido integrado sin modificar la web pública: `npm.cmd run preview:integrated` genera una copia local con **Productos → Configurador 3D → Termoformado**. El módulo completo sustituye a la antigua sección Personalización. **Consultar este producto** lleva al modelo disponible dentro de la misma página, conservando arte y ajustes; los formatos pendientes muestran un aviso. Con el servidor de la demo activo, abrir `/demo/vaso-3d/vista-integrada/index.html#configurador-3d`. Los estilos están limitados al módulo y el motor se carga al aproximarse al visor. Los archivos generados quedan en `dist/` (ignorado por Git); solo se copian recursos públicos ya versionados, nunca el OS ni la raíz completa del repositorio. El build normal no incluye esta vista; hay que generarla de nuevo tras recompilar. La subpágina anterior se conserva como acceso compatible.
 
+## Publicación en Vercel
+
+El sitio público de Vercel corresponde al proyecto **newpack** (`niupack-web.vercel.app`), con raíz `demo/vaso-3d` y **Include source files outside of the Root Directory** activado. `vercel.json` publica únicamente `dist/website`, generado por `npm run build:website`; el `.vercelignore` local conserva los recursos compartidos necesarios y evita heredar las exclusiones de NIUPACK OS.
+
 ## Abrir en Windows
 
 Requisito: Node.js **22.13 o superior** (probado con 24.20.0). Doble clic en `ABRIR_DEMO.bat` desde esta carpeta. La ventana debe permanecer abierta mientras probás.
