@@ -95,6 +95,31 @@ export function catalogModel(model: SupplierModel): { shape: CupShape; baseDiame
     },
   };
 }
+// Presentation adjustment requested on 2026-10-30. Supplier measurements stay
+// unchanged; layout and mesh share the shorter surface so artwork isn't squashed.
+export function previewModel(model: SupplierModel): ReturnType<typeof catalogModel> {
+  const result = catalogModel(model);
+  if (!result || model.id !== 'cup-21oz') return result;
+  const scale = 0.85;
+  const shape = result.shape;
+  const details = shape.details!;
+  return { ...result, shape: {
+    ...shape,
+    height: shape.height * scale,
+    printMargin: (shape.printMargin ?? 0) * scale,
+    nominalHeightMm: model.heightMm,
+    visualHeightScale: scale,
+    details: {
+      ...details,
+      fullHeight: details.fullHeight * scale,
+      surfaceBottom: details.surfaceBottom * scale,
+      bodyTop: details.bodyTop * scale,
+      floorHeight: details.floorHeight * scale,
+      rimHeight: details.rimHeight * scale,
+      innerSlope: details.innerSlope / scale,
+    },
+  } };
+}
 export function selectionStatus(id: string): { selectable: boolean; reasons: string[] } {
   const model = CATALOG.find((item) => item.id === id);
   return model && catalogModel(model)

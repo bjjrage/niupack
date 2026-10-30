@@ -28,3 +28,7 @@ El vaso de 8 oz se reemplaza comercialmente por el de 9 oz. El pote de 8 oz es u
 - La ficha doble de 12 oz tiene un solape anotado de 6,5 mm y una revisión que indica 8,5 mm; se conserva esa discrepancia en las notas de fuente. No afecta la silueta ensamblada y no se genera un troquel de producción a partir de ella.
 
 La geometría reproduce las cotas nominales y el perfil de las fichas. El material, iluminación y textura de papel son representaciones de pantalla; las tolerancias físicas y el proceso de formado no se simulan. Frente 180° ajusta y recorta una composición por mitad, con duplicación posterior opcional. Diseño 360° conserva su banda continua y el ajuste independiente de ancho.
+
+## Ajuste visual del 21 oz · 30 de octubre de 2026
+
+Tras comparar con una foto de producto, el usuario confirmó que la altura nominal de 166 mm es correcta y solicitó una representación visual un 15% más corta. `catalogModel` y las fuentes anteriores conservan las medidas originales. `previewModel` aplica un factor vertical de 0,85 exclusivamente al 21 oz, manteniendo los radios; la superficie de impresión usa la misma altura visual para evitar deformar el arte. El visor, el PNG y el GLB muestran esa presentación compacta. El GLB guarda la altura nominal y el factor visual en sus metadatos; esta corrección no sustituye una cota física del proveedor.

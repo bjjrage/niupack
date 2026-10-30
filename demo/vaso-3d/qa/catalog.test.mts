@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import * as THREE from 'three';
 import { validateSupplierData } from '../scripts/supplier-source.mjs';
-import { CATALOG, DEFAULT_MODEL_ID, PENDING_MODELS, catalogModel, selectionStatus, type SupplierModel } from '../src/catalog.mts';
+import { CATALOG, DEFAULT_MODEL_ID, PENDING_MODELS, catalogModel, previewModel, selectionStatus, type SupplierModel } from '../src/catalog.mts';
 import { createSurfaceLayout, artworkPlacement, textureUV, DEFAULT_DESIGN, frontFitMode } from '../src/layout.mts';
 import { createCupParts } from '../src/cup-geometry.mts';
 
@@ -24,6 +24,28 @@ test('supplier drawings replace the old showroom measurements with ten identifie
     assert.equal(catalogModel(model)!.baseEstimated, false);
     assert.equal(selectionStatus(id).selectable, true);
   }
+});
+
+test('21 oz preview is 15 percent shorter without changing width or supplier measurements', () => {
+  const model = CATALOG.find(item => item.id === 'cup-21oz')!;
+  const original = JSON.stringify(model);
+  const source = catalogModel(model)!.shape;
+  const preview = previewModel(model)!.shape;
+  const material = new THREE.MeshBasicMaterial();
+  const parts = createCupParts(preview, { exterior: material, inside: material, paper: material, bottom: material });
+  const bounds = new THREE.Box3().setFromObject(parts.group), size = bounds.getSize(new THREE.Vector3());
+  assert.equal(model.heightMm, 166);
+  assert.equal(JSON.stringify(model), original);
+  assert.ok(Math.abs(size.y * 100 - 166 * 0.85) < 0.0001);
+  assert.ok(Math.abs(size.x * 100 - model.rimOuterDiameterMm) < 0.0001);
+  assert.equal(preview.top, source.top); assert.equal(preview.bottom, source.bottom);
+  assert.equal(preview.nominalHeightMm, 166); assert.equal(preview.visualHeightScale, 0.85);
+  assert.deepEqual(parts.group.userData, { nominalHeightMm: 166, visualHeightScale: 0.85 });
+  const layout = createSurfaceLayout(preview);
+  const artwork = artworkPlacement(1200, 900, DEFAULT_DESIGN, layout);
+  assert.ok(Math.abs(artwork.width / artwork.height - 1200 / 900) < 1e-12, 'Artwork proportions changed');
+  for (const other of CATALOG.filter(item => item.id !== model.id)) assert.deepEqual(previewModel(other), catalogModel(other));
+  parts.disposeGeometry(); material.dispose();
 });
 
 test('8 oz is a Mingyuan pot and the replacement drinking cup is 9 oz; missing sheets stay disabled', () => {

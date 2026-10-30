@@ -29,6 +29,9 @@ export function createCupParts(shape: CupShape, materials: CupMaterials) {
   const d = shape.details ?? legacyDetails(shape);
   const group = new THREE.Group();
   group.name = 'supplier-cup';
+  if (shape.visualHeightScale !== undefined) {
+    group.userData = { nominalHeightMm: shape.nominalHeightMm, visualHeightScale: shape.visualHeightScale };
+  }
   group.position.y = 0.025;
   function add(geometry: THREE.BufferGeometry, material: THREE.Material, name: string, y = 0) {
     const mesh = new THREE.Mesh(geometry, material);

@@ -277,3 +277,11 @@ Se eliminó el ajuste de distancia por modelo. Los diez modelos conservan las co
 - Sitio compilado: descargas GLB reales en escritorio y celular, diseño procedente de PDF, exportación sin diseño, nombre del archivo, texturas incorporadas y descarga PNG posterior: **PASS**. Los archivos de prueba ocuparon entre 0,88 y 0,96 MB y no referencian imágenes o buffers externos.
 - Reapertura con GLTFLoader y renderizado en otra escena: **PASS**, para vaso de 12 oz y pote de 8 oz. Se comprobaron altura y boca en metros contra las cotas del proveedor, pared interior visible y diseño de color en el modelo reabierto. Esta comprobación puede ejecutarse aislada en `qa/browser.html?only=glb`.
 - Evidencia local ignorada por Git: `qa/artifacts/export-*.glb`, `glb-roundtrip-*.png`, `glb-download-controls-*.png` y `glb-browser-results.txt`.
+
+## 2026-10-30 — Vaso 21 oz, altura visual −15%
+
+- El usuario confirmó la altura nominal de **166 mm** y pidió acortar la representación visual un **15%**. La ficha, sus cotas y el modelo nominal permanecen intactos; la presentación del 21 oz tiene una altura de **141,1 mm equivalentes**, con el mismo ancho y radios. Los otros nueve modelos no cambian.
+- Geometría y composición del arte utilizan la misma superficie visual para conservar las proporciones del diseño. El visor, PNG y GLB comparten la presentación compacta; el GLB registra `nominalHeightMm: 166` y `visualHeightScale: 0.85` por separado.
+- **43/43 pruebas de Node PASS**, incluyendo altura visual exacta, ancho intacto, fuente sin mutaciones, arte sin distorsión y comparación proyectada con el 16 oz en escritorio y celular. TypeScript y build público: **PASS**.
+- Interfaz compilada: selección de 16/21 oz, ficha de 166 mm visible, descargas PNG/GLB y vista móvil: **PASS**, sin errores de página. GLB reabierto y renderizado para 12 oz, pote de 8 oz y 21 oz: **PASS**, con dimensiones de presentación y metadatos verificados.
+- Evidencia local ignorada: `compact-21-compare-16.png`, `compact-21-compare-21.png`, `compact-21-mobile.png`, `compact-21oz.png`, `compact-21oz.glb` y `glb-roundtrip-cup-21oz.png` en `qa/artifacts/`.

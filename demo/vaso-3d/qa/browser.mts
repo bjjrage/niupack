@@ -1,7 +1,7 @@
 import { createStudio } from '../src/studio.mts';
 import { loadArtwork, releaseArtwork, MAX_BYTES } from '../src/artwork.mts';
 import { CUP, DEFAULT_DESIGN, WRAP, textureUV, createSurfaceLayout } from '../src/layout.mts';
-import { CATALOG, catalogModel } from '../src/catalog.mts';
+import { CATALOG, catalogModel, previewModel } from '../src/catalog.mts';
 import { composePrint } from '../src/print.mts';
 import { pdfFixture } from './pdf-fixture.mjs';
 import * as THREE from 'three';
@@ -435,13 +435,14 @@ document.querySelector<HTMLButtonElement>('#run')!.addEventListener('click', asy
       studio.setDimensions(CUP); studio.update(art, { ...DEFAULT_DESIGN, duplicateBack: true }, 'white'); studio.showSide(false);
     } finally { source.width = 0; texture.width = 0; }
   });
-  await check('GLB: reabre en 3D con textura incorporada y medidas reales de vaso y pote', async () => {
+  await check('GLB: reabre en 3D con textura, dimensiones y ajustes visuales de vaso y pote', async () => {
     const art = await loadArtwork(await fixture('design-flat.jpg'));
     const loader = new GLTFLoader();
     try {
-      for (const id of ['cup-12oz', 'pot-8oz']) {
+      for (const id of ['cup-12oz', 'pot-8oz', 'cup-21oz']) {
         const model = CATALOG.find(item => item.id === id)!;
-        studio.setDimensions(catalogModel(model)!.shape);
+        const shape = previewModel(model)!.shape;
+        studio.setDimensions(shape);
         studio.update(art, { ...DEFAULT_DESIGN, duplicateBack: true }, 'kraft');
         const blob = await studio.exportModel(id);
         console.info('GLB: exported', id);
@@ -455,7 +456,11 @@ document.querySelector<HTMLButtonElement>('#run')!.addEventListener('click', asy
         const parsed = await loader.parseAsync(bytes, '');
         console.info('GLB: reopened', id);
         const size = new THREE.Box3().setFromObject(parsed.scene).getSize(new THREE.Vector3());
-        assert(Math.abs(size.y - model.heightMm / 1000) < 0.000001, 'Altura del modelo exportada con unidades incorrectas');
+        assert(Math.abs(size.y - model.heightMm * (shape.visualHeightScale ?? 1) / 1000) < 0.000001, 'Altura del modelo exportada con unidades incorrectas');
+        if (id === 'cup-21oz') {
+          const root = parsed.scene.getObjectByName(id)!;
+          assert(root.userData.nominalHeightMm === 166 && root.userData.visualHeightScale === 0.85, 'Falta la altura nominal o el ajuste visual del 21 oz');
+        }
         assert(Math.abs(size.x - model.rimOuterDiameterMm / 1000) < 0.000001, 'Boca del modelo exportada con unidades incorrectas');
         const wall = parsed.scene.getObjectByName('printed-wall') as THREE.Mesh;
         assert(wall?.material instanceof THREE.MeshStandardMaterial && wall.material.map, 'El diseño no está sobre la pared');

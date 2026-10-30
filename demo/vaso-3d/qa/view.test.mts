@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { CATALOG, catalogModel } from '../src/catalog.mts';
+import { CATALOG, previewModel } from '../src/catalog.mts';
 import { createCupParts } from '../src/cup-geometry.mts';
 import { studioView } from '../src/view.mts';
 
@@ -16,7 +16,7 @@ for (const [width, height, mobile] of [[980, 600, false], [640, 600, false], [34
     const material = new THREE.MeshBasicMaterial();
     const sizes = new Map<string, THREE.Vector2>();
     for (const model of CATALOG) {
-      const parts = createCupParts(catalogModel(model)!.shape, { exterior: material, inside: material, paper: material, bottom: material });
+      const parts = createCupParts(previewModel(model)!.shape, { exterior: material, inside: material, paper: material, bottom: material });
       parts.group.updateMatrixWorld(true);
       const screen = new THREE.Box2();
       parts.group.traverse(object => {
@@ -35,7 +35,7 @@ for (const [width, height, mobile] of [[980, 600, false], [640, 600, false], [34
     const size = (id: string) => sizes.get(id)!;
     assert.ok(size('cup-12oz').y > size('cup-9oz').y * 1.15, '12 oz must look taller than 9 oz');
     assert.ok(size('cup-16oz').y > size('cup-12oz').y * 1.1, '16 oz must look taller than 12 oz');
-    assert.ok(size('cup-21oz').y > size('cup-16oz').y * 1.2, '21 oz must look taller than 16 oz');
+    assert.ok(size('cup-21oz').y > size('cup-16oz').y * 1.1 && size('cup-21oz').y < size('cup-16oz').y * 1.2, '21 oz must look only a little taller than 16 oz');
     assert.ok(size('pot-8oz').x > size('pot-5oz').x * 1.3, '8 oz pot must look wider than 5 oz');
     assert.ok(size('pot-8oz').y > size('pot-5oz').y * 1.15, '8 oz pot must look taller than 5 oz');
     assert.ok(size('pot-5oz').y > size('pot-3oz').y * 1.08, '5 oz pot must look taller than 3 oz');

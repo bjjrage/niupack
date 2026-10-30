@@ -3,7 +3,7 @@ import { createStudio, type Paper, type Studio } from './studio.mts';
 import { loadArtwork, exampleArtwork, releaseArtwork, type Artwork } from './artwork.mts';
 import { createSurfaceLayout, DEFAULT_DESIGN, frontFitMode, type LayoutMode } from './layout.mts';
 import { drawPrintPreview } from './print.mts';
-import { CATALOG, DEFAULT_MODEL_ID, catalogModel, modelLabel, selectionStatus, formatMm, type SupplierModel } from './catalog.mts';
+import { CATALOG, DEFAULT_MODEL_ID, previewModel, modelLabel, selectionStatus, formatMm, type SupplierModel } from './catalog.mts';
 import { createModelPicker } from './model-picker.mts';
 
 const embeddedRoot = document.querySelector<HTMLElement>('[data-niu-studio]');
@@ -53,7 +53,7 @@ const toast = element('toast');
 const printPreview = element<HTMLCanvasElement>('print-preview');
 const state = { ...DEFAULT_DESIGN };
 const initialModel = CATALOG.find((model) => model.id === DEFAULT_MODEL_ID)!;
-const initialShape = catalogModel(initialModel)!.shape;
+const initialShape = previewModel(initialModel)!.shape;
 let selectedModel = DEFAULT_MODEL_ID;
 let surface = createSurfaceLayout(initialShape);
 let paper: Paper = 'white';
@@ -133,7 +133,7 @@ function initializeCatalog(): void {
   select.addEventListener('change', () => {
     if (!selectionStatus(select.value).selectable || !studio) { select.value = selectedModel; return; }
     const cup = CATALOG.find((item) => item.id === select.value)!;
-    const model = catalogModel(cup)!;
+    const model = previewModel(cup)!;
     studio.setDimensions(model.shape);
     surface = createSurfaceLayout(model.shape);
     selectedModel = select.value;

@@ -18,6 +18,8 @@ export interface CupShape {
   readonly height: number; readonly top: number; readonly bottom: number;
   readonly printMargin?: number;
   readonly defaultFrontFit?: FrontFit;
+  readonly nominalHeightMm?: number;
+  readonly visualHeightScale?: number;
   readonly details?: CupDetails;
 }
 export const CUP: CupShape = { height: 1.1, top: 0.45, bottom: 0.3 };
