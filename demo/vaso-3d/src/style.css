@@ -211,6 +211,8 @@ input[type=range]::-moz-range-thumb { width: 10px; height: 10px; border-radius: 
 .secondary-button:hover { border-color: var(--red); color: var(--brand-dark); }
 .download-button { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; margin-bottom: 8px; color: var(--brand-dark); }
 .download-button svg { width: 17px; height: 17px; }
+.download-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
+.download-actions .download-button { margin: 0; padding-inline: 8px; font-size: 11px; }
 .wrap-width-controls .secondary-button.is-selected { background: #fff1f0; border-color: var(--red); color: var(--brand-dark); }
 .adjustments { margin-bottom: 16px; }
 

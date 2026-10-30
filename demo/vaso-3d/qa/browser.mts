@@ -4,6 +4,8 @@ import { CUP, DEFAULT_DESIGN, WRAP, textureUV, createSurfaceLayout } from '../sr
 import { CATALOG, catalogModel } from '../src/catalog.mts';
 import { composePrint } from '../src/print.mts';
 import { pdfFixture } from './pdf-fixture.mjs';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#qa-viewer')!;
 canvas.style.width = '640px'; canvas.style.height = '600px';
@@ -17,6 +19,7 @@ async function fixture(name: string) {
   return new File([await response.blob()], name);
 }
 async function check(name: string, action: () => void | Promise<void>) {
+  if (new URLSearchParams(location.search).get('only') === 'glb' && !name.startsWith('GLB:')) return;
   const row = document.createElement('li');
   try { await action(); row.textContent = `PASS · ${name}`; }
   catch (error) { row.textContent = `FAIL · ${name}: ${error instanceof Error ? error.message : String(error)}`; }
@@ -49,6 +52,26 @@ async function capturedColors() {
   copy.width = 0; copy.height = 0;
   return { red, blue, green, redX: redSumX / red, blueX: blueSumX / blue };
 }
+
+function renderImportedModel(object: THREE.Object3D, id: string): void {
+  const scene = new THREE.Scene(); scene.background = new THREE.Color('#eeede8'); scene.add(object);
+  scene.add(new THREE.HemisphereLight('#ffffff', '#9d9483', 2.5));
+  const key = new THREE.DirectionalLight('#ffffff', 2); key.position.set(-0.2, 0.4, 0.3); scene.add(key);
+  const bounds = new THREE.Box3().setFromObject(object);
+  const size = bounds.getSize(new THREE.Vector3()), center = bounds.getCenter(new THREE.Vector3());
+  const camera = new THREE.PerspectiveCamera(31, 1, 0.001, 10);
+  camera.position.set(center.x, center.y + size.y * 0.7, center.z + Math.max(size.x, size.y) * 3);
+  camera.lookAt(center);
+  const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setSize(480, 480);
+  renderer.render(scene, camera);
+  const preview = document.createElement('canvas'); preview.width = 480; preview.height = 480; preview.id = `glb-roundtrip-${id}`;
+  const context = preview.getContext('2d')!; context.drawImage(renderer.domElement, 0, 0);
+  const pixels = context.getImageData(0, 0, 480, 480).data; let red = 0;
+  for (let i = 0; i < pixels.length; i += 16) if (pixels[i] > pixels[i + 1] * 1.4 && pixels[i] > pixels[i + 2] * 1.4) red++;
+  document.body.append(preview); renderer.dispose(); renderer.forceContextLoss();
+  assert(red > 500, 'El modelo reabierto no muestra el diseño de color');
+}
+
 document.querySelector<HTMLButtonElement>('#run')!.addEventListener('click', async (event) => {
   (event.currentTarget as HTMLButtonElement).disabled = true;
   await check('JPG plano decodificado y aplicado sobre el vaso', async () => {
@@ -411,6 +434,47 @@ document.querySelector<HTMLButtonElement>('#run')!.addEventListener('click', asy
       }
       studio.setDimensions(CUP); studio.update(art, { ...DEFAULT_DESIGN, duplicateBack: true }, 'white'); studio.showSide(false);
     } finally { source.width = 0; texture.width = 0; }
+  });
+  await check('GLB: reabre en 3D con textura incorporada y medidas reales de vaso y pote', async () => {
+    const art = await loadArtwork(await fixture('design-flat.jpg'));
+    const loader = new GLTFLoader();
+    try {
+      for (const id of ['cup-12oz', 'pot-8oz']) {
+        const model = CATALOG.find(item => item.id === id)!;
+        studio.setDimensions(catalogModel(model)!.shape);
+        studio.update(art, { ...DEFAULT_DESIGN, duplicateBack: true }, 'kraft');
+        const blob = await studio.exportModel(id);
+        console.info('GLB: exported', id);
+        assert(blob.type === 'model/gltf-binary', 'Tipo de archivo incorrecto');
+        const bytes = await blob.arrayBuffer();
+        const header = new DataView(bytes);
+        assert(header.getUint32(0, true) === 0x46546c67 && header.getUint32(4, true) === 2, 'No es un GLB 2.0');
+        const json = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes, 20, header.getUint32(12, true))));
+        assert(json.images.length > 0 && json.images.every((image: { bufferView?: number; uri?: string }) => image.bufferView !== undefined && !image.uri), 'Texturas externas o ausentes');
+        assert(json.buffers.every((buffer: { uri?: string }) => !buffer.uri), 'El GLB depende de archivos externos');
+        const parsed = await loader.parseAsync(bytes, '');
+        console.info('GLB: reopened', id);
+        const size = new THREE.Box3().setFromObject(parsed.scene).getSize(new THREE.Vector3());
+        assert(Math.abs(size.y - model.heightMm / 1000) < 0.000001, 'Altura del modelo exportada con unidades incorrectas');
+        assert(Math.abs(size.x - model.rimOuterDiameterMm / 1000) < 0.000001, 'Boca del modelo exportada con unidades incorrectas');
+        const wall = parsed.scene.getObjectByName('printed-wall') as THREE.Mesh;
+        assert(wall?.material instanceof THREE.MeshStandardMaterial && wall.material.map, 'El diseño no está sobre la pared');
+        const inside = parsed.scene.getObjectByName('inner-wall') as THREE.Mesh;
+        assert((inside.material as THREE.Material).side === THREE.DoubleSide, 'La pared interior no es visible en el GLB');
+        assert(!parsed.cameras.length && !parsed.scene.getObjectByName('floor'), 'Se exportó el escenario');
+        renderImportedModel(parsed.scene, id);
+        console.info('GLB: rendered', id);
+        parsed.scene.traverse(object => {
+          if (!(object instanceof THREE.Mesh)) return;
+          object.geometry.dispose();
+          for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+            if (material instanceof THREE.MeshStandardMaterial) { material.map?.dispose(); material.bumpMap?.dispose(); }
+            material.dispose();
+          }
+        });
+      }
+      studio.update(art, DEFAULT_DESIGN, 'white'); await captureHasDesign();
+    } finally { releaseArtwork(art); }
   });
   await check('La rueda y Ctrl/trackpad no cambian el tamaño del producto ni bloquean la página', async () => {
     studio.resetView();

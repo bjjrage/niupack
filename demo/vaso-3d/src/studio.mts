@@ -15,6 +15,7 @@ export interface Studio {
   showSide(back: boolean): void;
   rotate(horizontal: number, vertical?: number): void;
   capture(): Promise<Blob>;
+  exportModel(name?: string): Promise<Blob>;
   dispose(): void;
 }
 
@@ -289,6 +290,17 @@ export function createStudio(canvas: HTMLCanvasElement, onContext: (lost: boolea
         renderer.setPixelRatio(ratio); renderer.setSize(size.x, size.y, false);
         camera.aspect = oldAspect; camera.updateProjectionMatrix();
         exportInProgress = false; resize(); invalidate();
+      }
+    },
+    async exportModel(name = 'NIUPACK') {
+      if (contextLost || disposed) throw new Error('El visor no está disponible. Esperá a que se recupere o volvé a cargar la página.');
+      if (exportInProgress) throw new Error('Ya hay una descarga en preparación.');
+      exportInProgress = true;
+      try {
+        const { exportCupModel } = await import('./model-export.mts');
+        return await exportCupModel(parts.group, name);
+      } finally {
+        exportInProgress = false; invalidate();
       }
     },
     dispose() {

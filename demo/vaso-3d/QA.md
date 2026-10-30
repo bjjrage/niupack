@@ -269,3 +269,11 @@ Se eliminó el ajuste de distancia por modelo. Los diez modelos conservan las co
 - Sitio compilado en Edge: PDF de dos páginas (roja primero y azul después), PDF rotado, archivo corrupto, contenido falso, conservación del diseño anterior y retorno a PNG: **PASS**. PDF real `ARCHIVO ACT.pdf` de 9,9 MB aplicado correctamente. Descargas PNG con el diseño verificado en ES/EN/PT, escritorio y celular, sin recursos faltantes, errores de página ni infracciones CSP.
 - Evidencia local ignorada por Git: `qa/artifacts/pdf-*.png`, `test-multipage.pdf` y `test-rotated.pdf`. El script de desarrollo prepara los recursos y precarga la dependencia para evitar una recarga al seleccionar el primer PDF.
 - Banco WebGL de desarrollo: **22/22 PASS**, con primera página PDF, orientación, rechazo de documentos inválidos, JPG/PNG/SVG, ajuste 180°/360°, cambios de modelo y recuperación del contexto. Resultados en `qa/artifacts/pdf-browser-results.txt`.
+
+## 2026-10-30 — Descarga del modelo 3D
+
+- **Descargar 3D** genera un GLB 2.0 con geometría, materiales y texturas incrustadas; **Descargar PNG** conserva la captura. Ambos botones están localizados en ES/EN/PT. La exportación toma una copia independiente de geometrías, materiales y lienzos, convierte las unidades a metros y excluye piso, luces y cámara.
+- `npm test`: **42/42 PASS**. TypeScript y `npm run build:website`: **PASS**. El exportador se carga bajo demanda, sin añadirlo a la carga inicial del visor.
+- Sitio compilado: descargas GLB reales en escritorio y celular, diseño procedente de PDF, exportación sin diseño, nombre del archivo, texturas incorporadas y descarga PNG posterior: **PASS**. Los archivos de prueba ocuparon entre 0,88 y 0,96 MB y no referencian imágenes o buffers externos.
+- Reapertura con GLTFLoader y renderizado en otra escena: **PASS**, para vaso de 12 oz y pote de 8 oz. Se comprobaron altura y boca en metros contra las cotas del proveedor, pared interior visible y diseño de color en el modelo reabierto. Esta comprobación puede ejecutarse aislada en `qa/browser.html?only=glb`.
+- Evidencia local ignorada por Git: `qa/artifacts/export-*.glb`, `glb-roundtrip-*.png`, `glb-download-controls-*.png` y `glb-browser-results.txt`.

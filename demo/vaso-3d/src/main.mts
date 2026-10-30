@@ -44,6 +44,7 @@ const viewer = element<HTMLCanvasElement>('viewer');
 const stage = element('stage');
 const quoteLink = element<HTMLAnchorElement>('request-quote');
 const downloadButton = element<HTMLButtonElement>('download-design');
+const modelDownloadButton = element<HTMLButtonElement>('download-model');
 const controlsFieldset = element<HTMLFieldSetElement>('design-controls');
 const input = element<HTMLInputElement>('artwork-file');
 const notice = element('upload-notice');
@@ -149,17 +150,20 @@ function updateModelInfo(cup: SupplierModel): void {
   element('model-source').textContent = t(`Fuente: ${cup.source.file} · ${cup.source.date}${cup.source.revision ? ' · Rev. ' + cup.source.revision : ''}`);
 }
 function updateEnabled(): void {
-  downloadButton.disabled = !studio || !artwork || lostContext || loading || exporting;
-  controlsFieldset.disabled = !artwork || loading;
-  element<HTMLFieldSetElement>('application-controls').disabled = !artwork || loading;
-  input.disabled = loading;
-  element<HTMLSelectElement>('cup-model').disabled = !studio || lostContext || loading;
-  familyPicker.setDisabled(!studio || lostContext || loading);
-  sizePicker.setDisabled(!studio || lostContext || loading);
-  dropZone.classList.toggle('is-busy', loading);
-  dropZone.setAttribute('aria-busy', String(loading));
-  element<HTMLButtonElement>('reset-design').disabled = !artwork || loading;
-  element<HTMLButtonElement>('remove-artwork').disabled = !artwork || loading;
+  const busy = loading || exporting;
+  downloadButton.disabled = !studio || !artwork || lostContext || busy;
+  modelDownloadButton.disabled = !studio || lostContext || busy;
+  controlsFieldset.disabled = !artwork || busy;
+  element<HTMLFieldSetElement>('application-controls').disabled = !artwork || busy;
+  input.disabled = busy;
+  element<HTMLSelectElement>('cup-model').disabled = !studio || lostContext || busy;
+  familyPicker.setDisabled(!studio || lostContext || busy);
+  sizePicker.setDisabled(!studio || lostContext || busy);
+  studioRoot.querySelectorAll<HTMLButtonElement>('[data-material]').forEach(button => { button.disabled = busy; });
+  dropZone.classList.toggle('is-busy', busy);
+  dropZone.setAttribute('aria-busy', String(busy));
+  element<HTMLButtonElement>('reset-design').disabled = !artwork || busy;
+  element<HTMLButtonElement>('remove-artwork').disabled = !artwork || busy;
 }
 function redraw(): void {
   const model = CATALOG.find(item => item.id === selectedModel)!;
@@ -281,6 +285,7 @@ function qualityNotice(): void {
 }
 
 async function upload(file: File): Promise<void> {
+  if (exporting) { announce('Esperá a que termine la descarga.'); return; }
   if (loading) { announce('Esperá a que termine de cargar la imagen actual.'); return; }
   const ticket = ++generation;
   loading = true; updateEnabled(); showNotice('Preparando tu imagen…');
@@ -341,15 +346,17 @@ element('remove-artwork').addEventListener('click', () => {
   announce('Diseño eliminado. Podés subir otra imagen.');
 });
 element('reset-view').addEventListener('click', () => studio?.resetView());
-downloadButton.addEventListener('click', async () => {
-  if (!studio || !artwork || lostContext || loading || exporting) return;
+async function downloadDesign(format: 'png' | 'glb'): Promise<void> {
+  if (!studio || (format === 'png' && !artwork) || lostContext || loading || exporting) return;
+  const button = format === 'png' ? downloadButton : modelDownloadButton;
+  const label = element(format === 'png' ? 'download-label' : 'download-model-label');
   exporting = true;
-  downloadButton.setAttribute('aria-busy', 'true');
-  element('download-label').textContent = t('Preparando PNG…');
+  button.setAttribute('aria-busy', 'true');
+  label.textContent = t(format === 'png' ? 'Preparando PNG…' : 'Preparando 3D…');
   updateEnabled();
-  const filename = `niupack-${selectedModel}-${paper}.png`;
+  const filename = `niupack-${selectedModel}-${paper}.${format}`;
   try {
-    const blob = await studio.capture();
+    const blob = format === 'png' ? await studio.capture() : await studio.exportModel(selectedModel);
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -358,16 +365,18 @@ downloadButton.addEventListener('click', async () => {
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
-    announce('Tu vista 3D se descargó en PNG.');
+    announce(format === 'png' ? 'Tu vista 3D se descargó en PNG.' : 'Tu modelo 3D se descargó en GLB.');
   } catch (error) {
-    showNotice(error instanceof Error ? error.message : 'No se pudo descargar el PNG. Intentá de nuevo.', 'error');
+    showNotice(error instanceof Error ? error.message : 'No se pudo descargar el archivo. Intentá de nuevo.', 'error');
   } finally {
     exporting = false;
-    downloadButton.setAttribute('aria-busy', 'false');
-    element('download-label').textContent = t('Descargar diseño');
+    button.setAttribute('aria-busy', 'false');
+    label.textContent = t(format === 'png' ? 'Descargar PNG' : 'Descargar 3D');
     updateEnabled();
   }
-});
+}
+downloadButton.addEventListener('click', () => { void downloadDesign('png'); });
+modelDownloadButton.addEventListener('click', () => { void downloadDesign('glb'); });
 element('view-front').addEventListener('click', () => studio?.showSide(false));
 element('view-back').addEventListener('click', () => studio?.showSide(true));
 element('reload-viewer').addEventListener('click', () => window.location.reload());
@@ -384,7 +393,7 @@ viewer.addEventListener('keydown', (event) => {
 initializeCatalog();
 embeddedRoot?.addEventListener('niupack:select-model', (event) => {
   const id = (event as CustomEvent<{ modelId?: unknown }>).detail?.modelId;
-  if (typeof id !== 'string' || !selectionStatus(id).selectable || !studio || loading || lostContext) return;
+  if (typeof id !== 'string' || !selectionStatus(id).selectable || !studio || loading || exporting || lostContext) return;
   const select = element<HTMLSelectElement>('cup-model');
   select.value = id;
   select.dispatchEvent(new Event('change', { bubbles: true }));
